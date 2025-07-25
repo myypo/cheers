@@ -1,0 +1,17 @@
+[package]
+name = "crabstar"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+crabstar_macros.workspace = true
+typed_jinja.workspace = true
+
+serde.workspace = true
+futures.workspace = true
+
+[dev-dependencies]
+trybuild.workspace = true
+tokio.workspace = true
+askama.workspace = true
+serde_json.workspace = true
