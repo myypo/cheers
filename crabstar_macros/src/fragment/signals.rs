@@ -2,7 +2,7 @@ use proc_macro2::TokenStream;
 use quote::quote;
 use syn::{Attribute, Error, Ident, TypePath};
 
-use crate::page::{NamedField, opts::SignalFieldAttr};
+use crate::fragment::{NamedField, opts::SignalFieldAttr};
 
 struct SignalField {
     ident: Ident,

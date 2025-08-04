@@ -1,8 +1,8 @@
-use crabstar::{Fragment, page};
+use crabstar::{Fragment, fragment};
 use serde::{Deserialize, Serialize};
 use typed_jinja::{Template, template};
 
-#[page]
+#[fragment]
 #[template(path = "empty.html")]
 #[derive(Serialize, Deserialize, Debug, PartialEq)]
 struct Subscription {
@@ -10,7 +10,7 @@ struct Subscription {
     active: bool,
 }
 
-#[page]
+#[fragment]
 #[template(path = "empty.html")]
 #[derive(Default, Serialize, Deserialize, Debug, PartialEq)]
 struct Profile {
