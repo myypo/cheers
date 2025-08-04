@@ -66,6 +66,8 @@
               openssl
               pkg-config
 
+              act
+
               cargo-machete
 
               rust-analyzer-nightly
