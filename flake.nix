@@ -31,13 +31,31 @@
 
               pre-commit-hooks = inputs.pre-commit-hooks.lib.${system}.run;
               pre-commit-check = inputs.self.checks.${system}.pre-commit-check;
+
+              rust-toolchain = (
+                with inputs;
+                with fenix;
+                with complete;
+                combine [
+                  cargo
+                  clippy
+                  rust-src
+                  rustc
+                  rustfmt
+                ]
+              );
             }
           )
         );
     in
     {
       devShells = forEachSupportedSystem (
-        { pkgs, pre-commit-check, ... }:
+        {
+          pkgs,
+          rust-toolchain,
+          pre-commit-check,
+          ...
+        }:
         {
           default = pkgs.mkShell {
             env = {
@@ -114,11 +132,15 @@
 
                 clippy = {
                   enable = true;
+                  packageOverrides.cargo = pkgs.fenix.complete.cargo;
+                  packageOverrides.clippy = pkgs.fenix.complete.clippy;
                   settings.allFeatures = true;
                   settings.denyWarnings = true;
                 };
-                rustfmt.enable = true;
-
+                rustfmt = {
+                  enable = true;
+                  package = pkgs.fenix.complete.rustfmt;
+                };
               };
               settings = {
                 rust.check.cargoDeps = pkgs.rustPlatform.importCargoLock {

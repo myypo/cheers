@@ -9,9 +9,10 @@ typed_jinja.workspace = true
 
 serde.workspace = true
 futures.workspace = true
+tokio = { workspace = true }
 
 [dev-dependencies]
 trybuild.workspace = true
-tokio.workspace = true
 askama.workspace = true
 serde_json.workspace = true
+tokio-stream = { workspace = true }

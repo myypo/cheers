@@ -15,7 +15,7 @@ impl NamedField {
                 Some(ident) => match f.ty {
                     Type::Path(type_path) => Ok(NamedField {
                         ident,
-                        ty: type_path.clone(),
+                        ty: type_path,
                         attrs: f.attrs,
                         vis: f.vis,
                     }),

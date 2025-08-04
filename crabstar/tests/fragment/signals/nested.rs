@@ -1,8 +1,8 @@
-use crabstar::{Fragment, page};
+use crabstar::{Fragment, fragment};
 use serde::{Deserialize, Serialize};
 use typed_jinja::{Template, template};
 
-#[page]
+#[fragment]
 #[template(path = "empty.html")]
 #[derive(Clone, Default, Debug, PartialEq, Deserialize, Serialize)]
 struct User {
@@ -13,7 +13,7 @@ struct User {
     achievements: Vec<Achievement>,
 }
 
-#[page]
+#[fragment]
 #[template(path = "empty.html")]
 #[derive(Debug, PartialEq, Clone, Deserialize, Serialize)]
 struct Achievement {
@@ -21,7 +21,7 @@ struct Achievement {
     points: Option<i32>,
 }
 
-#[page]
+#[fragment]
 #[template(path = "empty.html")]
 #[derive(Debug, Default, PartialEq, Clone, Deserialize, Serialize)]
 struct Header {
