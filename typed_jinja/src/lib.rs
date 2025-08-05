@@ -53,19 +53,19 @@ impl Default for Config {
 }
 
 impl Config {
-    fn new_or_default() -> Self {
-        let config = std::fs::read_to_string("askama.toml").ok();
+    fn new_or_default(path: &str) -> Self {
+        let config = std::fs::read_to_string(path).ok();
         let config = config.and_then(|c| toml::from_str::<Config>(&c).ok());
 
         config.unwrap_or_default()
     }
 }
 
-pub fn reloader() -> &'static AutoReloader {
+pub fn reloader(path: String) -> &'static AutoReloader {
     RELOADER.get_or_init(move || {
         AutoReloader::new(move |notifier| {
             let mut env = Environment::new();
-            let config = Config::new_or_default();
+            let config = Config::new_or_default(&path);
 
             let notifier_dirs = config.general.dirs;
             let loader_dirs = notifier_dirs.clone();
