@@ -251,7 +251,7 @@ pub fn expand_attr(args: TokenStream, input: DeriveInput) -> Result<TokenStream,
     Ok(quote! {
         #(#attrs)*
         #[derive(::askama::Template)]
-        #[template(#args, config = "crabstar.toml")]
+        #[template(#args)]
         #vis struct #ident {
             #(#immediate_fields,)*
         }
