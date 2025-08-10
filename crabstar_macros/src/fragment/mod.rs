@@ -69,7 +69,10 @@ fn suspense_body(delayed_fields: &[DelayedField]) -> TokenStream {
     } else {
         quote! { self.0 }
     };
-    let immediate_call = quote! { tx.send(#immediate_field.render().map_err(|e| ::crabstar::fragment::suspense::Error::Render(e))) };
+    let immediate_call = quote! {
+        use ::askama::Template;
+        tx.send(#immediate_field.render().map_err(|e| ::crabstar::fragment::suspense::Error::Render(e)))
+    };
 
     if delayed_fields.is_empty() {
         quote! { #immediate_call }
@@ -247,7 +250,8 @@ pub fn expand_attr(args: TokenStream, input: DeriveInput) -> Result<TokenStream,
 
     Ok(quote! {
         #(#attrs)*
-        #[::typed_jinja::template(#args, config = "crabstar.toml")]
+        #[derive(::askama::Template)]
+        #[template(#args, config = "crabstar.toml")]
         #vis struct #ident {
             #(#immediate_fields,)*
         }

@@ -4,7 +4,7 @@ use tokio::sync::mpsc;
 
 #[derive(Debug)]
 pub enum Error {
-    Render(typed_jinja::Error),
+    Render(askama::Error),
     Stream(Box<mpsc::error::SendError<Result<String, Error>>>),
 }
 

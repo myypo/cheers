@@ -4,7 +4,7 @@ use syn::{DeriveInput, Error};
 
 use crate::{complete::complete_ident, fragment};
 
-pub fn expand_attr(mut args: TokenStream, input: DeriveInput) -> Result<TokenStream, Error> {
+pub fn expand_attr(args: TokenStream, input: DeriveInput) -> Result<TokenStream, Error> {
     let ident = &input.ident;
     let complete_ident = complete_ident(ident);
 
@@ -19,7 +19,6 @@ pub fn expand_attr(mut args: TokenStream, input: DeriveInput) -> Result<TokenStr
         }
     };
 
-    args.extend(quote! { ,variables(datastar = self.datastar()) });
     let fragment = fragment::expand_attr(args, input)?;
 
     Ok(quote! {

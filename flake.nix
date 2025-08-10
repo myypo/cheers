@@ -95,9 +95,7 @@
         let
           testFlagsMatrix = [
             ""
-            "-F skip_dev_check"
             "--release"
-            "--release -F skip_dev_check"
           ];
 
           testHooks = builtins.listToAttrs (

@@ -5,7 +5,7 @@ edition = "2024"
 
 [dependencies]
 crabstar_macros.workspace = true
-typed_jinja.workspace = true
+askama.workspace = true
 
 serde.workspace = true
 futures.workspace = true
@@ -13,6 +13,5 @@ tokio = { workspace = true }
 
 [dev-dependencies]
 trybuild.workspace = true
-askama.workspace = true
 serde_json.workspace = true
 tokio-stream = { workspace = true }

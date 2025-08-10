@@ -1,6 +1,5 @@
 use crabstar::{Fragment, fragment};
 use serde::{Deserialize, Serialize};
-use typed_jinja::Template;
 
 #[fragment(path = "empty.html")]
 #[derive(Serialize, Deserialize, Debug, PartialEq)]
