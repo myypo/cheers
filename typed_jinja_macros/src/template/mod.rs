@@ -43,6 +43,7 @@ pub fn expand_attr(args: TokenStream, input: &DeriveInput) -> Result<TokenStream
     let TemplateOpts {
         path: template_path,
         config: template_config,
+        variables: template_variables,
     } = template_opts(args)?;
 
     let (impl_generics, ty_generics, where_clause) = input.generics.split_for_impl();
@@ -51,7 +52,7 @@ pub fn expand_attr(args: TokenStream, input: &DeriveInput) -> Result<TokenStream
 
     let render_method_body = if cfg!(debug_assertions) {
         quote! {
-            let mut env = ::typed_jinja::reloader(#template_config.to_owned()).acquire_env().map_err(|e| ::typed_jinja::Error::Reload(Box::new(e)))?;
+            let mut env = ::typed_jinja::reloader(#template_config.to_owned(), #template_variables).acquire_env().map_err(|e| ::typed_jinja::Error::Reload(Box::new(e)))?;
 
             let template = env.get_template(<Self as ::typed_jinja::Template>::PATH).map_err(|e| typed_jinja::Error::Render(Box::new(e)))?;
 

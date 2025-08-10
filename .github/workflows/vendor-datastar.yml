@@ -27,8 +27,8 @@ jobs:
       - name: Build datastar
         run: |
           BUILD_PATH=$(nix build .#datastar --print-out-paths)
-          mkdir -p crabstar/vendor
-          cp -f "$BUILD_PATH/datastar.js" crabstar/vendor
+          mkdir -p crabstar_macros/vendor
+          cp -f "$BUILD_PATH/datastar.js" crabstar_macros/vendor
 
       - name: Open PR
         uses: peter-evans/create-pull-request@v7
@@ -40,6 +40,6 @@ jobs:
             Automated update of datastar vendor files.
 
             - Built from latest datastar source
-            - Updated: `crabstar/vendor/datastar.js`
+            - Updated: `crabstar_macros/vendor/datastar.js`
           branch: datastar-vendor-update
           delete-branch: true

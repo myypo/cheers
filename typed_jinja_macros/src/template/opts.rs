@@ -1,11 +1,14 @@
 use proc_macro2::{Span, TokenStream};
+use quote::quote;
 use syn::{
-    Error, Expr, ExprLit, Lit, Meta, Token, parse::Parser, punctuated::Punctuated, spanned::Spanned,
+    Error, Expr, ExprLit, Lit, LitStr, Meta, Token, parse::Parser, punctuated::Punctuated,
+    spanned::Spanned,
 };
 
 pub struct TemplateOpts {
     pub path: ExprLit,
     pub config: ExprLit,
+    pub variables: TokenStream,
 }
 
 fn path(args: &Punctuated<Meta, Token![,]>) -> Result<ExprLit, Error> {
@@ -42,7 +45,7 @@ fn config(args: &Punctuated<Meta, Token![,]>) -> Result<ExprLit, Error> {
     let Some(config_meta) = config_meta else {
         return Ok(ExprLit {
             attrs: Vec::new(),
-            lit: Lit::Str(syn::LitStr::new("typed_jinja.toml", Span::call_site())),
+            lit: Lit::Str(LitStr::new("typed_jinja.toml", Span::call_site())),
         });
     };
 
@@ -58,11 +61,46 @@ fn config(args: &Punctuated<Meta, Token![,]>) -> Result<ExprLit, Error> {
     }
 }
 
+fn variables(args: &Punctuated<Meta, Token![,]>) -> Result<TokenStream, Error> {
+    let list = args.iter().find_map(|meta| match meta {
+        Meta::List(list) if list.path.is_ident("variables") => Some(list),
+        _ => None,
+    });
+
+    let Some(list) = list else {
+        return Ok(quote! { vec![] });
+    };
+
+    let mut tokens = TokenStream::new();
+
+    let mut items = Vec::new();
+
+    list.parse_nested_meta(|meta| {
+        let ident = meta.path.get_ident().ok_or_else(|| {
+            Error::new(
+                meta.path.span(),
+                "Expected \"variables\" to be in the format of: name = \"John\"",
+            )
+        })?;
+
+        let key = ident.to_string();
+        let val: Expr = meta.value()?.parse()?;
+
+        items.push(quote! { (#key.to_string(), #val.to_string()) });
+        Ok(())
+    })?;
+
+    tokens.extend(quote! { vec![#(#items),*] });
+
+    Ok(tokens)
+}
+
 pub fn template_opts(args: TokenStream) -> Result<TemplateOpts, Error> {
     let args = Punctuated::<Meta, Token![,]>::parse_terminated.parse2(args)?;
 
     Ok(TemplateOpts {
         path: path(&args)?,
         config: config(&args)?,
+        variables: variables(&args)?,
     })
 }

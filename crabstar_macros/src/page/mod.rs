@@ -4,14 +4,28 @@ use syn::{DeriveInput, Error};
 
 use crate::{complete::complete_ident, fragment};
 
-pub fn expand_attr(args: TokenStream, input: DeriveInput) -> Result<TokenStream, Error> {
+pub fn expand_attr(mut args: TokenStream, input: DeriveInput) -> Result<TokenStream, Error> {
     let ident = &input.ident;
     let complete_ident = complete_ident(ident);
 
+    let datastar = include_str!("../../vendor/datastar.js");
+    let datastar_impl = {
+        quote! {
+            impl #ident {
+                pub fn datastar(&self) -> &'static str {
+                    #datastar
+                }
+            }
+        }
+    };
+
+    args.extend(quote! { ,variables(datastar = self.datastar()) });
     let fragment = fragment::expand_attr(args, input)?;
 
     Ok(quote! {
         #fragment
+
+        #datastar_impl
 
         impl ::crabstar::Page for #complete_ident {
             fn into_html_stream(self) -> impl ::futures::StreamExt<

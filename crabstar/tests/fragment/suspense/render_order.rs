@@ -4,7 +4,7 @@ use futures::StreamExt;
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::{Barrier, Mutex};
-use typed_jinja::{Template, template};
+use typed_jinja::Template;
 
 #[fragment(path = "post_content.html")]
 pub struct PostContent {

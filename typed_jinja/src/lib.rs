@@ -4,7 +4,7 @@ pub use minijinja::context as minijinja_context;
 use minijinja_autoreload::AutoReloader;
 pub use typed_jinja_macros::template;
 
-use std::{fmt::Display, path::PathBuf, sync::OnceLock};
+use std::{collections::HashMap, fmt::Display, path::PathBuf, sync::OnceLock};
 
 use minijinja::Environment;
 use serde::Deserialize;
@@ -30,15 +30,20 @@ pub trait Template {
     fn render(&self) -> Result<String, Error>;
 }
 
+static CONFIG: OnceLock<Config> = OnceLock::new();
 static RELOADER: OnceLock<AutoReloader> = OnceLock::new();
 
-#[derive(Debug, Deserialize)]
-struct GeneralConfig {
+#[derive(Debug, Default, Clone, Deserialize)]
+pub struct GeneralConfig {
+    #[serde(default)]
     pub dirs: Vec<PathBuf>,
+    #[serde(default)]
+    pub globals: HashMap<String, String>,
 }
 
-#[derive(Debug, Deserialize)]
-struct Config {
+#[derive(Debug, Clone, Deserialize)]
+pub struct Config {
+    #[serde(default)]
     pub general: GeneralConfig,
 }
 
@@ -47,6 +52,7 @@ impl Default for Config {
         Config {
             general: GeneralConfig {
                 dirs: vec!["templates".into()],
+                globals: HashMap::new(),
             },
         }
     }
@@ -61,13 +67,13 @@ impl Config {
     }
 }
 
-pub fn reloader(path: String) -> &'static AutoReloader {
+pub fn reloader(path: String, variables: Vec<(String, String)>) -> &'static AutoReloader {
     RELOADER.get_or_init(move || {
+        let config = CONFIG.get_or_init(move || Config::new_or_default(&path));
         AutoReloader::new(move |notifier| {
             let mut env = Environment::new();
-            let config = Config::new_or_default(&path);
 
-            let notifier_dirs = config.general.dirs;
+            let notifier_dirs = &config.general.dirs;
             let loader_dirs = notifier_dirs.clone();
             env.set_loader(move |name| {
                 let loaders = loader_dirs.iter().map(minijinja::path_loader);
@@ -78,6 +84,13 @@ pub fn reloader(path: String) -> &'static AutoReloader {
                 }
                 Ok(None)
             });
+
+            for (n, v) in &config.general.globals {
+                env.add_function(n, move || v);
+            }
+            for (n, v) in variables.clone().into_iter() {
+                env.add_function(n, move || v.clone());
+            }
 
             for d in notifier_dirs.iter() {
                 notifier.watch_path(d, true);
