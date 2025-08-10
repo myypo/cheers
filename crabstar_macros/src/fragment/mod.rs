@@ -99,7 +99,7 @@ fn suspense_body(delayed_fields: &[DelayedField]) -> TokenStream {
     }
 }
 
-pub fn expand_attr(_args: TokenStream, input: DeriveInput) -> Result<TokenStream, Error> {
+pub fn expand_attr(args: TokenStream, input: DeriveInput) -> Result<TokenStream, Error> {
     let ident = &input.ident;
     let vis = &input.vis;
     let attrs = &input.attrs;
@@ -247,6 +247,7 @@ pub fn expand_attr(_args: TokenStream, input: DeriveInput) -> Result<TokenStream
 
     Ok(quote! {
         #(#attrs)*
+        #[::typed_jinja::template(#args, config = "crabstar.toml")]
         #vis struct #ident {
             #(#immediate_fields,)*
         }

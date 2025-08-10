@@ -6,28 +6,24 @@ use std::time::Duration;
 use tokio::sync::{Barrier, Mutex};
 use typed_jinja::{Template, template};
 
-#[fragment]
-#[template(path = "post_content.html")]
+#[fragment(path = "post_content.html")]
 pub struct PostContent {
     content: String,
 }
 
-#[fragment]
-#[template(path = "post.html")]
+#[fragment(path = "post.html")]
 pub struct Post {
     title: String,
     #[suspense]
     content: PostContent,
 }
 
-#[fragment]
-#[template(path = "status.html")]
+#[fragment(path = "status.html")]
 pub struct Status {
     outages_today: i32,
 }
 
-#[page]
-#[template(path = "home.html")]
+#[page(path = "home.html")]
 struct HomePage {
     user: String,
     #[suspense]
