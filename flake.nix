@@ -128,6 +128,11 @@
                 typos = {
                   enable = true;
                   stages = default_stages ++ [ "commit-msg" ];
+                  # Specifying configPath seems broken - the excude is not respected
+                  # settings.configPath = "./.typos.toml";
+                  excludes = [
+                    "crabstar_macros/vendor/datastar.js"
+                  ];
                 };
                 taplo.enable = true;
                 actionlint.enable = true;
