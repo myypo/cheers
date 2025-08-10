@@ -15,8 +15,8 @@ proc-macro2 = { version = "1", default-features = false }
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync"] }
 tokio-stream = { version = "0.1.17" }
 futures = { version = "0.3" }
-memory-serve = { version = "1" }
 tower-livereload = { version = "0.9" }
+lightningcss = { version = "1.0.0-alpha.67" }
 
 crabstar = { path = "./crabstar" }
 crabstar_macros = { path = "./crabstar_macros" }

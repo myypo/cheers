@@ -141,6 +141,7 @@
                   packageOverrides.clippy = pkgs.fenix.complete.clippy;
                   settings.allFeatures = true;
                   settings.denyWarnings = true;
+                  settings.extraArgs = "--keep-going";
                 };
                 rustfmt = {
                   enable = true;

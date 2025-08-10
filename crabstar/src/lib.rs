@@ -4,8 +4,15 @@ pub mod fragment;
 pub use crabstar_macros::fragment;
 pub use fragment::Fragment;
 
-mod router;
-pub use router::CrabstarRouterExt;
+pub mod router;
+pub use router::BUNDLER;
+
+#[macro_export]
+macro_rules! include_css {
+    ($css_file:expr) => {
+        ($crate::BUNDLER).add(include_str!($css_file));
+    };
+}
 
 pub const DATASTAR: &str = include_str!("../vendor/datastar.js");
 
