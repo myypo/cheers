@@ -6,10 +6,13 @@ edition = "2024"
 [dependencies]
 crabstar_macros.workspace = true
 askama.workspace = true
-
 serde.workspace = true
 futures.workspace = true
 tokio = { workspace = true }
+
+memory-serve.workspace = true
+tower-livereload.workspace = true
+axum = { workspace = true }
 
 [dev-dependencies]
 trybuild.workspace = true

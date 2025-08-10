@@ -129,7 +129,7 @@
                   # Specifying configPath seems broken - the excude is not respected
                   # settings.configPath = "./.typos.toml";
                   excludes = [
-                    "crabstar_macros/vendor/datastar.js"
+                    "crabstar/vendor/datastar.js"
                   ];
                 };
                 taplo.enable = true;

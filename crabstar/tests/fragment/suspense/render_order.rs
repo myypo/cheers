@@ -1,5 +1,6 @@
+use axum::response::IntoResponse;
 use crabstar::fragment::suspense::Suspense;
-use crabstar::{Page, fragment, page};
+use crabstar::{fragment, page};
 use futures::StreamExt;
 use std::sync::Arc;
 use std::time::Duration;
@@ -74,7 +75,8 @@ async fn can_render_concurrently_in_order() {
         })
     };
 
-    let mut h = h.into_html_stream();
+    let h = h.into_response();
+    let mut h = h.into_body().into_data_stream();
     tokio::time::timeout(Duration::from_secs(1), async {
         assert_eq!(h.next().await.unwrap().unwrap(), user);
         assert!({

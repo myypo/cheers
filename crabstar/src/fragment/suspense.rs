@@ -27,3 +27,9 @@ pub trait Suspense {
         Output = Result<(), tokio::sync::mpsc::error::SendError<Result<String, Error>>>,
     > + Send;
 }
+
+impl axum::response::IntoResponse for Error {
+    fn into_response(self) -> axum::response::Response {
+        (axum::http::StatusCode::INTERNAL_SERVER_ERROR, self).into_response()
+    }
+}

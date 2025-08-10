@@ -1,10 +1,11 @@
-pub mod page;
 pub use crabstar_macros::page;
-pub use page::Page;
 
 pub mod fragment;
 pub use crabstar_macros::fragment;
 pub use fragment::Fragment;
+
+mod router;
+pub use router::CrabstarRouterExt;
 
 pub const DATASTAR: &str = include_str!("../vendor/datastar.js");
 

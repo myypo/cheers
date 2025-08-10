@@ -9,7 +9,8 @@ mod page;
 #[proc_macro_attribute]
 pub fn fragment(args: TokenStream, input: TokenStream) -> TokenStream {
     let input = parse_macro_input!(input as DeriveInput);
-    fragment::expand_attr(args.into(), input)
+    let params = fragment::params(args.into(), input);
+    fragment::expand_attr(params)
         .unwrap_or_else(syn::Error::into_compile_error)
         .into()
 }

@@ -6,7 +6,7 @@ use std::fmt::{Display, Formatter};
 
 use proc_macro2::TokenStream;
 use quote::quote;
-use syn::{Attribute, Data, DeriveInput, Error, Ident, Path};
+use syn::{Attribute, Data, DeriveInput, Error, Ident, Path, Visibility};
 
 use crate::{
     complete::complete_ident,
@@ -31,7 +31,7 @@ impl Display for SupportedAttributes {
     }
 }
 
-struct DelayedField {
+pub struct DelayedField {
     name: Ident,
     future: Ident,
     output: Ident,
@@ -102,17 +102,30 @@ fn suspense_body(delayed_fields: &[DelayedField]) -> TokenStream {
     }
 }
 
-pub fn expand_attr(args: TokenStream, input: DeriveInput) -> Result<TokenStream, Error> {
-    let ident = &input.ident;
-    let vis = &input.vis;
-    let attrs = &input.attrs;
-    let derives: Vec<&Attribute> = input
-        .attrs
+pub struct Params {
+    args: TokenStream,
+    ident: Ident,
+    vis: Visibility,
+    attrs: Vec<Attribute>,
+    generic_params: Vec<TokenStream>,
+    immediate_fields: Vec<NamedField>,
+    delayed_ident: Ident,
+    boxed_delayed_ident: Ident,
+    pub delayed_fields: Vec<DelayedField>,
+    complete_ident: Ident,
+    signals: TokenStream,
+}
+
+pub fn params(args: TokenStream, input: DeriveInput) -> Result<Params, Error> {
+    let ident = input.ident;
+    let vis = input.vis.clone();
+    let attrs = input.attrs;
+    let derives: Vec<&Attribute> = attrs
         .iter()
         .filter(|attr| attr.path().is_ident("derive"))
         .collect();
 
-    let fields = match input.data {
+    let data_struct = match input.data {
         Data::Struct(fields) => fields,
         _ => {
             return Err(Error::new_spanned(
@@ -122,7 +135,7 @@ pub fn expand_attr(args: TokenStream, input: DeriveInput) -> Result<TokenStream,
         }
     };
 
-    let named_fields = NamedField::from_fields(fields.fields)?;
+    let named_fields = NamedField::from_fields(data_struct.fields)?;
     let (delayed_fields, immediate_fields): (Vec<NamedField>, Vec<NamedField>) =
         named_fields.into_iter().partition(|f| {
             f.attrs
@@ -131,8 +144,6 @@ pub fn expand_attr(args: TokenStream, input: DeriveInput) -> Result<TokenStream,
         });
     let delayed_fields = delayed_fields_from_named(delayed_fields);
 
-    let suspense_body = suspense_body(&delayed_fields);
-
     let generic_params: Vec<TokenStream> = delayed_fields
         .iter()
         .map(|DelayedField { future, .. }| {
@@ -140,7 +151,42 @@ pub fn expand_attr(args: TokenStream, input: DeriveInput) -> Result<TokenStream,
         })
         .collect();
 
-    let signals = signals_tokens(ident, &immediate_fields, &derives)?;
+    let signals = signals_tokens(&ident, &immediate_fields, &derives)?;
+
+    let delayed_ident = Ident::new(&format!("{ident}Delayed"), ident.span());
+
+    let complete_ident = complete_ident(&ident);
+    let boxed_delayed_ident = Ident::new(&format!("{ident}BoxedDelayed"), ident.span());
+
+    Ok(Params {
+        ident,
+        vis,
+        attrs,
+        immediate_fields,
+        args,
+        generic_params,
+        delayed_ident,
+        boxed_delayed_ident,
+        delayed_fields,
+        complete_ident,
+        signals,
+    })
+}
+
+pub fn expand_attr(params: Result<Params, Error>) -> Result<TokenStream, Error> {
+    let Params {
+        args,
+        ident,
+        vis,
+        attrs,
+        generic_params,
+        immediate_fields,
+        delayed_ident,
+        boxed_delayed_ident,
+        delayed_fields,
+        complete_ident,
+        signals,
+    } = params?;
 
     let immediate_fields = immediate_fields
         .iter()
@@ -149,8 +195,6 @@ pub fn expand_attr(args: TokenStream, input: DeriveInput) -> Result<TokenStream,
                 #vis #ident: #ty
             }
         });
-
-    let delayed_ident = Ident::new(&format!("{ident}Delayed"), ident.span());
 
     let where_clause = if delayed_fields.is_empty() {
         quote! {}
@@ -168,8 +212,6 @@ pub fn expand_attr(args: TokenStream, input: DeriveInput) -> Result<TokenStream,
                 #(#where_params,)*
         }
     };
-
-    let complete_ident = complete_ident(ident);
 
     let delayed_struct = if delayed_fields.is_empty() {
         quote! {}
@@ -191,7 +233,6 @@ pub fn expand_attr(args: TokenStream, input: DeriveInput) -> Result<TokenStream,
         }
     };
 
-    let boxed_delayed_ident = Ident::new(&format!("{ident}BoxedDelayed"), ident.span());
     let boxed_delayed_struct = if delayed_fields.is_empty() {
         quote! {}
     } else {
@@ -233,6 +274,8 @@ pub fn expand_attr(args: TokenStream, input: DeriveInput) -> Result<TokenStream,
             #vis struct #complete_ident(#ident, #boxed_delayed_ident);
         }
     };
+
+    let suspense_body = suspense_body(&delayed_fields);
 
     let into_suspense_impl = if delayed_fields.is_empty() {
         quote! {}

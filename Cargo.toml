@@ -7,15 +7,16 @@ serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1" }
 askama = { version = "0.14" }
 toml = "0.9"
-
+axum = { version = "0.8", default-features = false }
 trybuild = { version = "1.0", features = ["diff"] }
-
 syn = { version = "2" }
 quote = { version = "1", default-features = false }
 proc-macro2 = { version = "1", default-features = false }
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync"] }
 tokio-stream = { version = "0.1.17" }
 futures = { version = "0.3" }
+memory-serve = { version = "1" }
+tower-livereload = { version = "0.9" }
 
 crabstar = { path = "./crabstar" }
 crabstar_macros = { path = "./crabstar_macros" }
