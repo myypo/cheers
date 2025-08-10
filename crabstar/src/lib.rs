@@ -6,6 +6,8 @@ pub mod fragment;
 pub use crabstar_macros::fragment;
 pub use fragment::Fragment;
 
+pub const DATASTAR: &str = include_str!("../vendor/datastar.js");
+
 /// Deserialization helpers used by proc-macros
 pub mod de;
 

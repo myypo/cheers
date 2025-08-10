@@ -8,23 +8,10 @@ pub fn expand_attr(args: TokenStream, input: DeriveInput) -> Result<TokenStream,
     let ident = &input.ident;
     let complete_ident = complete_ident(ident);
 
-    let datastar = include_str!("../../vendor/datastar.js");
-    let datastar_impl = {
-        quote! {
-            impl #ident {
-                pub fn datastar(&self) -> &'static str {
-                    #datastar
-                }
-            }
-        }
-    };
-
     let fragment = fragment::expand_attr(args, input)?;
 
     Ok(quote! {
         #fragment
-
-        #datastar_impl
 
         impl ::crabstar::Page for #complete_ident {
             fn into_html_stream(self) -> impl ::futures::StreamExt<
