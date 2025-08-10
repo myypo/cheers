@@ -1,5 +1,6 @@
 mod bundler;
 pub use bundler::{BUNDLER, css_url};
+use tower_http::compression::CompressionLayer;
 
 use std::{fmt::Display, time::Duration};
 
@@ -84,6 +85,8 @@ where
 
         #[cfg(debug_assertions)]
         let router = router.layer(livereload_layer());
+
+        let router = router.layer(CompressionLayer::new());
 
         Ok(router)
     }

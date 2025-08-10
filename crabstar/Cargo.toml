@@ -11,6 +11,7 @@ futures.workspace = true
 tokio = { workspace = true }
 
 tower-livereload.workspace = true
+tower-http.workspace = true
 axum = { workspace = true }
 lightningcss = { workspace = true }
 base64 = { workspace = true }
