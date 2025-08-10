@@ -1,6 +1,6 @@
 use proc_macro2::TokenStream;
 use quote::quote;
-use syn::{DeriveInput, Error};
+use syn::{DeriveInput, Error, LifetimeParam};
 
 use crate::{complete::complete_ident, fragment};
 
@@ -57,6 +57,19 @@ fn into_response_impl(p: &Result<fragment::Params, Error>) -> TokenStream {
 pub fn expand_attr(args: TokenStream, input: DeriveInput) -> Result<TokenStream, Error> {
     let ident = &input.ident;
     let complete_ident = complete_ident(ident);
+    let lifetimes = {
+        let lifetimes: Vec<TokenStream> = input
+            .generics
+            .lifetimes()
+            .map(|LifetimeParam { lifetime, .. }| quote! { #lifetime })
+            .collect();
+
+        if lifetimes.is_empty() {
+            quote! {}
+        } else {
+            quote! { <#(#lifetimes),*> }
+        }
+    };
 
     let fragment_params = fragment::params(args, input);
     let into_response_impl = into_response_impl(&fragment_params);
@@ -66,7 +79,7 @@ pub fn expand_attr(args: TokenStream, input: DeriveInput) -> Result<TokenStream,
     Ok(quote! {
         #fragment
 
-        impl ::axum::response::IntoResponse for #complete_ident {
+        impl #lifetimes ::axum::response::IntoResponse for #complete_ident #lifetimes {
             fn into_response(self) -> ::axum::response::Response {
                 #into_response_impl
             }

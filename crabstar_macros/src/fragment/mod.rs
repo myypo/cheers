@@ -6,7 +6,7 @@ use std::fmt::{Display, Formatter};
 
 use proc_macro2::TokenStream;
 use quote::quote;
-use syn::{Attribute, Data, DeriveInput, Error, Ident, Path, Visibility};
+use syn::{Attribute, Data, DeriveInput, Error, Ident, LifetimeParam, Path, Visibility};
 
 use crate::{
     complete::complete_ident,
@@ -45,13 +45,14 @@ fn delayed_fields_from_named(fields: Vec<NamedField>) -> Vec<DelayedField> {
             let name = f.ident;
             let future = Ident::new(&format!("F{i}"), name.span());
 
-            let full_path =
-                f.ty.path
-                    .segments
-                    .iter()
-                    .map(|s| s.ident.to_string())
-                    .collect::<Vec<String>>()
-                    .join("::");
+            let full_path = f
+                .ty_path
+                .path
+                .segments
+                .iter()
+                .map(|s| s.ident.to_string())
+                .collect::<Vec<String>>()
+                .join("::");
             let output = Ident::new(&format!("{}Complete", full_path), name.span());
 
             DelayedField {
@@ -114,6 +115,7 @@ pub struct Params {
     pub delayed_fields: Vec<DelayedField>,
     complete_ident: Ident,
     signals: TokenStream,
+    lifetimes: TokenStream,
 }
 
 pub fn params(args: TokenStream, input: DeriveInput) -> Result<Params, Error> {
@@ -134,6 +136,19 @@ pub fn params(args: TokenStream, input: DeriveInput) -> Result<Params, Error> {
             ));
         }
     };
+    let lifetimes = {
+        let lifetimes: TokenStream = input
+            .generics
+            .lifetimes()
+            .map(|LifetimeParam { lifetime, .. }| quote! { #lifetime })
+            .collect();
+
+        if lifetimes.is_empty() {
+            quote! {}
+        } else {
+            quote! { < #lifetimes > }
+        }
+    };
 
     let named_fields = NamedField::from_fields(data_struct.fields)?;
     let (delayed_fields, immediate_fields): (Vec<NamedField>, Vec<NamedField>) =
@@ -147,11 +162,11 @@ pub fn params(args: TokenStream, input: DeriveInput) -> Result<Params, Error> {
     let generic_params: Vec<TokenStream> = delayed_fields
         .iter()
         .map(|DelayedField { future, .. }| {
-            quote! {  #future }
+            quote! { #future }
         })
         .collect();
 
-    let signals = signals_tokens(&ident, &immediate_fields, &derives)?;
+    let signals = signals_tokens(&ident, &immediate_fields, &derives, &lifetimes)?;
 
     let delayed_ident = Ident::new(&format!("{ident}Delayed"), ident.span());
 
@@ -170,6 +185,7 @@ pub fn params(args: TokenStream, input: DeriveInput) -> Result<Params, Error> {
         delayed_fields,
         complete_ident,
         signals,
+        lifetimes,
     })
 }
 
@@ -186,6 +202,7 @@ pub fn expand_attr(params: Result<Params, Error>) -> Result<TokenStream, Error> 
         delayed_fields,
         complete_ident,
         signals,
+        lifetimes,
     } = params?;
 
     let immediate_fields = immediate_fields
@@ -267,11 +284,11 @@ pub fn expand_attr(params: Result<Params, Error>) -> Result<TokenStream, Error> 
 
     let complete_struct = if delayed_fields.is_empty() {
         quote! {
-            #vis type #complete_ident = #ident;
+            #vis type #complete_ident #lifetimes = #ident #lifetimes;
         }
     } else {
         quote! {
-            #vis struct #complete_ident(#ident, #boxed_delayed_ident);
+            #vis struct #complete_ident #lifetimes (#ident #lifetimes, #boxed_delayed_ident);
         }
     };
 
@@ -281,8 +298,8 @@ pub fn expand_attr(params: Result<Params, Error>) -> Result<TokenStream, Error> 
         quote! {}
     } else {
         quote! {
-            impl #ident {
-                #vis fn into_suspense<#(#generic_params,)*>(self, delayed: #delayed_ident<#(#generic_params,)*>) -> #complete_ident
+            impl #lifetimes #ident #lifetimes {
+                #vis fn into_suspense<#(#generic_params,)*>(self, delayed: #delayed_ident<#(#generic_params,)*>) -> #complete_ident #lifetimes
                 #where_clause
                 {
                     #complete_ident(self, delayed.into())
@@ -295,7 +312,7 @@ pub fn expand_attr(params: Result<Params, Error>) -> Result<TokenStream, Error> 
         #(#attrs)*
         #[derive(::askama::Template)]
         #[template(#args)]
-        #vis struct #ident {
+        #vis struct #ident #lifetimes {
             #(#immediate_fields,)*
         }
 
@@ -305,7 +322,10 @@ pub fn expand_attr(params: Result<Params, Error>) -> Result<TokenStream, Error> 
 
         #complete_struct
 
-        impl ::crabstar::fragment::suspense::Suspense for #complete_ident {
+        impl #lifetimes ::crabstar::fragment::suspense::Suspense for #complete_ident #lifetimes
+        where
+            #ident #lifetimes: 'static,
+        {
             async fn suspense(self, tx: &::tokio::sync::mpsc::UnboundedSender<::std::result::Result<::std::string::String, ::crabstar::fragment::suspense::Error>>)
                 -> ::std::result::Result<
                 (),
