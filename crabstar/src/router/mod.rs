@@ -1,5 +1,5 @@
 mod bundler;
-pub use bundler::BUNDLER;
+pub use bundler::{BUNDLER, css_url};
 
 use std::{fmt::Display, time::Duration};
 
@@ -33,22 +33,41 @@ where
     fn serve_crabstar_application(self) -> Result<Self, Error>;
 }
 
-fn memory_router(css: String) -> Router {
+fn static_router() -> Result<Router, Error> {
+    #[cfg(not(debug_assertions))]
+    let stylesheet = BUNDLER.bundle()?;
+
     let handler = async || {
         let mut r = Response::builder()
             .status(StatusCode::OK)
             .header(header::CONTENT_TYPE, "text/css");
+
+        #[cfg(debug_assertions)]
+        let stylesheet = match BUNDLER.bundle() {
+            Ok(stylesheet) => stylesheet,
+            Err(e) => {
+                let body = format!("Error bundling CSS in dev mode: {e}");
+
+                return r
+                    .status(StatusCode::INTERNAL_SERVER_ERROR)
+                    .body(body)
+                    .unwrap_or_else(|_| {
+                        panic!("the CSS bundle error to be converted into a response: {e}")
+                    });
+            }
+        };
+
         if cfg!(debug_assertions) {
             r = r.header(header::CACHE_CONTROL, "no-cache");
         } else {
             r = r.header(header::CACHE_CONTROL, "public, max-age=31536000, immutable");
         };
 
-        r.body(css)
-            .expect("the CSS response to be constructed correctly")
+        r.body(stylesheet)
+            .expect("the bundled CSS response to be constructed")
     };
 
-    Router::new().route("/main.css", get(handler))
+    Ok(Router::new().route(css_url(), get(handler)))
 }
 
 fn livereload_layer() -> tower_livereload::LiveReloadLayer {
@@ -58,16 +77,13 @@ fn livereload_layer() -> tower_livereload::LiveReloadLayer {
 impl<S> CrabstarRouterExt for Router<S>
 where
     S: Send + Sync + Clone + 'static,
+    Router<S>: From<Router>,
 {
     fn serve_crabstar_application(self) -> Result<Self, Error> {
-        let mut router = if cfg!(debug_assertions) {
-            self.layer(livereload_layer())
-        } else {
-            self
-        };
+        let router = self.merge(static_router()?);
 
-        let css = BUNDLER.bundle()?;
-        router = router.nest_service("/static", memory_router(css));
+        #[cfg(debug_assertions)]
+        let router = router.layer(livereload_layer());
 
         Ok(router)
     }
