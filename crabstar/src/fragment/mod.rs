@@ -1,3 +1,5 @@
+pub mod suspense;
+
 pub trait Fragment {
     type Signals;
 

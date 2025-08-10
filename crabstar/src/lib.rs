@@ -1,8 +1,10 @@
-mod fragment;
-pub use fragment::Fragment;
-
 pub mod page;
 pub use crabstar_macros::page;
+pub use page::Page;
+
+pub mod fragment;
+pub use crabstar_macros::fragment;
+pub use fragment::Fragment;
 
 /// Deserialization helpers used by proc-macros
 pub mod de;

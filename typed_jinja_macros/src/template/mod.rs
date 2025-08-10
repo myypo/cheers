@@ -27,7 +27,7 @@ fn minijinja_context(fields: &Fields) -> Result<TokenStream, Error> {
     })
 }
 
-pub fn expand_attr_template(args: TokenStream, input: &DeriveInput) -> Result<TokenStream, Error> {
+pub fn expand_attr(args: TokenStream, input: &DeriveInput) -> Result<TokenStream, Error> {
     let ident = &input.ident;
 
     let fields = match &input.data {
