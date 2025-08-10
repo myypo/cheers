@@ -152,5 +152,41 @@
             };
         }
       );
+
+      packages = forEachSupportedSystem (
+        { pkgs, ... }:
+        {
+          datastar = pkgs.callPackage (
+            {
+              stdenv,
+              fetchFromGitHub,
+              esbuild,
+            }:
+            stdenv.mkDerivation (finalAttrs: {
+              pname = "datastar";
+              version = "1.0.0-RC.4";
+
+              src = fetchFromGitHub {
+                owner = "starfederation";
+                repo = "datastar";
+                tag = "v${finalAttrs.version}";
+                hash = "sha256-zGpjhy3t2S9vlAgMLSgUldv5YJQ+t0e0znWmu72ckTw=";
+              };
+
+              nativeBuildInputs = [
+                esbuild
+              ];
+
+              buildPhase = ''
+                runHook preBuild
+
+                esbuild library/src/bundles/datastar.ts --bundle --minify --format=esm --outfile=$out/datastar.js
+
+                runHook postBuild
+              '';
+            })
+          ) { };
+        }
+      );
     };
 }
