@@ -1,12 +1,14 @@
 mod bundler;
 pub use bundler::{BUNDLER, css_url};
+mod redirect_trailing_slash;
+
 use tower_http::compression::CompressionLayer;
 
 use std::{fmt::Display, time::Duration};
 
 use axum::{
     Router,
-    http::{Response, StatusCode, header},
+    http::{StatusCode, header},
     routing::get,
 };
 use tower_livereload::LiveReloadLayer;
@@ -27,19 +29,22 @@ impl Display for Error {
 
 impl std::error::Error for Error {}
 
-pub trait CrabstarRouterExt
+pub trait CrabstarRouterExt<S>
 where
     Self: Sized,
 {
-    fn serve_crabstar_application(self) -> Result<Self, Error>;
+    fn serve_crabstar_application(self) -> Result<Router<S>, Error>;
 }
 
-fn static_router() -> Result<Router, Error> {
+fn static_router<S>() -> Result<Router<S>, Error>
+where
+    S: Clone + Send + Sync + 'static,
+{
     #[cfg(not(debug_assertions))]
     let stylesheet = BUNDLER.bundle()?;
 
     let handler = async || {
-        let mut r = Response::builder()
+        let mut r = axum::http::Response::builder()
             .status(StatusCode::OK)
             .header(header::CONTENT_TYPE, "text/css");
 
@@ -75,18 +80,21 @@ fn livereload_layer() -> tower_livereload::LiveReloadLayer {
     LiveReloadLayer::new().reload_interval(Duration::from_millis(50))
 }
 
-impl<S> CrabstarRouterExt for Router<S>
+impl<S> CrabstarRouterExt<S> for Router<S>
 where
-    S: Send + Sync + Clone + 'static,
-    Router<S>: From<Router>,
+    S: Clone + Send + Sync + 'static,
 {
-    fn serve_crabstar_application(self) -> Result<Self, Error> {
+    fn serve_crabstar_application(self) -> Result<Router<S>, Error> {
         let router = self.merge(static_router()?);
 
         #[cfg(debug_assertions)]
         let router = router.layer(livereload_layer());
 
         let router = router.layer(CompressionLayer::new());
+
+        let router = router.layer(axum::middleware::from_fn(
+            redirect_trailing_slash::redirect_trailing_slash,
+        ));
 
         Ok(router)
     }
