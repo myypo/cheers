@@ -12,8 +12,10 @@ trybuild = { version = "1.0", features = ["diff"] }
 syn = { version = "2" }
 quote = { version = "1", default-features = false }
 proc-macro2 = { version = "1", default-features = false }
-tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync"] }
-tokio-stream = { version = "0.1.17" }
+tokio = { version = "1", features = [
+  "macros",
+  "sync",
+], default-features = false }
 futures = { version = "0.3" }
 tower = { version = "0.5" }
 tower-livereload = { version = "0.9" }
