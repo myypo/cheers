@@ -5,7 +5,9 @@ pub use crabstar_macros::fragment;
 pub use fragment::Fragment;
 
 pub mod router;
-pub use router::{BUNDLER, css_url};
+
+mod bundler;
+pub use bundler::{BUNDLER, css_url};
 
 #[macro_export]
 macro_rules! include_css {

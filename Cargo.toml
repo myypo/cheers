@@ -7,7 +7,7 @@ serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1" }
 askama = { version = "0.14" }
 toml = "0.9"
-axum = { version = "0.8", default-features = false }
+axum = { version = "0.8" }
 trybuild = { version = "1.0", features = ["diff"] }
 syn = { version = "2" }
 quote = { version = "1", default-features = false }
@@ -16,12 +16,18 @@ tokio = { version = "1", features = [
   "macros",
   "sync",
 ], default-features = false }
+tokio-stream = { version = "0.1", features = ["sync"] }
 futures = { version = "0.3" }
 tower = { version = "0.5" }
-tower-livereload = { version = "0.9" }
+notify = { version = "8" }
 tower-http = { version = "0.6", features = ["compression-full"] }
 lightningcss = { version = "1.0.0-alpha.67" }
 base64.version = "0.22"
+tracing = "0.1"
 
 crabstar = { path = "./crabstar" }
 crabstar_macros = { path = "./crabstar_macros" }
+
+[workspace.lints.clippy]
+unwrap_used = "deny"
+panic_in_result_fn = "deny"
