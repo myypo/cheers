@@ -11,7 +11,7 @@ pub async fn redirect_trailing_slash(
     let uri = req.uri();
     let path = uri.path();
 
-    if !path.ends_with('/') {
+    if path == "/" || !path.ends_with('/') {
         return next.run(req).await;
     }
 
@@ -34,14 +34,17 @@ mod tests {
     const ROUTE: &str = "/api/v1/data";
     const RESPONSE: &str = "data";
 
+    const ROOT_RESPONSE: &str = "root";
+
     fn app() -> Router {
         Router::new()
+            .route("/", get(async || ROOT_RESPONSE))
             .route(ROUTE, get(async || RESPONSE))
             .layer(axum::middleware::from_fn(redirect_trailing_slash))
     }
 
     #[tokio::test]
-    async fn test_no_trailing_slash_passes_through() {
+    async fn no_trailing_slash_passes_through() {
         let app = app();
 
         let request = axum::http::Request::builder()
@@ -62,7 +65,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_trailing_slash_redirects_permanently() {
+    async fn trailing_slash_redirects_permanently() {
         let app = app();
 
         let request = axum::http::Request::builder()
@@ -74,5 +77,23 @@ mod tests {
 
         assert_eq!(response.status(), StatusCode::PERMANENT_REDIRECT);
         assert_eq!(response.headers().get("location").unwrap(), ROUTE);
+    }
+
+    #[tokio::test]
+    async fn can_access_root() {
+        let app = app();
+
+        let request = axum::http::Request::builder().body(Body::empty()).unwrap();
+
+        let response = app.clone().oneshot(request).await.unwrap();
+
+        assert_eq!(response.status(), StatusCode::OK);
+
+        let got = axum::body::to_bytes(response.into_body(), usize::MAX)
+            .await
+            .map(|b| String::from_utf8(b.into()))
+            .unwrap()
+            .unwrap();
+        assert_eq!(got, ROOT_RESPONSE);
     }
 }
