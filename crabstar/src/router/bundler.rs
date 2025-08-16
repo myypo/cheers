@@ -49,9 +49,11 @@ fn make_css_url(stylesheet: &str) -> String {
     }
 }
 
-fn make_single_stylesheet(files: &[String]) -> Result<String, Error> {
-    let deps = files
-        .iter()
+fn make_single_stylesheet<'a>(
+    stylesheets: impl IntoIterator<Item = &'a str>,
+) -> Result<String, Error> {
+    let stylesheets = stylesheets
+        .into_iter()
         .map(|d| {
             let s = StyleSheet::parse(
                 d,
@@ -70,13 +72,14 @@ fn make_single_stylesheet(files: &[String]) -> Result<String, Error> {
         })
         .collect::<Result<Vec<String>, Error>>()?;
 
-    Ok(deps.join("\n"))
+    Ok(stylesheets.join("\n"))
 }
 
 impl CssBundler {
-    pub fn add(&self, s: &str) {
+    /// Used internally by the include_css macro
+    pub fn add(&self, s: String) {
         let mut this = self.0.lock().expect("unlock css bundler");
-        this.push(s.to_owned());
+        this.push(s);
     }
 
     pub(crate) fn bundle(&self) -> Result<String, Error> {
@@ -85,7 +88,16 @@ impl CssBundler {
             .lock()
             .map_err(|e| Error::Bundling(format!("unlock css bundler: {e}")))?;
 
-        let stylesheet = make_single_stylesheet(&this)?;
+        #[cfg(debug_assertions)]
+        let this = this
+            .iter()
+            .map(|path| {
+                std::fs::read_to_string(path)
+                    .map_err(|e| Error::Bundling(format!("open CSS file: {path}: {e}")))
+            })
+            .collect::<Result<Vec<String>, Error>>()?;
+
+        let stylesheet = make_single_stylesheet(this.iter().map(|s| s.as_str()))?;
 
         let url = make_css_url(&stylesheet);
         if cfg!(debug_assertions) {
@@ -104,6 +116,8 @@ pub static BUNDLER: LazyLock<CssBundler> = LazyLock::new(|| CssBundler(Mutex::ne
 
 #[cfg(test)]
 mod tests {
+    use crate::include_css;
+
     use super::*;
 
     #[cfg(debug_assertions)]
@@ -127,11 +141,21 @@ mod tests {
     #[cfg(not(debug_assertions))]
     #[test]
     fn minifies_css_in_release_builds() {
-        let files = vec![
-            "body { color: black; }".to_string(),
-            "div { border: 1px solid black; }".to_string(),
-        ];
-        let result = make_single_stylesheet(&files).unwrap();
+        let files = vec!["body { color: black; }", "div { border: 1px solid black; }"];
+        let result = make_single_stylesheet(files).unwrap();
         assert_eq!(result, "body{color:#000}\ndiv{border:1px solid #000}");
+    }
+
+    #[test]
+    fn can_include_css_in_workspace() {
+        include_css!("../../tests/css/hello.css");
+
+        let got = BUNDLER.bundle().unwrap();
+        let want = if cfg!(debug_assertions) {
+            ".container {\n  width: 100%;\n}\n"
+        } else {
+            ".container{width:100%}"
+        };
+        assert_eq!(got, want);
     }
 }

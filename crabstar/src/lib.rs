@@ -10,7 +10,42 @@ pub use router::{BUNDLER, css_url};
 #[macro_export]
 macro_rules! include_css {
     ($css_file:expr) => {
-        ($crate::BUNDLER).add(include_str!($css_file));
+        ($crate::BUNDLER).add({
+            if cfg!(debug_assertions) {
+                let __manifest_dir = ::std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+                let mut __file_path = ::std::path::PathBuf::from(file!());
+                __file_path.pop();
+
+                let __manifest_components: Vec<_> = __manifest_dir
+                    .components()
+                    .filter_map(|c| match c {
+                        ::std::path::Component::Normal(name) => Some(name),
+                        _ => None,
+                    })
+                    .collect();
+
+                let mut __filtered_path = ::std::path::PathBuf::new();
+                for __component in __file_path.components() {
+                    match __component {
+                        ::std::path::Component::Normal(name) => {
+                            if !__manifest_components.iter().any(|&mc| mc == name) {
+                                __filtered_path.push(__component);
+                            }
+                        }
+                        _ => __filtered_path.push(__component),
+                    }
+                }
+
+                format!(
+                    "{}/{}/{}",
+                    __manifest_dir.display(),
+                    __filtered_path.display(),
+                    $css_file
+                )
+            } else {
+                include_str!($css_file).to_owned()
+            }
+        });
     };
 }
 
