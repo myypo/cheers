@@ -1,4 +1,8 @@
-use std::{convert::Infallible, path::Path};
+use std::{
+    convert::Infallible,
+    path::Path,
+    time::{Duration, Instant},
+};
 
 use axum::{
     Router,
@@ -68,6 +72,8 @@ pub async fn inject_script(req: Request<Body>, next: Next) -> Response<Body> {
     res
 }
 
+static DEBOUNCE: Duration = Duration::from_millis(50);
+
 pub fn router<S>() -> Router<S>
 where
     S: Clone + Send + Sync + 'static,
@@ -76,6 +82,8 @@ where
 
     let fs_tx = tx.clone();
     tokio::task::spawn_blocking(move || {
+        let mut last_update = Instant::now();
+
         let mut watcher: RecommendedWatcher = match Watcher::new(
             move |res: Result<notify::Event, notify::Error>| {
                 let Ok(e) = res else {
@@ -93,6 +101,11 @@ where
                 | notify::EventKind::Modify(_)
                 | notify::EventKind::Remove(_) = &e.kind
                 {
+                    let now = Instant::now();
+                    if now.duration_since(last_update) < DEBOUNCE {
+                        return;
+                    }
+                    last_update = now;
                     let _ = fs_tx.send(());
                 };
             },
