@@ -1,3 +1,4 @@
+mod datastar;
 mod named_field;
 mod opts;
 mod signals;
@@ -10,7 +11,7 @@ use syn::{Attribute, Data, DeriveInput, Error, Ident, LifetimeParam, Path, Visib
 
 use crate::{
     complete::complete_ident,
-    fragment::{named_field::NamedField, signals::signals_tokens},
+    fragment::{datastar::datastar_fn, named_field::NamedField, signals::signals_tokens},
 };
 
 struct SupportedAttributes;
@@ -308,6 +309,8 @@ pub fn expand_attr(params: Result<Params, Error>) -> Result<TokenStream, Error> 
         }
     };
 
+    let datastar_fn = datastar_fn()?;
+
     Ok(quote! {
         #(#attrs)*
         #[derive(::askama::Template)]
@@ -340,6 +343,10 @@ pub fn expand_attr(params: Result<Params, Error>) -> Result<TokenStream, Error> 
         }
 
         #into_suspense_impl
+
+        impl #lifetimes #ident #lifetimes {
+            #datastar_fn
+        }
 
         #signals
     })

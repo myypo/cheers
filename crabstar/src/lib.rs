@@ -51,8 +51,6 @@ macro_rules! include_css {
     };
 }
 
-pub const DATASTAR: &str = include_str!("../vendor/datastar.js");
-
 /// Deserialization helpers used by proc-macros
 pub mod de;
 

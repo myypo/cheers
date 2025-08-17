@@ -1,0 +1,3 @@
+[submodule "bundlestar/vendor/datastar"]
+	path = bundlestar/vendor/datastar
+	url = https://github.com/starfederation/datastar.git

@@ -14,7 +14,7 @@ use axum::{
 use futures::StreamExt;
 use notify::{RecommendedWatcher, Watcher};
 
-const SCRIPT: &str = "./script.html";
+const SCRIPT: &str = include_str!("./script.html");
 
 pub async fn inject_script(req: Request<Body>, next: Next) -> Response<Body> {
     let res = next.run(req).await;

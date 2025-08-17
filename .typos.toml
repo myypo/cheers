@@ -1,2 +1,2 @@
 [files]
-extend-exclude = ["crabstar_macros/vendor/datastar.js"]
+extend-exclude = ["bundlestar/vendor/datastar"]

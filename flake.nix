@@ -23,15 +23,14 @@
           inputs.nixpkgs.lib.genAttrs supportedSystems (
             system:
             f {
+              self = inputs.self;
               pkgs =
                 let
                   overlays = [ inputs.fenix.overlays.default ];
                 in
                 import inputs.nixpkgs { inherit overlays system; };
-
               pre-commit-hooks = inputs.pre-commit-hooks.lib.${system}.run;
               pre-commit-check = inputs.self.checks.${system}.pre-commit-check;
-
               rust-toolchain = (
                 with inputs;
                 with fenix;
@@ -51,6 +50,7 @@
     {
       devShells = forEachSupportedSystem (
         {
+          self,
           pkgs,
           rust-toolchain,
           pre-commit-check,
@@ -84,7 +84,13 @@
               )
             ];
 
-            inherit (pre-commit-check) shellHook;
+            shellHook = ''
+              ${pre-commit-check.shellHook}
+              if [ ! -d ${self}/bundlestar/vendor/datastar ]; then
+                cd ${self}
+                git submodule update --init --recursive
+              fi
+            '';
             buildInputs = pre-commit-check.enabledPackages;
           };
         }
@@ -126,10 +132,9 @@
                 typos = {
                   enable = true;
                   stages = default_stages ++ [ "commit-msg" ];
-                  # Specifying configPath seems broken - the excude is not respected
-                  # settings.configPath = "./.typos.toml";
+                  # Specifying configPath seems broken - the exclude is not respected
                   excludes = [
-                    "crabstar/vendor/datastar.js"
+                    "bundlestar/vendor/datastar"
                   ];
                 };
                 taplo.enable = true;
@@ -154,42 +159,6 @@
                 };
               };
             };
-        }
-      );
-
-      packages = forEachSupportedSystem (
-        { pkgs, ... }:
-        {
-          datastar = pkgs.callPackage (
-            {
-              stdenv,
-              fetchFromGitHub,
-              esbuild,
-            }:
-            stdenv.mkDerivation (finalAttrs: {
-              pname = "datastar";
-              version = "1.0.0-RC.4";
-
-              src = fetchFromGitHub {
-                owner = "starfederation";
-                repo = "datastar";
-                tag = "v${finalAttrs.version}";
-                hash = "sha256-zGpjhy3t2S9vlAgMLSgUldv5YJQ+t0e0znWmu72ckTw=";
-              };
-
-              nativeBuildInputs = [
-                esbuild
-              ];
-
-              buildPhase = ''
-                runHook preBuild
-
-                esbuild library/src/bundles/datastar.ts --bundle --minify --format=esm --outfile=$out/datastar.js
-
-                runHook postBuild
-              '';
-            })
-          ) { };
         }
       );
     };
