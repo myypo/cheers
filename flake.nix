@@ -1,5 +1,8 @@
 {
   inputs = {
+    # Needed due to vendoring datastar
+    self.submodules = true;
+
     nixpkgs.url = "nixpkgs/nixos-unstable";
 
     fenix.url = "github:nix-community/fenix";
@@ -84,13 +87,7 @@
               )
             ];
 
-            shellHook = ''
-              ${pre-commit-check.shellHook}
-              if [ ! -d ${self}/bundlestar/vendor/datastar ]; then
-                cd ${self}
-                git submodule update --init --recursive
-              fi
-            '';
+            inherit (pre-commit-check) shellHook;
             buildInputs = pre-commit-check.enabledPackages;
           };
         }
