@@ -1,114 +1,40 @@
 <script>
 (function() {
-  let source = null;
-  let reconnectAttempts = 0;
-  let maxReconnectAttempts = 5;
-  let reconnectDelay = 1000; 
-  let maxReconnectDelay = 30000; 
-  let isPageVisible = !document.hidden;
-  let reconnectTimer = null;
-  
-  function getReconnectDelay() {
-    return Math.min(reconnectDelay * Math.pow(2, reconnectAttempts), maxReconnectDelay);
-  }
+  let attempts = 0;
 
   function connect() {
-    if (source && source.readyState !== EventSource.CLOSED) {
-      return; 
-    }
-
-    source = new EventSource("/crabstar-dev/live-reload");
+    const source = new EventSource("/crabstar-dev/live-reload");
 
     source.onopen = function() {
+      if (attempts !== 0) {
+          window.location.reload();
+      }
       console.log("Crabstar live-reload connected");
-      reconnectAttempts = 0; 
-      reconnectDelay = 1000;
+      attempts = 0;
     };
 
     source.onmessage = function(event) {
       if (event.data === "reload") {
         console.log("Crabstar reload event received, reloading page...");
-        cleanup(); 
         window.location.reload();
       }
     };
 
     source.onerror = function(err) {
       console.error("Crabstar live-reload connection error:", err);
-      
-      if (source.readyState === EventSource.CLOSED) {
-        scheduleReconnect();
+      if (attempts >= 30) {
+        window.location.reload();
       }
+
+      const delay = Math.min(50 * Math.pow(1.25, attempts), 1000);
+      source.close();
+      attempts++;
+      setTimeout(() => {
+        connect();
+      }, delay);
     };
   }
 
-  function scheduleReconnect() {
-    if (reconnectAttempts >= maxReconnectAttempts) {
-      console.warn("Crabstar live-reload: Max reconnection attempts reached");
-      return;
-    }
-
-    if (!isPageVisible) {
-      console.log("Crabstar live-reload: Page not visible, skipping reconnect");
-      return;
-    }
-
-    const delay = getReconnectDelay();
-    console.log(`Crabstar live-reload: Reconnecting in ${delay}ms (attempt ${reconnectAttempts + 1})`);
-    
-    reconnectTimer = setTimeout(() => {
-      reconnectAttempts++;
-      connect();
-    }, delay);
-  }
-
-  function cleanup() {
-    if (reconnectTimer) {
-      clearTimeout(reconnectTimer);
-      reconnectTimer = null;
-    }
-    
-    if (source) {
-      source.close();
-      source = null;
-    }
-  }
-  
-  document.addEventListener('visibilitychange', function() {
-    isPageVisible = !document.hidden;
-    
-    if (isPageVisible) {
-      if (!source || source.readyState === EventSource.CLOSED) {
-        console.log("Crabstar live-reload: Page visible, reconnecting...");
-        reconnectAttempts = 0; 
-        connect();
-      }
-    } else {
-      console.log("Crabstar live-reload: Page hidden, cleaning up connection");
-      cleanup();
-    }
-  });
-
-  window.addEventListener('beforeunload', cleanup);
-  window.addEventListener('pagehide', cleanup);
-  
   connect();
-  
-  window.crabstarLiveReload = {
-    cleanup: cleanup,
-    reconnect: function() {
-      cleanup();
-      reconnectAttempts = 0;
-      connect();
-    },
-    status: function() {
-      return {
-        connected: source && source.readyState === EventSource.OPEN,
-        readyState: source ? source.readyState : 'disconnected',
-        reconnectAttempts: reconnectAttempts,
-        isPageVisible: isPageVisible
-      };
-    }
-  };
 })();
 </script>
