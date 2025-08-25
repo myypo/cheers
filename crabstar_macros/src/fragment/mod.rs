@@ -1,28 +1,50 @@
 mod datastar;
-mod named_field;
-mod opts;
-mod signals;
 
 use std::fmt::{Display, Formatter};
 
 use proc_macro2::TokenStream;
 use quote::quote;
-use syn::{Attribute, Data, DeriveInput, Error, Ident, LifetimeParam, Path, Visibility};
+use syn::{Attribute, Data, DeriveInput, Error, Fields, Ident, Path, Visibility};
 
 use crate::{
-    complete::complete_ident,
-    fragment::{datastar::datastar_fn, named_field::NamedField, signals::signals_tokens},
+    fragment::datastar::datastar_fn,
+    helpers::{
+        DelayedField, NamedField, complete_ident, lifetimes, partition_delayed_immediate_fields,
+    },
 };
 
-struct SupportedAttributes;
+pub struct SupportedAttributes;
 
 impl SupportedAttributes {
     const SUSPENSE: &str = "suspense";
 
     const LIST: &[&str] = &[Self::SUSPENSE];
 
-    fn suspense(path: &Path) -> bool {
+    pub fn suspense(path: &Path) -> bool {
         path.is_ident(Self::SUSPENSE)
+    }
+
+    fn validate(fields: &Fields) -> Result<(), Error> {
+        fields
+            .iter()
+            .map(|f| f.attrs.iter())
+            .flatten()
+            .find_map(|f| {
+                f.path()
+                    .get_ident()
+                    .map(|ident| ident.to_string())
+                    .filter(|name| !SupportedAttributes::LIST.contains(&name.as_str()))
+                    .map(|name| {
+                        Error::new_spanned(
+                            f,
+                            format!(
+                                "Unknown attribute `{name}`. Supported attributes: {}",
+                                SupportedAttributes::LIST.join(", ")
+                            ),
+                        )
+                    })
+            })
+            .map_or(Ok(()), Err)
     }
 }
 
@@ -30,39 +52,6 @@ impl Display for SupportedAttributes {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", Self::LIST.join(", "))
     }
-}
-
-pub struct DelayedField {
-    name: Ident,
-    future: Ident,
-    output: Ident,
-}
-
-fn delayed_fields_from_named(fields: Vec<NamedField>) -> Vec<DelayedField> {
-    fields
-        .into_iter()
-        .enumerate()
-        .map(|(i, f)| {
-            let name = f.ident;
-            let future = Ident::new(&format!("F{i}"), name.span());
-
-            let full_path = f
-                .ty_path
-                .path
-                .segments
-                .iter()
-                .map(|s| s.ident.to_string())
-                .collect::<Vec<String>>()
-                .join("::");
-            let output = Ident::new(&format!("{}Complete", full_path), name.span());
-
-            DelayedField {
-                name,
-                future,
-                output,
-            }
-        })
-        .collect()
 }
 
 fn suspense_body(delayed_fields: &[DelayedField]) -> TokenStream {
@@ -115,7 +104,6 @@ pub struct Params {
     boxed_delayed_ident: Ident,
     pub delayed_fields: Vec<DelayedField>,
     complete_ident: Ident,
-    signals: TokenStream,
     lifetimes: TokenStream,
 }
 
@@ -133,28 +121,11 @@ pub fn params(args: TokenStream, input: DeriveInput) -> Result<Params, Error> {
             ));
         }
     };
-    let lifetimes = {
-        let lifetimes: TokenStream = input
-            .generics
-            .lifetimes()
-            .map(|LifetimeParam { lifetime, .. }| quote! { #lifetime })
-            .collect();
-
-        if lifetimes.is_empty() {
-            quote! {}
-        } else {
-            quote! { < #lifetimes > }
-        }
-    };
+    SupportedAttributes::validate(&data_struct.fields)?;
+    let lifetimes = lifetimes(&input.generics);
 
     let named_fields = NamedField::from_fields(data_struct.fields)?;
-    let (delayed_fields, immediate_fields): (Vec<NamedField>, Vec<NamedField>) =
-        named_fields.into_iter().partition(|f| {
-            f.attrs
-                .iter()
-                .any(|a| SupportedAttributes::suspense(a.path()))
-        });
-    let delayed_fields = delayed_fields_from_named(delayed_fields);
+    let (delayed_fields, immediate_fields) = partition_delayed_immediate_fields(named_fields);
 
     let generic_params: Vec<TokenStream> = delayed_fields
         .iter()
@@ -162,8 +133,6 @@ pub fn params(args: TokenStream, input: DeriveInput) -> Result<Params, Error> {
             quote! { #future }
         })
         .collect();
-
-    let signals = signals_tokens(&ident, &immediate_fields, &lifetimes)?;
 
     let delayed_ident = Ident::new(&format!("{ident}Delayed"), ident.span());
 
@@ -181,7 +150,6 @@ pub fn params(args: TokenStream, input: DeriveInput) -> Result<Params, Error> {
         boxed_delayed_ident,
         delayed_fields,
         complete_ident,
-        signals,
         lifetimes,
     })
 }
@@ -198,7 +166,6 @@ pub fn expand_attr(params: Result<Params, Error>) -> Result<TokenStream, Error> 
         boxed_delayed_ident,
         delayed_fields,
         complete_ident,
-        signals,
         lifetimes,
     } = params?;
 
@@ -343,7 +310,5 @@ pub fn expand_attr(params: Result<Params, Error>) -> Result<TokenStream, Error> 
         impl #lifetimes #ident #lifetimes {
             #datastar_fn
         }
-
-        #signals
     })
 }

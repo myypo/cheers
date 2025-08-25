@@ -2,7 +2,10 @@ pub use crabstar_macros::page;
 
 pub mod fragment;
 pub use crabstar_macros::fragment;
-pub use fragment::Fragment;
+
+mod signal;
+pub use crabstar_macros::signal;
+pub use signal::Signal;
 
 pub mod router;
 

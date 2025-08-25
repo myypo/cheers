@@ -2,7 +2,7 @@ use proc_macro2::TokenStream;
 use quote::quote;
 use syn::{DeriveInput, Error, LifetimeParam};
 
-use crate::{complete::complete_ident, fragment};
+use crate::{helpers::complete_ident, fragment};
 
 fn into_response_impl(p: &Result<fragment::Params, Error>) -> TokenStream {
     if p.as_ref().is_ok_and(|p| p.delayed_fields.is_empty()) {

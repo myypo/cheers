@@ -1,17 +1,17 @@
-use crabstar::{Fragment, fragment};
+use crabstar::{Signal, signal};
 use serde::{Deserialize, Serialize};
 
-#[fragment(path = "empty.html")]
+#[signal]
 #[derive(Serialize, Deserialize, Debug, PartialEq)]
 struct Subscription {
     plan: String,
     active: bool,
 }
 
-#[fragment(path = "empty.html")]
+#[signal]
 #[derive(Default, Serialize, Deserialize, Debug, PartialEq)]
 struct Profile {
-    #[signal]
+    #[react]
     subscription: Option<Subscription>,
 }
 

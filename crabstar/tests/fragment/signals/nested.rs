@@ -1,30 +1,30 @@
-use crabstar::{Fragment, fragment};
+use crabstar::{Signal, signal};
 use serde::{Deserialize, Serialize};
 
-#[fragment(path = "empty.html")]
+#[signal]
 #[derive(Clone, Default, Debug, PartialEq, Deserialize, Serialize)]
 struct User {
-    #[signal]
+    #[react]
     name: String,
     registered: bool,
-    #[signal]
+    #[react]
     achievements: Vec<Achievement>,
 }
 
-#[fragment(path = "empty.html")]
+#[signal]
 #[derive(Debug, PartialEq, Clone, Deserialize, Serialize)]
 struct Achievement {
     name: String,
     points: Option<i32>,
 }
 
-#[fragment(path = "empty.html")]
+#[signal]
 #[derive(Debug, Default, PartialEq, Clone, Deserialize, Serialize)]
 struct Header {
     tip: String,
-    #[signal(granular)]
+    #[react(granular)]
     user: Option<User>,
-    #[signal]
+    #[react]
     avatar: String,
 }
 

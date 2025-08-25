@@ -1,11 +1,11 @@
 use syn::{Error, Meta, punctuated::Punctuated, spanned::Spanned};
 
 #[derive(Default)]
-pub struct SignalFieldAttr {
+pub struct ReactFieldAttr {
     pub granular: bool,
 }
 
-impl TryFrom<&Meta> for SignalFieldAttr {
+impl TryFrom<&Meta> for ReactFieldAttr {
     type Error = Error;
 
     fn try_from(value: &Meta) -> Result<Self, Self::Error> {
@@ -15,7 +15,7 @@ impl TryFrom<&Meta> for SignalFieldAttr {
             _ => {
                 return Err(Error::new(
                     value.span(),
-                    "Unsupported signal attribute format. Expected `#[signal]` or `#[signal(...)]`",
+                    "Unsupported signal attribute format. Expected `#[react]` or `#[react(...)]`",
                 ));
             }
         };

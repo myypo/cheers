@@ -10,9 +10,7 @@ struct PostContent<'a> {
 #[page(path = "nested_post.html")]
 #[derive(Deserialize, Serialize, Default)]
 struct Post<'a> {
-    #[signal]
     title: &'a str,
-    #[signal]
     content: PostContent<'a>,
 }
 
