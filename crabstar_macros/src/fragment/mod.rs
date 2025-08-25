@@ -123,10 +123,6 @@ pub fn params(args: TokenStream, input: DeriveInput) -> Result<Params, Error> {
     let ident = input.ident;
     let vis = input.vis.clone();
     let attrs = input.attrs;
-    let derives: Vec<&Attribute> = attrs
-        .iter()
-        .filter(|attr| attr.path().is_ident("derive"))
-        .collect();
 
     let data_struct = match input.data {
         Data::Struct(fields) => fields,
@@ -167,7 +163,7 @@ pub fn params(args: TokenStream, input: DeriveInput) -> Result<Params, Error> {
         })
         .collect();
 
-    let signals = signals_tokens(&ident, &immediate_fields, &derives, &lifetimes)?;
+    let signals = signals_tokens(&ident, &immediate_fields, &lifetimes)?;
 
     let delayed_ident = Ident::new(&format!("{ident}Delayed"), ident.span());
 

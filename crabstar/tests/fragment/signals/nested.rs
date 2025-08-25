@@ -42,9 +42,7 @@ fn converts_nested_signals_to_json() {
     ]);
     let avatar = "dog".to_owned();
 
-    let got = Header::signals()
-        .user(Some(user.clone()))
-        .avatar(avatar.clone());
+    let got = Header::signals().user(Some(user)).avatar(avatar.clone());
 
     let want = r#"
         {
@@ -64,8 +62,11 @@ fn converts_nested_signals_to_json() {
             "avatar": "dog"
         }
         "#;
-    assert_eq!(got.clone(), serde_json::from_str(want).unwrap());
+    let want: HeaderSignals = serde_json::from_str(want).unwrap();
 
-    assert_eq!(got.user.unwrap().unwrap(), user);
+    let got_user = got.user.unwrap().unwrap();
+    let want_user = want.user.unwrap().unwrap();
+    assert_eq!(got_user.name, want_user.name);
+    assert_eq!(got_user.achievements, want_user.achievements);
     assert_eq!(got.avatar.unwrap(), avatar);
 }

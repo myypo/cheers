@@ -2,7 +2,7 @@ use askama::Template;
 use crabstar::page;
 use serde::{Deserialize, Serialize};
 
-#[derive(Clone, Deserialize, Serialize, Default)]
+#[derive(Clone, Deserialize, Serialize, Default, Debug)]
 struct PostContent<'a> {
     rating: &'a str,
 }

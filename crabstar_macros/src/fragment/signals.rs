@@ -1,6 +1,6 @@
 use proc_macro2::TokenStream;
 use quote::quote;
-use syn::{Attribute, Error, GenericArgument, Ident, PathArguments, Type, TypePath, parse_quote};
+use syn::{Error, GenericArgument, Ident, PathArguments, Type, TypePath, parse_quote};
 
 use crate::fragment::{NamedField, opts::SignalFieldAttr};
 
@@ -95,7 +95,6 @@ fn signal_fields(fields: &[NamedField]) -> Result<Vec<SignalField>, Error> {
 pub fn signals_tokens(
     ident: &Ident,
     fields: &[NamedField],
-    derives: &[&Attribute],
     lifetimes: &TokenStream,
 ) -> Result<TokenStream, Error> {
     let signal_fields = signal_fields(fields)?;
@@ -110,7 +109,7 @@ pub fn signals_tokens(
     let signal_methods_tokens = signal_methods_tokens(&signal_fields);
 
     let signal_struct_tokens = quote! {
-        #(#derives)*
+        #[derive(::serde::Serialize, ::serde::Deserialize, ::std::default::Default)]
         pub struct #signal_ident #lifetimes {
             #(#signal_fields_tokens),*
         }
