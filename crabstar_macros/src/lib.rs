@@ -2,16 +2,18 @@ use proc_macro::TokenStream;
 use syn::{DeriveInput, parse_macro_input};
 
 mod helpers;
+mod shared;
 
-mod fragment;
 mod page;
 mod signal;
+mod suspense;
 
 #[proc_macro_attribute]
-pub fn fragment(args: TokenStream, input: TokenStream) -> TokenStream {
+pub fn suspense(args: TokenStream, input: TokenStream) -> TokenStream {
     let input = parse_macro_input!(input as DeriveInput);
-    let params = fragment::params(args.into(), input);
-    fragment::expand_attr(params)
+    let params = suspense::params(args.into());
+    let shared = shared::shared(&input);
+    suspense::expand_attr(params, shared)
         .unwrap_or_else(syn::Error::into_compile_error)
         .into()
 }

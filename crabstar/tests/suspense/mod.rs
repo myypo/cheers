@@ -1,39 +1,38 @@
 use axum::response::IntoResponse;
-use crabstar::fragment::suspense::Suspense;
-use crabstar::{fragment, page};
+use crabstar::{page, suspense};
 use futures::StreamExt;
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::{Barrier, Mutex};
 
-#[fragment(path = "post_content.html")]
-pub struct PostContent {
-    content: String,
-}
-
-#[fragment(path = "post.html")]
-pub struct Post {
-    title: String,
-    #[suspense]
-    content: PostContent,
-}
-
-#[fragment(path = "status.html")]
-pub struct Status {
-    outages_today: i32,
-}
-
-#[page(path = "home.html")]
-struct HomePage {
-    user: String,
-    #[suspense]
-    post: Post,
-    #[suspense]
-    status: Status,
-}
-
 #[tokio::test]
 async fn can_render_concurrently_in_order() {
+    #[suspense(path = "post_content.html")]
+    pub struct PostContent {
+        content: String,
+    }
+
+    #[suspense(path = "post.html")]
+    pub struct Post {
+        title: String,
+        #[suspense]
+        content: PostContent,
+    }
+
+    #[suspense(path = "status.html")]
+    pub struct Status {
+        outages_today: i32,
+    }
+
+    #[page(path = "home.html", suspense)]
+    struct HomePage {
+        user: String,
+        #[suspense]
+        post: Post,
+        #[suspense]
+        status: Status,
+    }
+
     let user = "myypo".to_owned();
     let title = "Hello".to_owned();
     let content = "World".to_owned();

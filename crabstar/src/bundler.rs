@@ -148,7 +148,7 @@ mod tests {
 
     #[test]
     fn can_include_css_in_workspace() {
-        include_css!("../tests/css/hello.css");
+        include_css!("../tests/assets/css/hello.css");
 
         let got = BUNDLER.bundle().unwrap();
         let want = if cfg!(debug_assertions) {

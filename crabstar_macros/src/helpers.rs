@@ -10,19 +10,19 @@ pub fn complete_ident(ident: &impl Display) -> Ident {
     Ident::new(&format!("{ident}Complete"), Span::call_site())
 }
 
-pub struct NamedField {
-    pub ident: Ident,
-    pub ty: Type,
-    pub ty_path: TypePath,
-    pub attrs: Vec<Attribute>,
-    pub vis: Visibility,
+pub struct NamedField<'a> {
+    pub ident: &'a Ident,
+    pub ty: &'a Type,
+    pub ty_path: &'a TypePath,
+    pub attrs: &'a [Attribute],
+    pub vis: &'a Visibility,
 }
 
-impl NamedField {
-    pub fn from_fields(fields: Fields) -> Result<Vec<Self>, Error> {
+impl<'a> NamedField<'a> {
+    pub fn from_fields(fields: &'a Fields) -> Result<Vec<Self>, Error> {
         let named_fields = fields
             .into_iter()
-            .map(|f| match f.ident {
+            .map(|f| match &f.ident {
                 Some(ident) => {
                     let ty = match f.ty {
                         Type::Reference(ref type_ref) => &*type_ref.elem,
@@ -37,10 +37,10 @@ impl NamedField {
 
                     Ok(NamedField {
                         ident,
-                        ty: f.ty.clone(),
-                        ty_path: type_path.clone(),
-                        attrs: f.attrs,
-                        vis: f.vis,
+                        ty: &f.ty,
+                        ty_path: type_path,
+                        attrs: &f.attrs,
+                        vis: &f.vis,
                     })
                 }
                 None => Err(Error::new(f.span(), "Tuple structs are not supported")),
@@ -64,8 +64,8 @@ pub fn lifetimes(generics: &Generics) -> TokenStream {
     }
 }
 
-pub struct DelayedField {
-    pub name: Ident,
+pub struct DelayedField<'a> {
+    pub name: &'a Ident,
     pub future: Ident,
     pub output: Ident,
 }
@@ -103,7 +103,7 @@ pub fn partition_delayed_immediate_fields(
     let (delayed_fields, immediate_fields) = named_fields.into_iter().partition(|f| {
         f.attrs
             .iter()
-            .any(|a| crate::fragment::SupportedAttributes::suspense(a.path()))
+            .any(|a| crate::shared::SupportedAttributes::delayed(a.path()))
     });
 
     (delayed_fields_from_named(delayed_fields), immediate_fields)

@@ -1,25 +1,23 @@
+mod datastar;
+mod params;
+
 use proc_macro2::TokenStream;
 use quote::quote;
-use syn::{DeriveInput, Error, LifetimeParam};
+use syn::{Data, DeriveInput, Error, Ident, Lifetime, LifetimeParam};
 
-use crate::{helpers::complete_ident, fragment};
+use crate::{
+    helpers::{NamedField, complete_ident},
+    page::{datastar::datastar_fn, params::params},
+    suspense,
+};
 
-fn into_response_impl(p: &Result<fragment::Params, Error>) -> TokenStream {
-    if p.as_ref().is_ok_and(|p| p.delayed_fields.is_empty()) {
-        quote! {
-            use ::askama::Template;
-            use ::axum::response::IntoResponse;
-
-            let body = match self.render() {
-                Ok(body) => body,
-                Err(err) => {
-                    return ::axum::http::StatusCode::INTERNAL_SERVER_ERROR.into_response();
-                }
-            };
-
-            (::axum::http::StatusCode::OK, ::axum::response::Html(body)).into_response()
-        }
-    } else {
+fn into_response_impl(
+    ident: &Ident,
+    lifetimes: &TokenStream,
+    code: &TokenStream,
+    suspense: bool,
+) -> TokenStream {
+    let body = if suspense {
         let stream_impl = quote! {
             struct UnboundedReceiverStream<T>(::tokio::sync::mpsc::UnboundedReceiver<T>);
             impl<T> ::futures::stream::Stream for UnboundedReceiverStream<T> {
@@ -43,9 +41,10 @@ fn into_response_impl(p: &Result<fragment::Params, Error>) -> TokenStream {
             let body = {
                 let (tx, rx) = ::tokio::sync::mpsc::unbounded_channel();
                 ::tokio::spawn(async move {
+                    use ::crabstar::suspense::Suspense;
                     if let Err(e) = self.suspense(&tx).await {
                         let e = ::std::boxed::Box::new(e);
-                        let e = ::crabstar::fragment::suspense::Error::Stream(e);
+                        let e = ::crabstar::suspense::Error::Stream(e);
                         let _ = tx.send(Err(e));
                     }
                 });
@@ -55,7 +54,7 @@ fn into_response_impl(p: &Result<fragment::Params, Error>) -> TokenStream {
             let body = ::axum::body::Body::from_stream(body);
 
             match ::axum::response::Response::builder()
-                .status(::axum::http::StatusCode::OK)
+                .status(#code)
                 .header("Content-Type", "text/html; charset=UTF-8")
                 .header("X-Content-Type-Options", "nosniff")
                 .header("Cache-Control", "no-transform")
@@ -67,17 +66,59 @@ fn into_response_impl(p: &Result<fragment::Params, Error>) -> TokenStream {
                 }
             }
         }
+    } else {
+        quote! {
+            use ::askama::Template;
+            use ::axum::response::IntoResponse;
+
+            let body = match self.render() {
+                Ok(body) => body,
+                Err(err) => {
+                    return ::axum::http::StatusCode::INTERNAL_SERVER_ERROR.into_response();
+                }
+            };
+
+            (#code, ::axum::response::Html(body)).into_response()
+        }
+    };
+
+    let ident = if suspense {
+        &complete_ident(ident)
+    } else {
+        ident
+    };
+
+    let ref_impl = if suspense {
+        quote! {}
+    } else {
+        quote! {
+            impl #lifetimes ::axum::response::IntoResponse for &#ident #lifetimes {
+                fn into_response(self) -> ::axum::response::Response {
+                    #body
+                }
+            }
+        }
+    };
+
+    quote! {
+        impl #lifetimes ::axum::response::IntoResponse for #ident #lifetimes {
+            fn into_response(self) -> ::axum::response::Response {
+                #body
+            }
+        }
+
+        #ref_impl
     }
 }
 
 pub fn expand_attr(args: TokenStream, input: DeriveInput) -> Result<TokenStream, Error> {
     let ident = &input.ident;
-    let complete_ident = complete_ident(ident);
+
     let lifetimes = {
-        let lifetimes: Vec<TokenStream> = input
+        let lifetimes: Vec<&Lifetime> = input
             .generics
             .lifetimes()
-            .map(|LifetimeParam { lifetime, .. }| quote! { #lifetime })
+            .map(|LifetimeParam { lifetime, .. }| lifetime)
             .collect();
 
         if lifetimes.is_empty() {
@@ -87,18 +128,58 @@ pub fn expand_attr(args: TokenStream, input: DeriveInput) -> Result<TokenStream,
         }
     };
 
-    let fragment_params = fragment::params(args, input);
-    let into_response_impl = into_response_impl(&fragment_params);
+    let params = params(args)?;
+    let into_response_impl = into_response_impl(ident, &lifetimes, &params.status, params.suspense);
 
-    let fragment = fragment::expand_attr(fragment_params)?;
+    let input_struct = if params.suspense {
+        let shared = crate::shared::shared(&input)?;
+        suspense::expand_attr(Ok(params.into()), Ok(shared))?
+    } else {
+        let path = params.path;
+        let attrs = &input.attrs;
+        let vis = &input.vis;
+
+        let data_struct = match &input.data {
+            Data::Struct(fields) => fields,
+            _ => {
+                return Err(Error::new_spanned(
+                    ident,
+                    "Page can be created only from regular structs with named fields",
+                ));
+            }
+        };
+        let fields = NamedField::from_fields(&data_struct.fields)?;
+        let fields = fields.iter().map(
+            |NamedField {
+                 ident,
+                 ty,
+                 attrs,
+                 vis,
+                 ..
+             }| {
+                quote! { #(#attrs)* #vis #ident: #ty }
+            },
+        );
+
+        quote! {
+            #(#attrs)*
+            #[derive(::askama::Template)]
+            #[template(path = #path)]
+            #vis struct #ident #lifetimes {
+                #(#fields,)*
+            }
+        }
+    };
+
+    let datastar_fn = datastar_fn()?;
 
     Ok(quote! {
-        #fragment
+        #input_struct
 
-        impl #lifetimes ::axum::response::IntoResponse for #complete_ident #lifetimes {
-            fn into_response(self) -> ::axum::response::Response {
-                #into_response_impl
-            }
+        #into_response_impl
+
+        impl #lifetimes #ident #lifetimes {
+            #datastar_fn
         }
     })
 }

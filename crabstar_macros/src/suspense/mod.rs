@@ -1,58 +1,14 @@
-mod datastar;
-
-use std::fmt::{Display, Formatter};
+mod params;
+pub use params::{Params, params};
 
 use proc_macro2::TokenStream;
 use quote::quote;
-use syn::{Attribute, Data, DeriveInput, Error, Fields, Ident, Path, Visibility};
+use syn::Error;
 
 use crate::{
-    fragment::datastar::datastar_fn,
-    helpers::{
-        DelayedField, NamedField, complete_ident, lifetimes, partition_delayed_immediate_fields,
-    },
+    helpers::{DelayedField, NamedField},
+    shared::Shared,
 };
-
-pub struct SupportedAttributes;
-
-impl SupportedAttributes {
-    const SUSPENSE: &str = "suspense";
-
-    const LIST: &[&str] = &[Self::SUSPENSE];
-
-    pub fn suspense(path: &Path) -> bool {
-        path.is_ident(Self::SUSPENSE)
-    }
-
-    fn validate(fields: &Fields) -> Result<(), Error> {
-        fields
-            .iter()
-            .map(|f| f.attrs.iter())
-            .flatten()
-            .find_map(|f| {
-                f.path()
-                    .get_ident()
-                    .map(|ident| ident.to_string())
-                    .filter(|name| !SupportedAttributes::LIST.contains(&name.as_str()))
-                    .map(|name| {
-                        Error::new_spanned(
-                            f,
-                            format!(
-                                "Unknown attribute `{name}`. Supported attributes: {}",
-                                SupportedAttributes::LIST.join(", ")
-                            ),
-                        )
-                    })
-            })
-            .map_or(Ok(()), Err)
-    }
-}
-
-impl Display for SupportedAttributes {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", Self::LIST.join(", "))
-    }
-}
 
 fn suspense_body(delayed_fields: &[DelayedField]) -> TokenStream {
     let immediate_field = if delayed_fields.is_empty() {
@@ -62,7 +18,7 @@ fn suspense_body(delayed_fields: &[DelayedField]) -> TokenStream {
     };
     let immediate_call = quote! {
         use ::askama::Template;
-        tx.send(#immediate_field.render().map_err(|e| ::crabstar::fragment::suspense::Error::Render(e)))
+        tx.send(#immediate_field.render().map_err(|e| ::crabstar::suspense::Error::Render(e)))
     };
 
     if delayed_fields.is_empty() {
@@ -82,6 +38,7 @@ fn suspense_body(delayed_fields: &[DelayedField]) -> TokenStream {
         quote! {
             #immediate_call?;
 
+            use ::crabstar::suspense::Suspense;
             #(#calls)*
 
             ::futures::future::join_all(
@@ -93,70 +50,12 @@ fn suspense_body(delayed_fields: &[DelayedField]) -> TokenStream {
     }
 }
 
-pub struct Params {
-    args: TokenStream,
-    ident: Ident,
-    vis: Visibility,
-    attrs: Vec<Attribute>,
-    generic_params: Vec<TokenStream>,
-    immediate_fields: Vec<NamedField>,
-    delayed_ident: Ident,
-    boxed_delayed_ident: Ident,
-    pub delayed_fields: Vec<DelayedField>,
-    complete_ident: Ident,
-    lifetimes: TokenStream,
-}
-
-pub fn params(args: TokenStream, input: DeriveInput) -> Result<Params, Error> {
-    let ident = input.ident;
-    let vis = input.vis.clone();
-    let attrs = input.attrs;
-
-    let data_struct = match input.data {
-        Data::Struct(fields) => fields,
-        _ => {
-            return Err(Error::new_spanned(
-                ident,
-                "Fragment can be created only from regular structs with named fields",
-            ));
-        }
-    };
-    SupportedAttributes::validate(&data_struct.fields)?;
-    let lifetimes = lifetimes(&input.generics);
-
-    let named_fields = NamedField::from_fields(data_struct.fields)?;
-    let (delayed_fields, immediate_fields) = partition_delayed_immediate_fields(named_fields);
-
-    let generic_params: Vec<TokenStream> = delayed_fields
-        .iter()
-        .map(|DelayedField { future, .. }| {
-            quote! { #future }
-        })
-        .collect();
-
-    let delayed_ident = Ident::new(&format!("{ident}Delayed"), ident.span());
-
-    let complete_ident = complete_ident(&ident);
-    let boxed_delayed_ident = Ident::new(&format!("{ident}BoxedDelayed"), ident.span());
-
-    Ok(Params {
-        ident,
-        vis,
-        attrs,
-        immediate_fields,
-        args,
-        generic_params,
-        delayed_ident,
-        boxed_delayed_ident,
-        delayed_fields,
-        complete_ident,
-        lifetimes,
-    })
-}
-
-pub fn expand_attr(params: Result<Params, Error>) -> Result<TokenStream, Error> {
-    let Params {
-        args,
+pub fn expand_attr(
+    params: Result<Params, Error>,
+    shared: Result<Shared, Error>,
+) -> Result<TokenStream, Error> {
+    let params = params?;
+    let Shared {
         ident,
         vis,
         attrs,
@@ -167,15 +66,19 @@ pub fn expand_attr(params: Result<Params, Error>) -> Result<TokenStream, Error> 
         delayed_fields,
         complete_ident,
         lifetimes,
-    } = params?;
+    } = shared?;
 
-    let immediate_fields = immediate_fields
-        .iter()
-        .map(|NamedField { ident, ty, vis, .. }| {
-            quote! {
-                #vis #ident: #ty
-            }
-        });
+    let immediate_fields = immediate_fields.iter().map(
+        |NamedField {
+             ident,
+             ty,
+             vis,
+             attrs,
+             ..
+         }| {
+            quote! { #(#attrs)* #vis #ident: #ty }
+        },
+    );
 
     let where_clause = if delayed_fields.is_empty() {
         quote! {}
@@ -272,12 +175,12 @@ pub fn expand_attr(params: Result<Params, Error>) -> Result<TokenStream, Error> 
         }
     };
 
-    let datastar_fn = datastar_fn()?;
+    let path = params.path;
 
     Ok(quote! {
         #(#attrs)*
         #[derive(::askama::Template)]
-        #[template(#args)]
+        #[template(path = #path)]
         #vis struct #ident #lifetimes {
             #(#immediate_fields,)*
         }
@@ -288,15 +191,15 @@ pub fn expand_attr(params: Result<Params, Error>) -> Result<TokenStream, Error> 
 
         #complete_struct
 
-        impl #lifetimes ::crabstar::fragment::suspense::Suspense for #complete_ident #lifetimes
+        impl #lifetimes ::crabstar::suspense::Suspense for #complete_ident #lifetimes
         where
             #ident #lifetimes: 'static,
         {
-            async fn suspense(self, tx: &::tokio::sync::mpsc::UnboundedSender<::std::result::Result<::std::string::String, ::crabstar::fragment::suspense::Error>>)
+            async fn suspense(self, tx: &::tokio::sync::mpsc::UnboundedSender<::std::result::Result<::std::string::String, ::crabstar::suspense::Error>>)
                 -> ::std::result::Result<
                 (),
                 ::tokio::sync::mpsc::error::SendError<
-                    ::std::result::Result<::std::string::String, ::crabstar::fragment::suspense::Error>>
+                    ::std::result::Result<::std::string::String, ::crabstar::suspense::Error>>
                 >
             {
                 use ::futures::FutureExt;
@@ -306,9 +209,5 @@ pub fn expand_attr(params: Result<Params, Error>) -> Result<TokenStream, Error> 
         }
 
         #into_suspense_impl
-
-        impl #lifetimes #ident #lifetimes {
-            #datastar_fn
-        }
     })
 }

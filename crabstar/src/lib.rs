@@ -1,7 +1,7 @@
 pub use crabstar_macros::page;
 
-pub mod fragment;
-pub use crabstar_macros::fragment;
+pub mod suspense;
+pub use crabstar_macros::suspense;
 
 mod signal;
 pub use crabstar_macros::signal;
@@ -11,6 +11,11 @@ pub mod router;
 
 mod bundler;
 pub use bundler::{BUNDLER, css_url};
+
+pub mod events;
+
+/// Deserialization helpers used by proc-macros
+pub mod de;
 
 #[macro_export]
 macro_rules! include_css {
@@ -53,9 +58,6 @@ macro_rules! include_css {
         });
     };
 }
-
-/// Deserialization helpers used by proc-macros
-pub mod de;
 
 #[test]
 fn ui() {

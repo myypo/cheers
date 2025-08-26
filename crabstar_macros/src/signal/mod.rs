@@ -111,18 +111,18 @@ pub fn expand_attr(_: TokenStream, mut input: DeriveInput) -> Result<TokenStream
         }
     };
     let fields = &data_struct.fields;
-    let named_fields = NamedField::from_fields(fields.clone())?;
+    let named_fields = NamedField::from_fields(fields)?;
     let (_, immediate_fields) = partition_delayed_immediate_fields(named_fields);
     let signal_fields = signal_fields(&immediate_fields)?;
     if signal_fields.is_empty() {
         return Ok(quote! { #input });
     }
 
-    if let Data::Struct(ref mut data_struct) = input.data {
-        if let Fields::Named(ref mut fields_named) = data_struct.fields {
-            for field in &mut fields_named.named {
-                field.attrs.retain(|attr| !attr.path().is_ident("react"));
-            }
+    if let Data::Struct(ref mut data_struct) = input.data
+        && let Fields::Named(ref mut fields_named) = data_struct.fields
+    {
+        for field in &mut fields_named.named {
+            field.attrs.retain(|attr| !attr.path().is_ident("react"));
         }
     }
 
