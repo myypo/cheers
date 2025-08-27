@@ -1,6 +1,7 @@
 use axum::{http::StatusCode, response::IntoResponse};
 use crabstar::events::{MorphMode, PatchElements, SseConnection};
-use futures::StreamExt;
+
+use crate::read_axum_body;
 
 #[tokio::test]
 async fn streams_patch_elements_without_elements() {
@@ -17,14 +18,7 @@ async fn streams_patch_elements_without_elements() {
     assert_eq!(resp.status(), StatusCode::OK);
     let headers = resp.headers();
     assert_eq!(headers.get("content-type").unwrap(), "text/event-stream");
-    let body = resp
-        .into_body()
-        .into_data_stream()
-        .fold(String::new(), async |mut acc, ch| {
-            acc.push_str(&String::from_utf8(ch.unwrap().to_vec()).unwrap());
-            acc
-        })
-        .await;
+    let body = read_axum_body(resp).await;
     assert_eq!(
         body,
         "event: datastar-patch-elements
@@ -57,14 +51,7 @@ async fn streams_patch_elements_with_elements() {
     assert_eq!(resp.status(), StatusCode::OK);
     let headers = resp.headers();
     assert_eq!(headers.get("content-type").unwrap(), "text/event-stream");
-    let body = resp
-        .into_body()
-        .into_data_stream()
-        .fold(String::new(), async |mut acc, ch| {
-            acc.push_str(&String::from_utf8(ch.unwrap().to_vec()).unwrap());
-            acc
-        })
-        .await;
+    let body = read_axum_body(resp).await;
     assert_eq!(
         body,
         format!(

@@ -3,7 +3,7 @@ use std::fmt::Display;
 use askama::Template;
 use axum::response::sse;
 
-use crate::events::Event;
+use crate::events::{DATASTAR_PATCH_ELEMENTS, Event, sanitize_axum_sse_data};
 
 pub struct PatchElements {
     mode: Option<MorphMode>,
@@ -126,12 +126,10 @@ impl From<PatchElements> for Event {
             );
         }
 
-        // Axum SSE panics if it encounters carriage return
-        buf = buf.replace("\r\n", "\n").replace('\r', "\n");
-        let e = sse::Event::default()
-            .event("datastar-patch-elements")
-            .data(buf);
+        let ev = sse::Event::default()
+            .event(DATASTAR_PATCH_ELEMENTS)
+            .data(sanitize_axum_sse_data(buf));
 
-        Self(e)
+        Self(ev)
     }
 }

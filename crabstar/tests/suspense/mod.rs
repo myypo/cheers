@@ -93,5 +93,5 @@ async fn can_render_concurrently_in_order() {
         assert!(h.next().await.is_none());
     })
     .await
-    .expect("Deadlock");
+    .expect("deadlock");
 }

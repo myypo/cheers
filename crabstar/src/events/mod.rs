@@ -1,6 +1,9 @@
 mod patch_elements;
 pub use patch_elements::{MorphMode, PatchElements};
 
+mod js_script;
+pub use js_script::JsScript;
+
 use std::{convert::Infallible, fmt::Display};
 
 use axum::response::{
@@ -8,6 +11,8 @@ use axum::response::{
     sse::{self, KeepAlive},
 };
 use futures::StreamExt;
+
+const DATASTAR_PATCH_ELEMENTS: &str = "datastar-patch-elements";
 
 struct Events(tokio::sync::mpsc::Receiver<sse::Event>);
 
@@ -39,6 +44,7 @@ impl Display for Error {
 
 impl std::error::Error for Error {}
 
+#[derive(Debug, Clone)]
 pub struct SseConnection {
     tx: tokio::sync::mpsc::Sender<sse::Event>,
 }
@@ -56,4 +62,9 @@ impl SseConnection {
         let ev = ev.into();
         self.tx.send(ev.0).await.map_err(|_| Error::ReceiverHang)
     }
+}
+
+/// Axum SSE panics if it encounters carriage return
+fn sanitize_axum_sse_data(data: String) -> String {
+    data.replace("\r\n", "\n").replace('\r', "\n")
 }
