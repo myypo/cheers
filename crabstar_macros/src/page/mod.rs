@@ -8,7 +8,7 @@ use syn::{Data, DeriveInput, Error, Ident, Lifetime, LifetimeParam};
 use crate::{
     helpers::{NamedField, complete_ident},
     page::{datastar::datastar_fn, params::params},
-    suspense,
+    suspense::{self, LIVE_RELOAD_SCRIPT},
 };
 
 fn into_response_impl(
@@ -42,7 +42,7 @@ fn into_response_impl(
                 let (tx, rx) = ::tokio::sync::mpsc::unbounded_channel();
                 ::tokio::spawn(async move {
                     use ::crabstar::suspense::Suspense;
-                    if let Err(e) = self.suspense(&tx).await {
+                    if let Err(e) = self.suspense(::std::option::Option::None, &tx).await {
                         let e = ::std::boxed::Box::new(e);
                         let e = ::crabstar::suspense::Error::Stream(e);
                         let _ = tx.send(Err(e));
@@ -58,6 +58,7 @@ fn into_response_impl(
                 .header("Content-Type", "text/html; charset=UTF-8")
                 .header("X-Content-Type-Options", "nosniff")
                 .header("Cache-Control", "no-transform")
+                .header("Transfer-Encoding", "chunked")
                 .body(body)
             {
                 Ok(r) => r,
@@ -71,12 +72,18 @@ fn into_response_impl(
             use ::askama::Template;
             use ::axum::response::IntoResponse;
 
-            let body = match self.render() {
+            let mut body = match self.render() {
                 Ok(body) => body,
-                Err(err) => {
-                    return ::axum::http::StatusCode::INTERNAL_SERVER_ERROR.into_response();
-                }
+                Err(_) => return ::axum::http::StatusCode::INTERNAL_SERVER_ERROR.into_response(),
             };
+
+            if cfg!(debug_assertions) {
+                if let Some(pos) = body.rfind("</head>") {
+                    body.insert_str(pos, #LIVE_RELOAD_SCRIPT);
+                } else {
+                    body.push_str(#LIVE_RELOAD_SCRIPT);
+                }
+            }
 
             (#code, ::axum::response::Html(body)).into_response()
         }
@@ -112,7 +119,7 @@ fn into_response_impl(
 }
 
 pub fn expand_attr(args: TokenStream, input: DeriveInput) -> Result<TokenStream, Error> {
-    let ident = &input.ident;
+    let ident = &input.ident.clone();
 
     let lifetimes = {
         let lifetimes: Vec<&Lifetime> = input
@@ -132,8 +139,7 @@ pub fn expand_attr(args: TokenStream, input: DeriveInput) -> Result<TokenStream,
     let into_response_impl = into_response_impl(ident, &lifetimes, &params.status, params.suspense);
 
     let input_struct = if params.suspense {
-        let shared = crate::shared::shared(&input)?;
-        suspense::expand_attr(Ok(params.into()), Ok(shared))?
+        suspense::expand_attr(Ok(params.into()), input)?
     } else {
         let path = params.path;
         let attrs = &input.attrs;

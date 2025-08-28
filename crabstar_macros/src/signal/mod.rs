@@ -112,7 +112,7 @@ pub fn expand_attr(_: TokenStream, mut input: DeriveInput) -> Result<TokenStream
     };
     let fields = &data_struct.fields;
     let named_fields = NamedField::from_fields(fields)?;
-    let (_, immediate_fields) = partition_delayed_immediate_fields(named_fields);
+    let (_, immediate_fields) = partition_delayed_immediate_fields(named_fields)?;
     let signal_fields = signal_fields(&immediate_fields)?;
     if signal_fields.is_empty() {
         return Ok(quote! { #input });

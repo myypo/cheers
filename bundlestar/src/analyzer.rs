@@ -31,13 +31,13 @@ impl<'a> Analyzer {
             .into_iter()
             .flat_map(|hf| self.data_attr_re.captures_iter(hf))
         {
-            let Some(attr_name) = data_caps.get(1).and_then(|c| c.as_str().split('-').next())
-            else {
+            let Some(attr_name) = data_caps.get(1).map(|c| c.as_str()) else {
                 continue;
             };
+
             if !result.data_attributes.contains(&attr_name) {
                 result.data_attributes.push(attr_name);
-            };
+            }
 
             let Some(attr_value) = data_caps.get(2) else {
                 continue;
@@ -62,7 +62,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn analyzes_set_all_docs() {
+    fn handles_set_all_docs() {
         let html = r#"
             <div data-signals-foo="false">
                 <button data-on-click="@setAll(true, {include: /^foo$/})"></button>
@@ -72,12 +72,12 @@ mod tests {
         let analyzer = Analyzer::new();
         let result = analyzer.analyze([html]);
 
-        assert_eq!(result.data_attributes, vec!["signals", "on"]);
+        assert_eq!(result.data_attributes, vec!["signals-foo", "on-click"]);
         assert_eq!(result.actions, vec!["setAll"]);
     }
 
     #[test]
-    fn analyzes_no_value() {
+    fn handles_no_value() {
         let html = r#"
             <div data-bind-search></div>
         "#;
@@ -85,7 +85,20 @@ mod tests {
         let analyzer = Analyzer::new();
         let result = analyzer.analyze([html]);
 
-        assert_eq!(result.data_attributes, vec!["bind"]);
+        assert_eq!(result.data_attributes, vec!["bind-search"]);
         assert!(result.actions.is_empty());
+    }
+
+    #[test]
+    fn handles_on_click_together_with_on_load() {
+        let html = r#"
+            <button data-on-click="alert('click')"></button>
+            <div data-on-load="alert('load')"></div>
+        "#;
+
+        let analyzer = Analyzer::new();
+        let result = analyzer.analyze([html]);
+
+        assert_eq!(result.data_attributes, vec!["on-click", "on-load"]);
     }
 }

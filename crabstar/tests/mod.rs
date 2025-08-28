@@ -16,3 +16,10 @@ async fn read_axum_body(resp: impl axum::response::IntoResponse) -> String {
         })
         .await
 }
+
+async fn next_axum_chunk(body: &mut axum::body::BodyDataStream) -> String {
+    use futures::StreamExt;
+
+    let ch = body.next().await.unwrap().unwrap();
+    String::from_utf8(ch.to_vec()).unwrap()
+}

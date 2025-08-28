@@ -32,6 +32,21 @@ where
     fn serve_crabstar_application(self) -> Result<Router<S>, Error>;
 }
 
+#[derive(Clone)]
+struct CompressionPredicate;
+
+impl tower_http::compression::Predicate for CompressionPredicate {
+    fn should_compress<B>(&self, response: &axum::http::Response<B>) -> bool
+    where
+        B: axum::body::HttpBody,
+    {
+        response
+            .headers()
+            .get("Transfer-Encoding")
+            .is_none_or(|v| v != "chunked")
+    }
+}
+
 impl<S> CrabstarRouterExt<S> for Router<S>
 where
     S: Clone + Send + Sync + 'static,
@@ -39,10 +54,11 @@ where
     fn serve_crabstar_application(self) -> Result<Router<S>, Error> {
         let router = self.merge(static_router()?);
 
-        let router = router.layer(axum::middleware::from_fn(live_reload::inject_script));
         let router = router.nest("/crabstar-dev", live_reload::router());
 
-        let router = router.layer(CompressionLayer::new());
+        // TODO: currently just avoid compressing suspense streaming
+        // later make it work with async-compression
+        let router = router.layer(CompressionLayer::new().compress_when(CompressionPredicate));
 
         let router = router.layer(axum::middleware::from_fn(
             redirect_trailing_slash::redirect_trailing_slash,

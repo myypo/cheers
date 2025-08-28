@@ -6,9 +6,6 @@ use std::{
 
 use axum::{
     Router,
-    body::{Body, HttpBody},
-    http::{HeaderValue, Request, Response, StatusCode},
-    middleware::Next,
     response::{
         Sse,
         sse::{Event, KeepAlive},
@@ -17,60 +14,6 @@ use axum::{
 };
 use futures::StreamExt;
 use notify::{RecommendedWatcher, Watcher};
-
-const SCRIPT: &str = include_str!("./script.html");
-
-pub async fn inject_script(req: Request<Body>, next: Next) -> Response<Body> {
-    let res = next.run(req).await;
-
-    let is_html = res
-        .headers()
-        .get(axum::http::header::CONTENT_TYPE)
-        .and_then(|h| h.to_str().ok())
-        .is_some_and(|h| h.starts_with("text/html"));
-
-    if !is_html {
-        return res;
-    }
-
-    let status = res.status();
-    let headers = res.headers().clone();
-
-    let bytes = match axum::body::to_bytes(res.into_body(), usize::MAX).await {
-        Ok(bytes) => bytes,
-        Err(_) => {
-            return Response::builder()
-                .status(StatusCode::INTERNAL_SERVER_ERROR)
-                .body(Body::from("Failed to read response body"))
-                .unwrap_or_else(|_| Response::new(Body::empty()));
-        }
-    };
-
-    let mut html = String::from_utf8_lossy(&bytes).into_owned();
-
-    if let Some(pos) = html.rfind("</body>") {
-        html.insert_str(pos, SCRIPT);
-    } else {
-        html.push_str(SCRIPT);
-    }
-
-    let mut res = Response::new(Body::from(html));
-    *res.status_mut() = status;
-    *res.headers_mut() = headers;
-
-    if res
-        .headers()
-        .get(axum::http::header::CONTENT_LENGTH)
-        .is_some()
-        && let Some(new_length) = res.body().size_hint().exact()
-        && let Ok(header_value) = HeaderValue::from_str(&new_length.to_string())
-    {
-        res.headers_mut()
-            .insert(axum::http::header::CONTENT_LENGTH, header_value);
-    }
-
-    res
-}
 
 static DEBOUNCE: Duration = Duration::from_millis(50);
 

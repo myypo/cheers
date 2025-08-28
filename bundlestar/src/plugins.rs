@@ -1,7 +1,20 @@
+// TODO: this is a bad approach, it would have been much better to dynamically compute this
+// instead of hardcoding expected plugins - this would have made adding new plugins easier
+
+pub trait Plugin {
+    fn import_path(&self) -> String;
+}
+
 pub struct AttrPlugin {
     key: &'static str,
     pub name: &'static str,
     pub path: &'static str,
+}
+
+impl Plugin for AttrPlugin {
+    fn import_path(&self) -> String {
+        format!(r#"import {{ {} }} from "{}";"#, self.name, self.path)
+    }
 }
 
 pub struct ActionPlugin {
@@ -10,6 +23,18 @@ pub struct ActionPlugin {
     pub path: &'static str,
     pub is_backend: bool,
 }
+
+impl Plugin for ActionPlugin {
+    fn import_path(&self) -> String {
+        format!(r#"import {{ {} }} from "{}";"#, self.name, self.path)
+    }
+}
+
+pub const ON_LOAD_ATTR_PLUGIN: AttrPlugin = AttrPlugin {
+    key: "on-load",
+    name: "OnLoad",
+    path: "../plugins/attributes/onLoad",
+};
 
 static ATTR_PLUGINS: &[AttrPlugin] = &[
     AttrPlugin {
@@ -77,11 +102,7 @@ static ATTR_PLUGINS: &[AttrPlugin] = &[
         name: "OnInterval",
         path: "../plugins/attributes/onInterval",
     },
-    AttrPlugin {
-        key: "on-load",
-        name: "OnLoad",
-        path: "../plugins/attributes/onLoad",
-    },
+    ON_LOAD_ATTR_PLUGIN,
     AttrPlugin {
         key: "on-signal-patch",
         name: "OnSignalPatch",
@@ -154,7 +175,10 @@ pub struct AttrPlugins;
 
 impl AttrPlugins {
     pub fn get(&self, key: &str) -> Option<&AttrPlugin> {
-        ATTR_PLUGINS.iter().find(|p| p.key == key)
+        ATTR_PLUGINS
+            .iter()
+            .filter(|p| key.starts_with(p.key))
+            .max_by_key(|p| p.key.len())
     }
 }
 
@@ -163,5 +187,22 @@ pub struct ActionPlugins;
 impl ActionPlugins {
     pub fn get(&self, key: &str) -> Option<&ActionPlugin> {
         ACTION_PLUGINS.iter().find(|p| p.key == key)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn finds_on_intersect_attr_plugin() {
+        let got = AttrPlugins.get("on-intersect").unwrap();
+        assert_eq!(got.name, "OnIntersect");
+    }
+
+    #[test]
+    fn finds_on_attr_plugin() {
+        let got = AttrPlugins.get("on-click").unwrap();
+        assert_eq!(got.name, "On");
     }
 }

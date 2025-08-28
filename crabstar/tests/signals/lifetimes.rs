@@ -7,7 +7,7 @@ struct PostContent<'a> {
     rating: &'a str,
 }
 
-#[page(path = "nested_post.html")]
+#[page(path = "nested-post.html")]
 #[derive(Deserialize, Serialize, Default)]
 struct Post<'a> {
     title: &'a str,

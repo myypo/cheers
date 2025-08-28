@@ -5,34 +5,36 @@ use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::{Barrier, Mutex};
 
+use crate::next_axum_chunk;
+
+#[suspense(path = "post-content.html")]
+pub struct PostContent {
+    content: String,
+}
+
+#[suspense(path = "post.html")]
+pub struct Post {
+    title: String,
+    #[delayed(id = "content")]
+    content: PostContent,
+}
+
+#[suspense(path = "status.html")]
+pub struct Status {
+    outages_today: i32,
+}
+
+#[page(path = "home.html", suspense)]
+struct HomePage {
+    user: String,
+    #[delayed(id = "post")]
+    post: Post,
+    #[delayed(id = "status")]
+    status: Status,
+}
+
 #[tokio::test]
 async fn can_render_concurrently_in_order() {
-    #[suspense(path = "post_content.html")]
-    pub struct PostContent {
-        content: String,
-    }
-
-    #[suspense(path = "post.html")]
-    pub struct Post {
-        title: String,
-        #[suspense]
-        content: PostContent,
-    }
-
-    #[suspense(path = "status.html")]
-    pub struct Status {
-        outages_today: i32,
-    }
-
-    #[page(path = "home.html", suspense)]
-    struct HomePage {
-        user: String,
-        #[suspense]
-        post: Post,
-        #[suspense]
-        status: Status,
-    }
-
     let user = "myypo".to_owned();
     let title = "Hello".to_owned();
     let content = "World".to_owned();
@@ -77,21 +79,82 @@ async fn can_render_concurrently_in_order() {
     let h = h.into_response();
     let mut h = h.into_body().into_data_stream();
     tokio::time::timeout(Duration::from_secs(1), async {
-        assert_eq!(h.next().await.unwrap().unwrap(), user);
-        assert!({
-            let got = h.next().await.unwrap().unwrap();
-            got == title || got == outages_today.to_string()
-        });
-        assert!({
-            let got = h.next().await.unwrap().unwrap();
-            got == outages_today.to_string() || got == content
-        });
-        assert!({
-            let got = h.next().await.unwrap().unwrap();
-            got == outages_today.to_string() || got == content
-        });
+        // We append hydration script to the end of body
+        assert!(
+            String::from_utf8(h.next().await.unwrap().unwrap().to_vec())
+                .unwrap()
+                .starts_with(&user),
+        );
+
+        // But the rest of chunks have to be wrapped in templates
+        let title_wrapped = format!(
+            r#"<template id=post data-on-load="hydrate(el.id)">{}</template>"#,
+            title
+        );
+        let outages_wrapped = format!(
+            r#"<template id=status data-on-load="hydrate(el.id)">{}</template>"#,
+            outages_today
+        );
+        let content_wrapped = format!(
+            r#"<template id=content data-on-load="hydrate(el.id)">{}</template>"#,
+            content
+        );
+
+        let got1 = h.next().await.unwrap().unwrap();
+        let expected1 = if got1 == title_wrapped {
+            title_wrapped
+        } else {
+            outages_wrapped.clone()
+        };
+        assert_eq!(got1, expected1);
+
+        let got2 = h.next().await.unwrap().unwrap();
+        let expected2 = if got2 == outages_wrapped {
+            outages_wrapped.clone()
+        } else {
+            content_wrapped.clone()
+        };
+        assert_eq!(got2, expected2);
+
+        let got3 = h.next().await.unwrap().unwrap();
+        let expected3 = if got3 == outages_wrapped {
+            outages_wrapped
+        } else {
+            content_wrapped
+        };
+        assert_eq!(got3, expected3);
+
         assert!(h.next().await.is_none());
     })
     .await
     .expect("deadlock");
+}
+
+#[tokio::test]
+async fn can_stream_with_axum() {
+    let user = "user".to_owned();
+    let title = "title".to_owned();
+    let content = "content".to_owned();
+    let outages_today = 4;
+
+    let resp = HomePage { user: user.clone() }.into_suspense(HomePageDelayed {
+        post: async move {
+            Post { title }.into_suspense(PostDelayed {
+                content: async move { PostContent { content } },
+            })
+        },
+        status: async move { Status { outages_today } },
+    });
+
+    let resp = resp.into_response();
+    let mut body = resp.into_body().into_data_stream();
+
+    let got = next_axum_chunk(&mut body).await;
+    assert!(got.contains("user"));
+    let got = next_axum_chunk(&mut body).await;
+    assert!(got.contains("title"));
+    let got = next_axum_chunk(&mut body).await;
+    assert!(got.contains("content"));
+    let got = next_axum_chunk(&mut body).await;
+    assert!(got.contains("4"));
 }

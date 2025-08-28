@@ -2,9 +2,11 @@ use proc_macro2::{Span, TokenStream};
 use quote::quote;
 use std::fmt::Display;
 use syn::{
-    Attribute, Error, Fields, Generics, Ident, LifetimeParam, Type, TypePath, Visibility,
-    spanned::Spanned,
+    Attribute, Error, Expr, Fields, Generics, Ident, LifetimeParam, Lit, LitStr, Meta, Token, Type,
+    TypePath, Visibility, punctuated::Punctuated, spanned::Spanned,
 };
+
+use crate::suspense;
 
 pub fn complete_ident(ident: &impl Display) -> Ident {
     Ident::new(&format!("{ident}Complete"), Span::call_site())
@@ -28,7 +30,7 @@ impl<'a> NamedField<'a> {
                         Type::Reference(ref type_ref) => &*type_ref.elem,
                         _ => &f.ty,
                     };
-                    let Type::Path(type_path) = &ty else {
+                    let Type::Path(ty_path) = &ty else {
                         return Err(Error::new(
                             ty.span(),
                             "Only named fields with explicit types are supported",
@@ -38,7 +40,7 @@ impl<'a> NamedField<'a> {
                     Ok(NamedField {
                         ident,
                         ty: &f.ty,
-                        ty_path: type_path,
+                        ty_path,
                         attrs: &f.attrs,
                         vis: &f.vis,
                     })
@@ -68,9 +70,10 @@ pub struct DelayedField<'a> {
     pub name: &'a Ident,
     pub future: Ident,
     pub output: Ident,
+    pub id: LitStr,
 }
 
-fn delayed_fields_from_named(fields: Vec<NamedField>) -> Vec<DelayedField> {
+fn delayed_fields_from_named(fields: Vec<NamedField>) -> Result<Vec<DelayedField>, Error> {
     fields
         .into_iter()
         .enumerate()
@@ -88,23 +91,56 @@ fn delayed_fields_from_named(fields: Vec<NamedField>) -> Vec<DelayedField> {
                 .join("::");
             let output = Ident::new(&format!("{}Complete", full_path), name.span());
 
-            DelayedField {
+            let attr = f
+                .attrs
+                .iter()
+                .find(|a| a.path().is_ident("delayed"))
+                .ok_or_else(|| Error::new(name.span(), "Missing #[delayed] attribute"))?;
+
+            let metas = attr.parse_args_with(Punctuated::<Meta, Token![,]>::parse_terminated)?;
+
+            let meta = metas
+                .into_iter()
+                .find(|m| m.path().is_ident("id"))
+                .ok_or_else(|| Error::new(name.span(), "Missing id parameter for delayed field"))?;
+
+            let Meta::NameValue(nv) = meta else {
+                return Err(Error::new(
+                    attr.meta.span(),
+                    "id parameter must be a name-value pair",
+                ));
+            };
+            let Expr::Lit(lit) = nv.value else {
+                return Err(Error::new(
+                    nv.value.span(),
+                    "id parameter value must be a string literal",
+                ));
+            };
+            let Lit::Str(id) = lit.lit else {
+                return Err(Error::new(
+                    lit.lit.span(),
+                    "id parameter value must be a string literal",
+                ));
+            };
+
+            Ok(DelayedField {
                 name,
                 future,
                 output,
-            }
+                id,
+            })
         })
         .collect()
 }
 
 pub fn partition_delayed_immediate_fields(
     named_fields: Vec<NamedField>,
-) -> (Vec<DelayedField>, Vec<NamedField>) {
+) -> Result<(Vec<DelayedField>, Vec<NamedField>), Error> {
     let (delayed_fields, immediate_fields) = named_fields.into_iter().partition(|f| {
         f.attrs
             .iter()
-            .any(|a| crate::shared::SupportedAttributes::delayed(a.path()))
+            .any(|a| suspense::SupportedAttributes::delayed(a.path()))
     });
 
-    (delayed_fields_from_named(delayed_fields), immediate_fields)
+    Ok((delayed_fields_from_named(delayed_fields)?, immediate_fields))
 }

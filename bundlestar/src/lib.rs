@@ -1,6 +1,9 @@
 use std::fmt::Display;
 
-use crate::analyzer::Analyzer;
+use crate::{
+    analyzer::Analyzer,
+    plugins::{ON_LOAD_ATTR_PLUGIN, Plugin},
+};
 
 mod analyzer;
 mod plugins;
@@ -26,47 +29,47 @@ pub fn bundle<'a>(html_files: impl IntoIterator<Item = &'a str>) -> Result<Strin
     let attr_plugins = plugins::AttrPlugins;
     let action_plugins = plugins::ActionPlugins;
 
-    let mut imports = Vec::new();
-    let mut plugins_to_load: Vec<&str> = Vec::new();
+    // TODO: temporary hack to make sure on-load is always imported for suspense
+    let mut plugins: Vec<(&str, String)> =
+        vec![(ON_LOAD_ATTR_PLUGIN.name, ON_LOAD_ATTR_PLUGIN.import_path())];
 
     for attr in elements.data_attributes {
         if let Some(a) = attr_plugins.get(attr) {
-            let import_statement = format!(r#"import {{ {} }} from "{}";"#, a.name, a.path);
-            if imports.contains(&import_statement) {
+            if plugins.iter().any(|(k, _)| *k == a.name) {
                 continue;
             }
-            imports.push(import_statement);
-            plugins_to_load.push(a.name);
+            plugins.push((a.name, a.import_path()));
         }
     }
 
     let mut has_backend_actions = false;
     for act in elements.actions {
         if let Some(a) = action_plugins.get(act) {
-            let import_statement = format!(r#"import {{ {} }} from "{}";"#, a.name, a.path);
-            if imports.contains(&import_statement) {
+            if plugins.iter().any(|(k, _)| *k == a.name) {
                 continue;
             }
-            imports.push(import_statement);
-            plugins_to_load.push(a.name);
+            plugins.push((a.name, a.import_path()));
             has_backend_actions = has_backend_actions || a.is_backend;
         }
     }
     if has_backend_actions {
-        imports.push(
+        plugins.push((
+            "PatchElements",
             "import { PatchElements } from '../plugins/backend/watchers/patchElements';".to_owned(),
-        );
-        imports.push(
+        ));
+        plugins.push((
+            "PatchSignals",
             "import { PatchSignals } from '../plugins/backend/watchers/patchSignals';".to_owned(),
-        );
-        plugins_to_load.push("PatchElements");
-        plugins_to_load.push("PatchSignals");
+        ));
     }
 
     let mut entry_content = String::new();
     entry_content.push_str("import { apply, load } from '../engine/engine';\n");
+
+    let (plugins_to_load, imports): (Vec<&str>, Vec<String>) = plugins.into_iter().unzip();
     entry_content.push_str(&imports.join("\n"));
     let plugins_to_load = plugins_to_load.join(", ");
+
     entry_content.push_str(&format!("\n\nload({plugins_to_load});\n\napply();"));
 
     swc::bundle_and_minify(entry_content).map_err(|e| Error::Swc(e.into()))
