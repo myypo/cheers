@@ -1,0 +1,7 @@
+<script>
+    function streamSsr(thisId, suspenseValue) {
+      const sk = document.querySelector(`[data-suspense="${suspenseValue}"]`);
+      const el = document.getElementById(thisId);
+      sk.replaceWith(el.content);
+    }
+</script>

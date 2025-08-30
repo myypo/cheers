@@ -19,9 +19,9 @@ async fn works_with_literal() {
 
 #[tokio::test]
 async fn works_with_format() {
-    let s = "hydrate(42)".to_owned();
+    let s = "streamSsr(42)".to_owned();
 
-    let f = "hydrate";
+    let f = "streamSsr";
     let script = js_script!("{}({})", f, 42);
     let resp = script.into_response();
 

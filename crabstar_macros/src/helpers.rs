@@ -2,8 +2,8 @@ use proc_macro2::{Span, TokenStream};
 use quote::quote;
 use std::fmt::Display;
 use syn::{
-    Attribute, Error, Expr, Fields, Generics, Ident, LifetimeParam, Lit, LitStr, Meta, Token, Type,
-    TypePath, Visibility, punctuated::Punctuated, spanned::Spanned,
+    Attribute, Error, Fields, Generics, Ident, LifetimeParam, Type, TypePath, Visibility,
+    spanned::Spanned,
 };
 
 use crate::suspense;
@@ -70,7 +70,6 @@ pub struct DelayedField<'a> {
     pub name: &'a Ident,
     pub future: Ident,
     pub output: Ident,
-    pub id: LitStr,
 }
 
 fn delayed_fields_from_named(fields: Vec<NamedField>) -> Result<Vec<DelayedField>, Error> {
@@ -91,43 +90,16 @@ fn delayed_fields_from_named(fields: Vec<NamedField>) -> Result<Vec<DelayedField
                 .join("::");
             let output = Ident::new(&format!("{}Complete", full_path), name.span());
 
-            let attr = f
+            let _ = f
                 .attrs
                 .iter()
                 .find(|a| a.path().is_ident("delayed"))
                 .ok_or_else(|| Error::new(name.span(), "Missing #[delayed] attribute"))?;
 
-            let metas = attr.parse_args_with(Punctuated::<Meta, Token![,]>::parse_terminated)?;
-
-            let meta = metas
-                .into_iter()
-                .find(|m| m.path().is_ident("id"))
-                .ok_or_else(|| Error::new(name.span(), "Missing id parameter for delayed field"))?;
-
-            let Meta::NameValue(nv) = meta else {
-                return Err(Error::new(
-                    attr.meta.span(),
-                    "id parameter must be a name-value pair",
-                ));
-            };
-            let Expr::Lit(lit) = nv.value else {
-                return Err(Error::new(
-                    nv.value.span(),
-                    "id parameter value must be a string literal",
-                ));
-            };
-            let Lit::Str(id) = lit.lit else {
-                return Err(Error::new(
-                    lit.lit.span(),
-                    "id parameter value must be a string literal",
-                ));
-            };
-
             Ok(DelayedField {
                 name,
                 future,
                 output,
-                id,
             })
         })
         .collect()
@@ -139,7 +111,7 @@ pub fn partition_delayed_immediate_fields(
     let (delayed_fields, immediate_fields) = named_fields.into_iter().partition(|f| {
         f.attrs
             .iter()
-            .any(|a| suspense::SupportedAttributes::delayed(a.path()))
+            .any(|a| suspense::SupportedAttributes::is_delayed(a.path()))
     });
 
     Ok((delayed_fields_from_named(delayed_fields)?, immediate_fields))

@@ -22,16 +22,20 @@ impl Display for Error {
     }
 }
 
-pub fn bundle<'a>(html_files: impl IntoIterator<Item = &'a str>) -> Result<String, Error> {
+pub fn bundle<'a>(
+    suspense: bool,
+    html_files: impl IntoIterator<Item = &'a str>,
+) -> Result<String, Error> {
     let analyzer = Analyzer::new();
     let elements = analyzer.analyze(html_files);
 
     let attr_plugins = plugins::AttrPlugins;
     let action_plugins = plugins::ActionPlugins;
 
-    // TODO: temporary hack to make sure on-load is always imported for suspense
-    let mut plugins: Vec<(&str, String)> =
-        vec![(ON_LOAD_ATTR_PLUGIN.name, ON_LOAD_ATTR_PLUGIN.import_path())];
+    let mut plugins: Vec<(&str, String)> = Vec::new();
+    if suspense {
+        plugins.push((ON_LOAD_ATTR_PLUGIN.name, ON_LOAD_ATTR_PLUGIN.import_path()));
+    }
 
     for attr in elements.data_attributes {
         if let Some(a) = attr_plugins.get(attr) {
@@ -82,7 +86,7 @@ mod tests {
     #[test]
     fn uses_backend_put_action() {
         let html = r#"<button data-on-click="@put('/endpoint')"></button>"#;
-        let result = bundle([html]).unwrap();
+        let result = bundle(false, [html]).unwrap();
         assert!(result.contains("PUT"));
         assert!(result.contains("datastar-patch-elements"));
         assert!(result.contains("datastar-patch-signals"));

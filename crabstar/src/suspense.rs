@@ -22,7 +22,6 @@ impl std::error::Error for Error {}
 pub trait Suspense {
     fn suspense(
         self,
-        id: Option<&str>,
         tx: &tokio::sync::mpsc::UnboundedSender<Result<String, Error>>,
     ) -> impl std::future::Future<
         Output = Result<(), tokio::sync::mpsc::error::SendError<Result<String, Error>>>,

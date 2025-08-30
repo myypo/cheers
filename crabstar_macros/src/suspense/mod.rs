@@ -7,8 +7,11 @@ use proc_macro2::TokenStream;
 use quote::quote;
 use syn::{Attribute, Data, DeriveInput, Error, Fields, Ident, Path, Visibility};
 
-use crate::helpers::{
-    DelayedField, NamedField, complete_ident, lifetimes, partition_delayed_immediate_fields,
+use crate::{
+    askama_config::{ASKAMA_CONFIG, ReadTemplate},
+    helpers::{
+        DelayedField, NamedField, complete_ident, lifetimes, partition_delayed_immediate_fields,
+    },
 };
 
 pub struct SupportedAttributes;
@@ -18,7 +21,7 @@ impl SupportedAttributes {
 
     const LIST: &[&str] = &[Self::DELAYED];
 
-    pub fn delayed(path: &Path) -> bool {
+    pub fn is_delayed(path: &Path) -> bool {
         path.is_ident(Self::DELAYED)
     }
 
@@ -110,9 +113,6 @@ pub fn prepare<'a>(input: &'a DeriveInput) -> Result<Prepared<'a>, Error> {
     })
 }
 
-const HYDRATION_SCRIPT: &str = include_str!("./hydration-script.html");
-pub const LIVE_RELOAD_SCRIPT: &str = include_str!("./live-reload-script.html");
-
 fn suspense_body(delayed_fields: &[DelayedField]) -> TokenStream {
     let immediate_field = if delayed_fields.is_empty() {
         quote! { self }
@@ -122,35 +122,8 @@ fn suspense_body(delayed_fields: &[DelayedField]) -> TokenStream {
 
     let immediate_call = quote! {
         use ::askama::Template;
-        // TODO: once I start pre-processing templates these can be put into them at compile-time
-        if let Some(id) = id {
-            let mut s = format!(r#"<template id={} data-on-load="hydrate(el.id)">"#, id);
-            let r = #immediate_field.render_into(&mut s).map_err(::crabstar::suspense::Error::Render);
-            if let Ok(_) = r {
-                s.push_str("</template>");
-            }
-            tx.send(r.map(|_| s))
-        } else {
-            let mut r = #immediate_field.render().map_err(::crabstar::suspense::Error::Render);
-            if let Ok(ref mut r) = r {
-                if let Some(pos) = r.rfind("</body>") {
-                    r.insert_str(pos, #HYDRATION_SCRIPT);
-                } else {
-                    r.push_str(#HYDRATION_SCRIPT);
-                }
-            }
-            // TODO: move this this out
-            if cfg!(debug_assertions) {
-                if let Ok(ref mut r) = r {
-                    if let Some(pos) = r.rfind("</head>") {
-                        r.insert_str(pos, #LIVE_RELOAD_SCRIPT);
-                    } else {
-                        r.push_str(#LIVE_RELOAD_SCRIPT);
-                    }
-                }
-            }
-            tx.send(r)
-        }
+        let mut r = #immediate_field.render().map_err(::crabstar::suspense::Error::Render);
+        tx.send(r)
     };
 
     if delayed_fields.is_empty() {
@@ -158,11 +131,10 @@ fn suspense_body(delayed_fields: &[DelayedField]) -> TokenStream {
     } else {
         let calls = delayed_fields.iter().map(|f| {
             let name = &f.name;
-            let id = &f.id;
 
             quote! {
                 let #name = self.1.#name;
-                let #name = #name.then(|n| n.suspense(::std::option::Option::Some(#id), &tx)).boxed();
+                let #name = #name.then(|n| n.suspense(&tx)).boxed();
             }
         });
 
@@ -310,10 +282,43 @@ pub fn expand_attr(
 
     let path = params.path;
 
+    let ReadTemplate {
+        content: mut source,
+        ..
+    } = ASKAMA_CONFIG.read_template(&path, &path.value())?;
+
+    if params.is_child {
+        // TODO: this actually breaks with Askama extends etc.
+        let path = path.value();
+        source.insert_str(0, &format!(
+            r#"<template id="crabstar-template-{path}" data-on-load="streamSsr(el.id, '{path}')">"#
+        ));
+        source.push_str("</template>");
+    }
+
+    // TODO: it is actually possible to implement IntoResponse even with delayed fields
+    // have to copy impl from page
+    let into_response_impl = if params.is_child && delayed_fields.is_empty() {
+        quote! {
+            impl #lifetimes ::axum::response::IntoResponse for #ident #lifetimes {
+                fn into_response(self) -> ::axum::response::Response {
+                    use ::askama::Template;
+                    let mut body = match self.render() {
+                        Ok(body) => body,
+                        Err(_) => return ::axum::http::StatusCode::INTERNAL_SERVER_ERROR.into_response(),
+                    };
+                    (::axum::http::StatusCode::OK, ::axum::response::Html(body)).into_response()
+                }
+            }
+        }
+    } else {
+        quote! {}
+    };
+
     Ok(quote! {
         #(#attrs)*
         #[derive(::askama::Template)]
-        #[template(path = #path)]
+        #[template(source = #source, ext = "html")]
         #vis struct #ident #lifetimes {
             #(#immediate_fields,)*
         }
@@ -324,11 +329,13 @@ pub fn expand_attr(
 
         #complete_struct
 
+        #into_response_impl
+
         impl #lifetimes ::crabstar::suspense::Suspense for #complete_ident #lifetimes
         where
             #ident #lifetimes: 'static,
         {
-            async fn suspense(self, id: ::std::option::Option<&str>, tx: &::tokio::sync::mpsc::UnboundedSender<::std::result::Result<::std::string::String, ::crabstar::suspense::Error>>)
+            async fn suspense(self, tx: &::tokio::sync::mpsc::UnboundedSender<::std::result::Result<::std::string::String, ::crabstar::suspense::Error>>)
                 -> ::std::result::Result<
                 (),
                 ::tokio::sync::mpsc::error::SendError<

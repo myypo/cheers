@@ -1,5 +1,6 @@
 mod datastar;
 mod params;
+mod templates;
 
 use proc_macro2::TokenStream;
 use quote::quote;
@@ -7,17 +8,16 @@ use syn::{Data, DeriveInput, Error, Ident, Lifetime, LifetimeParam};
 
 use crate::{
     helpers::{NamedField, complete_ident},
-    page::{datastar::datastar_fn, params::params},
-    suspense::{self, LIVE_RELOAD_SCRIPT},
+    page::{
+        datastar::datastar_bundle,
+        params::{Params, params},
+    },
+    suspense::{self},
 };
 
-fn into_response_impl(
-    ident: &Ident,
-    lifetimes: &TokenStream,
-    code: &TokenStream,
-    suspense: bool,
-) -> TokenStream {
-    let body = if suspense {
+fn into_response_impl(ident: &Ident, lifetimes: &TokenStream, params: &Params) -> TokenStream {
+    let status = &params.status;
+    let body = if params.suspense {
         let stream_impl = quote! {
             struct UnboundedReceiverStream<T>(::tokio::sync::mpsc::UnboundedReceiver<T>);
             impl<T> ::futures::stream::Stream for UnboundedReceiverStream<T> {
@@ -42,7 +42,7 @@ fn into_response_impl(
                 let (tx, rx) = ::tokio::sync::mpsc::unbounded_channel();
                 ::tokio::spawn(async move {
                     use ::crabstar::suspense::Suspense;
-                    if let Err(e) = self.suspense(::std::option::Option::None, &tx).await {
+                    if let Err(e) = self.suspense(&tx).await {
                         let e = ::std::boxed::Box::new(e);
                         let e = ::crabstar::suspense::Error::Stream(e);
                         let _ = tx.send(Err(e));
@@ -54,7 +54,7 @@ fn into_response_impl(
             let body = ::axum::body::Body::from_stream(body);
 
             match ::axum::response::Response::builder()
-                .status(#code)
+                .status(#status)
                 .header("Content-Type", "text/html; charset=UTF-8")
                 .header("X-Content-Type-Options", "nosniff")
                 .header("Cache-Control", "no-transform")
@@ -70,32 +70,21 @@ fn into_response_impl(
     } else {
         quote! {
             use ::askama::Template;
-            use ::axum::response::IntoResponse;
-
             let mut body = match self.render() {
                 Ok(body) => body,
                 Err(_) => return ::axum::http::StatusCode::INTERNAL_SERVER_ERROR.into_response(),
             };
-
-            if cfg!(debug_assertions) {
-                if let Some(pos) = body.rfind("</head>") {
-                    body.insert_str(pos, #LIVE_RELOAD_SCRIPT);
-                } else {
-                    body.push_str(#LIVE_RELOAD_SCRIPT);
-                }
-            }
-
-            (#code, ::axum::response::Html(body)).into_response()
+            (#status, ::axum::response::Html(body)).into_response()
         }
     };
 
-    let ident = if suspense {
+    let ident = if params.suspense {
         &complete_ident(ident)
     } else {
         ident
     };
 
-    let ref_impl = if suspense {
+    let ref_impl = if params.suspense {
         quote! {}
     } else {
         quote! {
@@ -136,12 +125,20 @@ pub fn expand_attr(args: TokenStream, input: DeriveInput) -> Result<TokenStream,
     };
 
     let params = params(args)?;
-    let into_response_impl = into_response_impl(ident, &lifetimes, &params.status, params.suspense);
+
+    let mut templates = templates::process_templates(params.suspense, &params.path)?;
+    let datastar_bundle = datastar_bundle(
+        params.suspense,
+        &templates.root.content,
+        templates.children.iter().map(|c| c.content.as_str()),
+    )?;
+    templates.root.inject_datastar(datastar_bundle)?;
+
+    let into_response_impl = into_response_impl(ident, &lifetimes, &params);
 
     let input_struct = if params.suspense {
         suspense::expand_attr(Ok(params.into()), input)?
     } else {
-        let path = params.path;
         let attrs = &input.attrs;
         let vis = &input.vis;
 
@@ -166,26 +163,21 @@ pub fn expand_attr(args: TokenStream, input: DeriveInput) -> Result<TokenStream,
                 quote! { #(#attrs)* #vis #ident: #ty }
             },
         );
+        let source = templates.root.content;
 
         quote! {
             #(#attrs)*
             #[derive(::askama::Template)]
-            #[template(path = #path)]
+            #[template(source = #source, ext = "html")]
             #vis struct #ident #lifetimes {
                 #(#fields,)*
             }
         }
     };
 
-    let datastar_fn = datastar_fn()?;
-
     Ok(quote! {
         #input_struct
 
         #into_response_impl
-
-        impl #lifetimes #ident #lifetimes {
-            #datastar_fn
-        }
     })
 }

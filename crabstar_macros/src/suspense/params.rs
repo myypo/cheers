@@ -6,7 +6,8 @@ use syn::{
 };
 
 pub struct Params {
-    pub path: Option<LitStr>,
+    pub path: LitStr,
+    pub is_child: bool,
 }
 
 impl Parse for Params {
@@ -42,7 +43,12 @@ impl Parse for Params {
             }
         }
 
-        Ok(Params { path })
+        let path = path.ok_or_else(|| Error::new(input.span(), "missing path argument"))?;
+
+        Ok(Params {
+            path,
+            is_child: true,
+        })
     }
 }
 

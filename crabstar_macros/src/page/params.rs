@@ -7,28 +7,25 @@ use syn::{
 };
 
 pub struct Params {
-    pub path: Option<LitStr>,
+    pub path: LitStr,
     pub status: TokenStream,
     pub suspense: bool,
 }
 
 impl From<Params> for crate::suspense::Params {
     fn from(Params { path, .. }: Params) -> Self {
-        Self { path }
+        Self {
+            path,
+            is_child: false,
+        }
     }
 }
 
 impl Parse for Params {
     fn parse(input: ParseStream) -> Result<Self, Error> {
-        let mut params = Params {
-            path: None,
-            status: quote! { ::axum::http::StatusCode::OK },
-            suspense: false,
-        };
-
-        if input.is_empty() {
-            return Ok(params);
-        }
+        let mut path: Option<LitStr> = None;
+        let mut status: Option<TokenStream> = None;
+        let mut suspense = false;
 
         let metas = Punctuated::<Meta, Token![,]>::parse_terminated(input)?;
 
@@ -38,7 +35,7 @@ impl Parse for Params {
                     match name_value.value {
                         Expr::Path(expr_path) => {
                             let path = &expr_path.path;
-                            params.status = quote! { ::axum::http::StatusCode::#path };
+                            status = Some(quote! { ::axum::http::StatusCode::#path });
                         }
                         _ => {
                             return Err(Error::new_spanned(
@@ -52,7 +49,7 @@ impl Parse for Params {
                     match name_value.value {
                         Expr::Lit(lit) => match lit.lit {
                             Lit::Str(s) => {
-                                params.path = Some(s);
+                                path = Some(s);
                             }
                             _ => {
                                 return Err(Error::new_spanned(
@@ -70,7 +67,7 @@ impl Parse for Params {
                     }
                 }
                 Meta::Path(path) if path.is_ident("suspense") => {
-                    params.suspense = true;
+                    suspense = true;
                 }
                 _ => {
                     return Err(Error::new_spanned(meta, "unsupported attribute"));
@@ -78,7 +75,14 @@ impl Parse for Params {
             }
         }
 
-        Ok(params)
+        let path = path.ok_or_else(|| Error::new(input.span(), "missing path"))?;
+        let status = status.unwrap_or_else(|| quote! { ::axum::http::StatusCode::OK });
+
+        Ok(Params {
+            path,
+            status,
+            suspense,
+        })
     }
 }
 

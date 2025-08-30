@@ -23,6 +23,7 @@ tower-http = { version = "0.6", features = ["compression-full"] }
 lightningcss = { version = "1.0.0-alpha.67" }
 base64.version = "0.22"
 tracing = "0.1"
+toml = { version = "0.9" }
 
 # Bundler
 swc_common = { version = "14.0.2", features = ["tty-emitter"] }

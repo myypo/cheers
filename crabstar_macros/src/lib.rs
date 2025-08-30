@@ -3,6 +3,7 @@ use syn::{DeriveInput, parse_macro_input};
 
 mod helpers;
 
+mod askama_config;
 mod page;
 mod signal;
 mod suspense;

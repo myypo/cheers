@@ -15,7 +15,7 @@ pub struct PostContent {
 #[suspense(path = "post.html")]
 pub struct Post {
     title: String,
-    #[delayed(id = "content")]
+    #[delayed(path = "content.html")]
     content: PostContent,
 }
 
@@ -27,9 +27,9 @@ pub struct Status {
 #[page(path = "home.html", suspense)]
 struct HomePage {
     user: String,
-    #[delayed(id = "post")]
+    #[delayed(path = "post.html")]
     post: Post,
-    #[delayed(id = "status")]
+    #[delayed(path = "status.html")]
     status: Status,
 }
 
@@ -79,55 +79,71 @@ async fn can_render_concurrently_in_order() {
     let h = h.into_response();
     let mut h = h.into_body().into_data_stream();
     tokio::time::timeout(Duration::from_secs(1), async {
-        // We append hydration script to the end of body
+        // We append streaming SSR script to the end of page
+        let home = h.next().await.unwrap().unwrap();
+
+        let home_unwrapped = r#"<body>
+    Home of myypo
+    Latest post:
+    <div data-suspense="post.html">Loading post...</div>
+    Status:
+    <div data-suspense="status.html">Loading status...</div>
+"#;
+        assert_ne!(home, home_unwrapped);
         assert!(
-            String::from_utf8(h.next().await.unwrap().unwrap().to_vec())
-                .unwrap()
-                .starts_with(&user),
-        );
+            home.starts_with(
+            home_unwrapped.as_bytes()
+        ));
 
         // But the rest of chunks have to be wrapped in templates
-        let title_wrapped = format!(
-            r#"<template id=post data-on-load="hydrate(el.id)">{}</template>"#,
-            title
+        let post_wrapped = format!(
+            r#"<template id="crabstar-template-post.html" data-on-load="streamSsr(el.id, 'post.html')">Hello
+Content:
+<div data-suspense="post-content.html">Loading content...</div>
+</template>"#,
         );
-        let outages_wrapped = format!(
-            r#"<template id=status data-on-load="hydrate(el.id)">{}</template>"#,
+        let status_wrapped = format!(
+            r#"<template id="crabstar-template-status.html" data-on-load="streamSsr(el.id, 'status.html')">{}
+</template>"#,
             outages_today
         );
-        let content_wrapped = format!(
-            r#"<template id=content data-on-load="hydrate(el.id)">{}</template>"#,
+        let post_content_wrapped = format!(
+            r#"<template id="crabstar-template-post-content.html" data-on-load="streamSsr(el.id, 'post-content.html')">{}
+</template>"#,
             content
         );
 
-        let got1 = h.next().await.unwrap().unwrap();
-        let expected1 = if got1 == title_wrapped {
-            title_wrapped
-        } else {
-            outages_wrapped.clone()
-        };
-        assert_eq!(got1, expected1);
-
-        let got2 = h.next().await.unwrap().unwrap();
-        let expected2 = if got2 == outages_wrapped {
-            outages_wrapped.clone()
-        } else {
-            content_wrapped.clone()
-        };
-        assert_eq!(got2, expected2);
-
-        let got3 = h.next().await.unwrap().unwrap();
-        let expected3 = if got3 == outages_wrapped {
-            outages_wrapped
-        } else {
-            content_wrapped
-        };
-        assert_eq!(got3, expected3);
-
-        assert!(h.next().await.is_none());
+        let got_post = h.next().await.unwrap().unwrap();
+        assert_eq!(got_post, post_wrapped);
+        let got_post_content = h.next().await.unwrap().unwrap();
+        assert_eq!(got_post_content, post_content_wrapped);
+        let got_status = h.next().await.unwrap().unwrap();
+        assert_eq!(got_status, status_wrapped);
     })
     .await
     .expect("deadlock");
+}
+
+#[tokio::test]
+async fn streaming_ssr_script_works_with_extends() {
+    #[page(path = "child.html", suspense)]
+    struct ChildPage {
+        user: String,
+    }
+
+    let page = ChildPage {
+        user: "test".to_owned(),
+    };
+    let response = page.into_response();
+    let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    let content = String::from_utf8(body.to_vec()).unwrap();
+
+    assert!(
+        content.contains("streamSsr"),
+        "Streaming SSR script should be present in extended template"
+    );
 }
 
 #[tokio::test]

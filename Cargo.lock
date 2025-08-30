@@ -524,7 +524,10 @@ dependencies = [
  "bundlestar",
  "proc-macro2",
  "quote",
+ "regex",
+ "serde",
  "syn 2.0.104",
+ "toml",
 ]
 
 [[package]]

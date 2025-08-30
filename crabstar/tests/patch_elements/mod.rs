@@ -30,7 +30,7 @@ data: selector #foo\n\n"
 #[tokio::test]
 async fn streams_patch_elements_with_elements() {
     #[derive(askama::Template)]
-    #[template(path = "home.html")]
+    #[template(source = "{{user}}", ext = "html")]
     struct NewUser<'a> {
         user: &'a str,
     }
