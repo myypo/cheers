@@ -503,6 +503,7 @@ dependencies = [
  "askama",
  "axum",
  "base64",
+ "bundlestar",
  "crabstar_macros",
  "futures",
  "lightningcss",
@@ -521,10 +522,8 @@ dependencies = [
 name = "crabstar_macros"
 version = "0.1.0"
 dependencies = [
- "bundlestar",
  "proc-macro2",
  "quote",
- "regex",
  "serde",
  "syn 2.0.104",
  "toml",

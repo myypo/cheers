@@ -5,6 +5,7 @@ edition = "2024"
 
 [dependencies]
 crabstar_macros.workspace = true
+bundlestar.workspace = true
 
 askama.workspace = true
 serde.workspace = true

@@ -23,7 +23,6 @@ static CONTENT_CACHE: LazyLock<Mutex<BTreeMap<String, String>>> =
     LazyLock::new(|| Mutex::new(BTreeMap::new()));
 
 pub struct ReadTemplate {
-    pub absolute_path: String,
     pub content: String,
 }
 
@@ -91,10 +90,7 @@ impl AskamaConfig {
 
         let content = self.read_content(span, path, &absolute_path)?;
 
-        Ok(ReadTemplate {
-            absolute_path,
-            content,
-        })
+        Ok(ReadTemplate { content })
     }
 
     pub fn write_template(&self, path: &str, content: String) {

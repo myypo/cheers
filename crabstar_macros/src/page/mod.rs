@@ -1,4 +1,3 @@
-mod datastar;
 mod params;
 mod templates;
 
@@ -8,10 +7,7 @@ use syn::{Data, DeriveInput, Error, Ident, Lifetime, LifetimeParam};
 
 use crate::{
     helpers::{NamedField, complete_ident},
-    page::{
-        datastar::datastar_bundle,
-        params::{Params, params},
-    },
+    page::params::{Params, params},
     suspense::{self},
 };
 
@@ -126,13 +122,7 @@ pub fn expand_attr(args: TokenStream, input: DeriveInput) -> Result<TokenStream,
 
     let params = params(args)?;
 
-    let mut templates = templates::process_templates(params.suspense, &params.path)?;
-    let datastar_bundle = datastar_bundle(
-        params.suspense,
-        &templates.root.content,
-        templates.children.iter().map(|c| c.content.as_str()),
-    )?;
-    templates.root.inject_datastar(datastar_bundle)?;
+    let source = templates::template_with_scripts(params.suspense, &params.path)?;
 
     let into_response_impl = into_response_impl(ident, &lifetimes, &params);
 
@@ -163,7 +153,6 @@ pub fn expand_attr(args: TokenStream, input: DeriveInput) -> Result<TokenStream,
                 quote! { #(#attrs)* #vis #ident: #ty }
             },
         );
-        let source = templates.root.content;
 
         quote! {
             #(#attrs)*

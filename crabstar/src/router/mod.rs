@@ -1,13 +1,13 @@
+mod assets_router;
 mod live_reload;
 mod redirect_trailing_slash;
-mod static_server;
 
 use axum::Router;
 use tower_http::compression::CompressionLayer;
 
 use std::fmt::Display;
 
-use crate::router::static_server::static_router;
+use crate::router::assets_router::assets_router;
 
 #[derive(Debug)]
 pub enum Error {
@@ -52,7 +52,7 @@ where
     S: Clone + Send + Sync + 'static,
 {
     fn serve_crabstar_application(self) -> Result<Router<S>, Error> {
-        let router = self.merge(static_router()?);
+        let router = self.merge(assets_router()?);
 
         let router = router.nest("/crabstar-dev", live_reload::router());
 

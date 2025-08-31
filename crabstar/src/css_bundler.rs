@@ -27,7 +27,7 @@ static CSS_URL: OnceLock<String> = OnceLock::new();
 
 pub fn css_url() -> &'static str {
     if cfg!(debug_assertions) {
-        CSS_URL.get_or_init(|| "/static/bundle.css".to_owned())
+        CSS_URL.get_or_init(|| "/assets/bundle.css".to_owned())
     } else {
         CSS_URL
         .get()
@@ -37,7 +37,7 @@ pub fn css_url() -> &'static str {
 
 fn make_css_url(stylesheet: &str) -> String {
     if cfg!(debug_assertions) {
-        "/static/bundle.css".to_owned()
+        "/assets/bundle.css".to_owned()
     } else {
         let mut hasher = DefaultHasher::new();
         stylesheet.hash(&mut hasher);
@@ -45,7 +45,7 @@ fn make_css_url(stylesheet: &str) -> String {
         let hash =
             base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(hasher.finish().to_le_bytes());
 
-        format!("/static/{hash}")
+        format!("/assets/{hash}.css")
     }
 }
 
@@ -123,7 +123,7 @@ mod tests {
     #[cfg(debug_assertions)]
     #[test]
     fn uses_hardcoded_url_for_dev_builds() {
-        let want = "/static/bundle.css";
+        let want = "/assets/bundle.css";
         let got = make_css_url("body { height: 100vh; }");
         assert_eq!(got, want);
         let want = css_url();
@@ -134,7 +134,7 @@ mod tests {
     #[test]
     fn uses_stable_hash_url_for_release_builds() {
         let got = make_css_url("body { color: black; }");
-        let want = "/static/LYi6t_7_fTs";
+        let want = "/assets/LYi6t_7_fTs.css";
         assert_eq!(got, want);
     }
 

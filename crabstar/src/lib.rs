@@ -9,8 +9,10 @@ pub use signal::Signal;
 
 pub mod router;
 
-mod bundler;
-pub use bundler::{BUNDLER, css_url};
+mod css_bundler;
+pub use css_bundler::{BUNDLER, css_url};
+mod datastar_bundler;
+pub use datastar_bundler::datastar_url;
 
 pub mod events;
 
