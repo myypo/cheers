@@ -116,3 +116,12 @@ pub fn partition_delayed_immediate_fields(
 
     Ok((delayed_fields_from_named(delayed_fields)?, immediate_fields))
 }
+
+// TODO: I am duplicating this call across macros
+// either figure out how to abstract it
+// or consolidate the whole crate into a single macro
+pub fn dependency_template(absolute_path: &str) -> TokenStream {
+    quote! {
+        const DEPENDENCY_TEMPLATE: &[u8] = ::std::include_bytes!(#absolute_path);
+    }
+}

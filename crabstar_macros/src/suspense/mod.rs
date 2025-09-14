@@ -10,7 +10,8 @@ use syn::{Attribute, Data, DeriveInput, Error, Fields, Ident, Path, Visibility};
 use crate::{
     askama_config::{ASKAMA_CONFIG, ReadTemplate},
     helpers::{
-        DelayedField, NamedField, complete_ident, lifetimes, partition_delayed_immediate_fields,
+        DelayedField, NamedField, complete_ident, dependency_template, lifetimes,
+        partition_delayed_immediate_fields,
     },
 };
 
@@ -284,7 +285,7 @@ pub fn expand_attr(
 
     let ReadTemplate {
         content: mut source,
-        ..
+        absolute_path,
     } = ASKAMA_CONFIG.read_template(&path, &path.value())?;
 
     if params.is_child {
@@ -296,24 +297,7 @@ pub fn expand_attr(
         source.push_str("</template>");
     }
 
-    // TODO: it is actually possible to implement IntoResponse even with delayed fields
-    // have to copy impl from page
-    let into_response_impl = if params.is_child && delayed_fields.is_empty() {
-        quote! {
-            impl #lifetimes ::axum::response::IntoResponse for #ident #lifetimes {
-                fn into_response(self) -> ::axum::response::Response {
-                    use ::askama::Template;
-                    let mut body = match self.render() {
-                        Ok(body) => body,
-                        Err(_) => return ::axum::http::StatusCode::INTERNAL_SERVER_ERROR.into_response(),
-                    };
-                    (::axum::http::StatusCode::OK, ::axum::response::Html(body)).into_response()
-                }
-            }
-        }
-    } else {
-        quote! {}
-    };
+    let dependency_template = dependency_template(&absolute_path);
 
     Ok(quote! {
         #(#attrs)*
@@ -329,8 +313,6 @@ pub fn expand_attr(
 
         #complete_struct
 
-        #into_response_impl
-
         impl #lifetimes ::crabstar::suspense::Suspense for #complete_ident #lifetimes
         where
             #ident #lifetimes: 'static,
@@ -343,6 +325,8 @@ pub fn expand_attr(
                 >
             {
                 use ::futures::FutureExt;
+
+                #dependency_template
 
                 #suspense_body
             }

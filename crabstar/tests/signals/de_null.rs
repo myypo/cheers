@@ -1,18 +1,19 @@
-use crabstar::{Signal, signal};
-use serde::{Deserialize, Serialize};
+use crabstar::signal;
 
 #[signal]
-#[derive(Serialize, Deserialize, Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 struct Subscription {
+    #[react]
     plan: String,
+    #[react]
     active: bool,
 }
 
 #[signal]
-#[derive(Default, Serialize, Deserialize, Debug, PartialEq)]
+#[derive(Default, Debug, PartialEq)]
 struct Profile {
     #[react]
-    subscription: Option<Subscription>,
+    subscription: Option<SubscriptionSignals>,
 }
 
 #[test]
@@ -33,9 +34,10 @@ fn handles_specified_value() {
     "#;
 
     let got: ProfileSignals = serde_json::from_str(json).unwrap();
-    let want = Profile::signals().subscription(Some(Subscription {
-        plan: "premium".to_string(),
-        active: true,
-    }));
+    let want = Profile::signals().subscription(Some(
+        Subscription::signals()
+            .plan("premium".to_owned())
+            .active(true),
+    ));
     assert_eq!(got.subscription, want.subscription);
 }

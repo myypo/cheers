@@ -5,7 +5,7 @@ pub use crabstar_macros::suspense;
 
 mod signal;
 pub use crabstar_macros::signal;
-pub use signal::Signal;
+pub use signal::{Nested, NestedSignal};
 
 pub mod router;
 

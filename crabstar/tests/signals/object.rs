@@ -1,44 +1,41 @@
-use crabstar::{Signal, signal};
-use serde::{Deserialize, Serialize};
+use crabstar::signal;
 
 #[signal]
-#[derive(Clone, Default, Debug, PartialEq, Deserialize, Serialize)]
+#[derive(Clone, Default, Debug, PartialEq)]
 struct User {
     #[react]
     name: String,
     registered: bool,
     #[react]
-    achievements: Vec<Achievement>,
+    achievements: Vec<AchievementSignals>,
 }
 
 #[signal]
-#[derive(Debug, PartialEq, Clone, Deserialize, Serialize)]
+#[derive(Debug, PartialEq, Clone)]
 struct Achievement {
+    #[react]
     name: String,
+    #[react]
     points: Option<i32>,
 }
 
 #[signal]
-#[derive(Debug, Default, PartialEq, Clone, Deserialize, Serialize)]
+#[derive(Debug, Default, PartialEq, Clone)]
 struct Header {
     tip: String,
-    #[react(granular)]
-    user: Option<User>,
+    #[react]
+    user: Option<UserSignals>,
     #[react]
     avatar: String,
 }
 
 #[test]
-fn converts_nested_signals_to_json() {
+fn converts_object_signals_to_json() {
     let user = User::signals().name("dude".to_owned()).achievements(vec![
-        Achievement {
-            name: "Fell for it".to_owned(),
-            points: Some(15),
-        },
-        Achievement {
-            name: "Again".to_owned(),
-            points: None,
-        },
+        Achievement::signals()
+            .name("Fell for it".to_owned())
+            .points(Some(15)),
+        Achievement::signals().name("Again".to_owned()).points(None),
     ]);
     let avatar = "dog".to_owned();
 

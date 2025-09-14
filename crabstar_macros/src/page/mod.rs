@@ -6,6 +6,7 @@ use quote::quote;
 use syn::{Data, DeriveInput, Error, Ident, Lifetime, LifetimeParam};
 
 use crate::{
+    askama_config::ASKAMA_CONFIG,
     helpers::{NamedField, complete_ident},
     page::params::{Params, params},
     suspense::{self},
@@ -122,7 +123,9 @@ pub fn expand_attr(args: TokenStream, input: DeriveInput) -> Result<TokenStream,
 
     let params = params(args)?;
 
-    let source = templates::template_with_scripts(params.suspense, &params.path)?;
+    let read_template = ASKAMA_CONFIG.read_template(&params.path, &params.path.value())?;
+    let source =
+        templates::template_with_scripts(params.suspense, &params.path, read_template.content)?;
 
     let into_response_impl = into_response_impl(ident, &lifetimes, &params);
 

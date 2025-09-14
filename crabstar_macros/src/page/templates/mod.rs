@@ -1,6 +1,6 @@
 use syn::{Error, LitStr};
 
-use crate::askama_config::{ASKAMA_CONFIG, ReadTemplate};
+use crate::askama_config::ASKAMA_CONFIG;
 
 const STREAMING_SSR_SCRIPT: &str = include_str!("./streaming-ssr-script.html");
 const LIVE_RELOAD_SCRIPT: &str = include_str!("./live-reload-script.html");
@@ -17,10 +17,12 @@ fn inject_script(path: &LitStr, content: &mut String, script: &str) -> Result<()
     Ok(())
 }
 
-pub fn template_with_scripts(suspense: bool, path: &LitStr) -> Result<String, Error> {
+pub fn template_with_scripts(
+    suspense: bool,
+    path: &LitStr,
+    mut content: String,
+) -> Result<String, Error> {
     let path_str = path.value();
-
-    let ReadTemplate { mut content, .. } = ASKAMA_CONFIG.read_template(path, &path_str)?;
 
     if suspense {
         // TODO: move this to assets router

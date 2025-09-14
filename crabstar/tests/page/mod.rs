@@ -1,3 +1,5 @@
+mod lifetimes;
+
 use axum::response::IntoResponse;
 use crabstar::page;
 

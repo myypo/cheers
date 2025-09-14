@@ -54,7 +54,7 @@ where
     };
 
     let datastar_handler = || async move {
-        let headers = assets_headers("application/javascript");
+        let headers = assets_headers("text/javascript");
 
         (StatusCode::OK, headers, *datastar_bundler::BUNDLE).into_response()
     };

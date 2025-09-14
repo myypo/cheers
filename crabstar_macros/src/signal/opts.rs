@@ -1,8 +1,60 @@
-use syn::{Error, Meta, punctuated::Punctuated, spanned::Spanned};
+use syn::{
+    Error, Expr, Lit, LitStr, Meta, Token,
+    parse::{Parse, ParseStream},
+    punctuated::Punctuated,
+    spanned::Spanned,
+};
+
+#[derive(Default)]
+pub struct SignalAttr {
+    pub path: Option<LitStr>,
+}
+
+impl Parse for SignalAttr {
+    fn parse(input: ParseStream) -> Result<Self, Error> {
+        if input.is_empty() {
+            return Ok(Self::default());
+        }
+
+        let mut path: Option<LitStr> = None;
+        let metas = Punctuated::<Meta, Token![,]>::parse_terminated(input)?;
+
+        for meta in metas {
+            match meta {
+                Meta::NameValue(name_value) if name_value.path.is_ident("path") => {
+                    match name_value.value {
+                        Expr::Lit(lit) => match lit.lit {
+                            Lit::Str(s) => {
+                                path = Some(s);
+                            }
+                            _ => {
+                                return Err(Error::new_spanned(
+                                    lit,
+                                    "expected string literal for path",
+                                ));
+                            }
+                        },
+                        _ => {
+                            return Err(Error::new_spanned(
+                                name_value.value,
+                                "expected string literal for path",
+                            ));
+                        }
+                    }
+                }
+                _ => {
+                    return Err(Error::new_spanned(meta, "unsupported signal attribute"));
+                }
+            }
+        }
+
+        Ok(SignalAttr { path })
+    }
+}
 
 #[derive(Default)]
 pub struct ReactFieldAttr {
-    pub granular: bool,
+    pub id: bool,
 }
 
 impl TryFrom<&Meta> for ReactFieldAttr {
@@ -20,15 +72,24 @@ impl TryFrom<&Meta> for ReactFieldAttr {
             }
         };
 
-        let opts = list.parse_args_with(Punctuated::<Meta, syn::Token![,]>::parse_terminated)?;
-        let opts = opts.into_iter().find_map(|o| {
-            if o.path().is_ident("granular") {
-                Some(Self { granular: true })
-            } else {
-                None
-            }
-        });
+        let metas = list.parse_args_with(Punctuated::<Meta, Token![,]>::parse_terminated)?;
 
-        Ok(opts.unwrap_or_default())
+        let mut id = false;
+
+        for m in metas {
+            match m {
+                Meta::Path(path) if path.is_ident("id") => {
+                    id = true;
+                }
+                _ => {
+                    return Err(Error::new(
+                        m.span(),
+                        "Unsupported react field attribute. Expected 'granular' or 'id'",
+                    ));
+                }
+            }
+        }
+
+        Ok(ReactFieldAttr { id })
     }
 }

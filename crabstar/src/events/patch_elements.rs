@@ -1,10 +1,11 @@
 use std::fmt::Display;
 
 use askama::Template;
-use axum::response::sse;
+use axum::response::{IntoResponse, sse};
 
 use crate::events::{DATASTAR_PATCH_ELEMENTS, Event, sanitize_axum_sse_data};
 
+#[derive(Debug, Clone)]
 pub struct PatchElements {
     mode: Option<MorphMode>,
     selector: Option<String>,
@@ -32,7 +33,6 @@ impl PatchElements {
     where
         T: Template,
     {
-        self.buf.push_str("elements ");
         elements.render_into(&mut self.buf)?;
         Ok(self)
     }
@@ -53,8 +53,10 @@ impl PatchElements {
     }
 }
 
+#[derive(Default, Debug, Clone, Copy)]
 pub enum MorphMode {
     /// Morphs the outer HTML of the elements (default and recommended).
+    #[default]
     Outer,
     /// Morphs the inner HTML of the elements.
     Inner,
@@ -87,12 +89,6 @@ impl Display for MorphMode {
     }
 }
 
-impl Default for MorphMode {
-    fn default() -> Self {
-        Self::Outer
-    }
-}
-
 fn add_modifier(needs_newline: &mut bool, buf: &mut String, s: String) {
     if *needs_newline {
         buf.push('\n');
@@ -111,6 +107,11 @@ impl From<PatchElements> for Event {
         }: PatchElements,
     ) -> Self {
         let mut needs_newline = !buf.is_empty();
+        if !buf.is_empty() {
+            // TODO: this sucks to do
+            // but gives flexibility to implement IntoResponse for PatchElements
+            buf.insert_str(0, "elements ");
+        }
 
         if let Some(mode) = mode {
             add_modifier(&mut needs_newline, &mut buf, format!("mode {mode}"));
@@ -131,5 +132,32 @@ impl From<PatchElements> for Event {
             .data(sanitize_axum_sse_data(buf));
 
         Self(ev)
+    }
+}
+
+impl IntoResponse for PatchElements {
+    fn into_response(self) -> axum::response::Response {
+        let Self {
+            mode,
+            selector,
+            use_view_transition,
+            buf,
+        }: Self = self;
+
+        let mut r = axum::response::Response::builder().header("Content-Type", "text/html");
+
+        if let Some(mode) = mode {
+            r = r.header("datastar-mode", mode.to_string());
+        }
+        if let Some(selector) = selector {
+            r = r.header("datastar-selector", selector);
+        }
+        if use_view_transition {
+            r = r.header("datastar-use-view-transition", "true");
+        }
+
+        r.body(buf)
+            .map(IntoResponse::into_response)
+            .unwrap_or_else(|_| axum::http::StatusCode::INTERNAL_SERVER_ERROR.into_response())
     }
 }
