@@ -40,9 +40,7 @@ fn into_response_impl(ident: &Ident, lifetimes: &TokenStream, params: &Params) -
                 ::tokio::spawn(async move {
                     use ::crabstar::suspense::Suspense;
                     if let Err(e) = self.suspense(&tx).await {
-                        let e = ::std::boxed::Box::new(e);
-                        let e = ::crabstar::suspense::Error::Stream(e);
-                        let _ = tx.send(Err(e));
+                        let _ = tx.send(Err(e.into()));
                     }
                 });
 

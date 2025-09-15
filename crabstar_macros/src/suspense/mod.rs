@@ -115,7 +115,7 @@ pub fn prepare<'a>(input: &'a DeriveInput) -> Result<Prepared<'a>, Error> {
 }
 
 fn suspense_body(is_child: bool, path: &LitStr, delayed_fields: &[DelayedField]) -> TokenStream {
-    let immediate_field = if delayed_fields.is_empty() {
+    let immediate = if delayed_fields.is_empty() {
         quote! { self }
     } else {
         quote! { self.0 }
@@ -129,7 +129,7 @@ fn suspense_body(is_child: bool, path: &LitStr, delayed_fields: &[DelayedField])
         quote! {
             use ::askama::Template;
             let mut r = format!(r#"<template id="crabstar-template-{}" data-on-load="streamSsr(el.id, '{}')">"#, #path, #path);
-            let result = #immediate_field.render_into(&mut r).map_err(::crabstar::suspense::Error::Render);
+            let result = #immediate.render_into(&mut r).map_err(::std::convert::Into::into);
             let mut r = result.map(|_| r);
             if let Ok(r) = &mut r {
                 r.push_str("</template>");
@@ -139,7 +139,7 @@ fn suspense_body(is_child: bool, path: &LitStr, delayed_fields: &[DelayedField])
     } else {
         quote! {
             use ::askama::Template;
-            let mut r = #immediate_field.render().map_err(::crabstar::suspense::Error::Render);
+            let mut r = #immediate.render().map_err(::std::convert::Into::into);
             tx.send(r)
         }
     };
@@ -223,13 +223,15 @@ pub fn expand_attr(
     let delayed_struct = if delayed_fields.is_empty() {
         quote! {}
     } else {
-        let delayed_fields = delayed_fields
-            .iter()
-            .map(|DelayedField { name, future, .. }| {
+        let delayed_fields = delayed_fields.iter().map(
+            |DelayedField {
+                 name, future, vis, ..
+             }| {
                 quote! {
                     #vis #name: #future
                 }
-            });
+            },
+        );
 
         quote! {
             #vis struct #delayed_ident<#(#generic_params,)*>
@@ -307,6 +309,8 @@ pub fn expand_attr(
 
     let dependency_template = dependency_template(&absolute_path);
 
+    let boxed_error = quote! { ::std::boxed::Box<dyn ::std::error::Error + ::std::marker::Send + ::std::marker::Sync> };
+
     Ok(quote! {
         #(#attrs)*
         #[derive(::askama::Template)]
@@ -325,11 +329,11 @@ pub fn expand_attr(
         where
             #ident #lifetimes: 'static,
         {
-            async fn suspense(self, tx: &::tokio::sync::mpsc::UnboundedSender<::std::result::Result<::std::string::String, ::crabstar::suspense::Error>>)
+            async fn suspense(self, tx: &::tokio::sync::mpsc::UnboundedSender<::std::result::Result<::std::string::String, #boxed_error>>)
                 -> ::std::result::Result<
                 (),
                 ::tokio::sync::mpsc::error::SendError<
-                    ::std::result::Result<::std::string::String, ::crabstar::suspense::Error>>
+                    ::std::result::Result<::std::string::String, #boxed_error>>
                 >
             {
                 use ::futures::FutureExt;
@@ -337,6 +341,10 @@ pub fn expand_attr(
                 #dependency_template
 
                 #suspense_body
+            }
+
+            fn path() -> &'static str {
+                #path
             }
         }
 

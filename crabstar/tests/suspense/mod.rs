@@ -15,7 +15,7 @@ pub struct PostContent {
 #[suspense(path = "post.html")]
 pub struct Post {
     title: String,
-    #[delayed(path = "content.html")]
+    #[delayed]
     content: PostContent,
 }
 
@@ -27,9 +27,9 @@ pub struct Status {
 #[page(path = "home.html", suspense)]
 struct HomePage {
     user: String,
-    #[delayed(path = "post.html")]
+    #[delayed]
     post: Post,
-    #[delayed(path = "status.html")]
+    #[delayed]
     status: Status,
 }
 
@@ -62,16 +62,16 @@ async fn can_render_concurrently_in_order() {
                 barrier_post.wait().await;
                 let _guard_b = mutex_b_post.lock().await;
 
-                Post { title }.into_suspense(PostDelayed {
-                    content: async move { PostContent { content } },
-                })
+                Ok(Post { title }.into_suspense(PostDelayed {
+                    content: async move { Ok(PostContent { content }) },
+                }))
             },
             status: async move {
                 let _guard_c = mutex_c_status.lock().await;
                 barrier_status.wait().await;
                 let _guard_a = mutex_a_status.lock().await;
 
-                Status { outages_today }
+                Ok(Status { outages_today })
             },
         })
     };
@@ -155,11 +155,11 @@ async fn can_stream_with_axum() {
 
     let resp = HomePage { user: user.clone() }.into_suspense(HomePageDelayed {
         post: async move {
-            Post { title }.into_suspense(PostDelayed {
-                content: async move { PostContent { content } },
-            })
+            Ok(Post { title }.into_suspense(PostDelayed {
+                content: async move { Ok(PostContent { content }) },
+            }))
         },
-        status: async move { Status { outages_today } },
+        status: async move { Ok(Status { outages_today }) },
     });
 
     let resp = resp.into_response();
@@ -173,4 +173,55 @@ async fn can_stream_with_axum() {
     assert!(got.contains("content"));
     let got = next_axum_chunk(&mut body).await;
     assert!(got.contains("4"));
+}
+
+#[tokio::test]
+async fn error_handling_works() {
+    #[suspense(path = "post-content.html")]
+    pub struct Error {
+        content: String,
+    }
+
+    let user = "user".to_owned();
+    let post = "post".to_owned();
+    let status = "status".to_owned();
+
+    let resp = HomePage { user: user.clone() }.into_suspense(HomePageDelayed {
+        post: {
+            let post = post.clone();
+            async move { Err(Error { content: post }.into()) }
+        },
+        status: {
+            let status = status.clone();
+            async move { Err(Error { content: status }.into()) }
+        },
+    });
+
+    let resp = resp.into_response();
+    let mut body = resp.into_body().into_data_stream();
+
+    let initial = next_axum_chunk(&mut body).await;
+    assert!(initial.contains(&user));
+    assert!(initial.contains("Loading post..."));
+    assert!(initial.contains("Loading status..."));
+
+    let error_chunk1 = next_axum_chunk(&mut body).await;
+    assert_eq!(
+        error_chunk1,
+        format!(
+            "<template id=\"crabstar-template-post.html\" data-on-load=\"streamSsr(el.id, 'post.html')\">{}\n</template>",
+            post
+        )
+    );
+
+    let error_chunk2 = next_axum_chunk(&mut body).await;
+    assert_eq!(
+        error_chunk2,
+        format!(
+            "<template id=\"crabstar-template-status.html\" data-on-load=\"streamSsr(el.id, 'status.html')\">{}\n</template>",
+            status
+        )
+    );
+
+    assert!(body.next().await.is_none());
 }

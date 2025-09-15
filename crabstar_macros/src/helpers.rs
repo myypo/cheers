@@ -68,8 +68,9 @@ pub fn lifetimes(generics: &Generics) -> TokenStream {
 
 pub struct DelayedField<'a> {
     pub name: &'a Ident,
+    pub vis: &'a Visibility,
     pub future: Ident,
-    pub output: Ident,
+    pub output: TokenStream,
 }
 
 fn delayed_fields_from_named(fields: Vec<NamedField>) -> Result<Vec<DelayedField>, Error> {
@@ -89,15 +90,13 @@ fn delayed_fields_from_named(fields: Vec<NamedField>) -> Result<Vec<DelayedField
                 .collect::<Vec<String>>()
                 .join("::");
             let output = Ident::new(&format!("{}Complete", full_path), name.span());
+            let output = quote! { ::std::result::Result<#output, ::crabstar::suspense::Error> };
 
-            let _ = f
-                .attrs
-                .iter()
-                .find(|a| a.path().is_ident("delayed"))
-                .ok_or_else(|| Error::new(name.span(), "Missing #[delayed] attribute"))?;
+            let vis = f.vis;
 
             Ok(DelayedField {
                 name,
+                vis,
                 future,
                 output,
             })

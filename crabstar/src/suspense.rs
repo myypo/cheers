@@ -1,35 +1,71 @@
-use std::fmt::{Debug, Display};
+use std::{future::Future, marker::Send};
 
-use tokio::sync::mpsc;
+use askama::DynTemplate;
 
-#[derive(Debug)]
-pub enum Error {
-    Render(askama::Error),
-    Stream(Box<mpsc::error::SendError<Result<String, Error>>>),
-}
-
-impl Display for Error {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Error::Render(e) => write!(f, "render: {e}"),
-            Error::Stream(e) => write!(f, "stream: {e}"),
-        }
-    }
-}
-
-impl std::error::Error for Error {}
-
+// TODO: look into moving more code from the macro to this module???
 pub trait Suspense {
     fn suspense(
         self,
-        tx: &tokio::sync::mpsc::UnboundedSender<Result<String, Error>>,
-    ) -> impl std::future::Future<
-        Output = Result<(), tokio::sync::mpsc::error::SendError<Result<String, Error>>>,
+        tx: &tokio::sync::mpsc::UnboundedSender<
+            Result<String, Box<dyn std::error::Error + Send + Sync>>,
+        >,
+    ) -> impl Future<
+        Output = Result<
+            (),
+            tokio::sync::mpsc::error::SendError<
+                Result<String, Box<dyn std::error::Error + Send + Sync>>,
+            >,
+        >,
     > + Send;
+
+    fn path() -> &'static str;
 }
 
-impl axum::response::IntoResponse for Error {
-    fn into_response(self) -> axum::response::Response {
-        (axum::http::StatusCode::INTERNAL_SERVER_ERROR, self).into_response()
+pub struct Error(Box<dyn DynTemplate + Send>);
+
+impl Error {
+    pub fn dyn_render_into(&self, writer: &mut dyn std::fmt::Write) -> Result<(), askama::Error> {
+        self.0.dyn_render_into(writer)
+    }
+}
+
+impl<T: DynTemplate + Send + 'static> From<T> for Error {
+    fn from(value: T) -> Self {
+        Self(Box::new(value))
+    }
+}
+
+impl<T: Suspense + Send> Suspense for Result<T, Error> {
+    async fn suspense(
+        self,
+        tx: &tokio::sync::mpsc::UnboundedSender<
+            Result<String, Box<dyn std::error::Error + Send + Sync>>,
+        >,
+    ) -> Result<
+        (),
+        tokio::sync::mpsc::error::SendError<
+            Result<String, Box<dyn std::error::Error + Send + Sync>>,
+        >,
+    > {
+        match self {
+            Ok(v) => v.suspense(tx).await,
+            Err(e) => {
+                let path = T::path();
+                let mut r = format!(
+                    r#"<template id="crabstar-template-{}" data-on-load="streamSsr(el.id, '{}')">"#,
+                    path, path
+                );
+                let result = e.dyn_render_into(&mut r).map_err(Into::into);
+                let mut r = result.map(|_| r);
+                if let Ok(r) = &mut r {
+                    r.push_str("</template>");
+                }
+                tx.send(r)
+            }
+        }
+    }
+
+    fn path() -> &'static str {
+        T::path()
     }
 }
