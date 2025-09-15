@@ -22,9 +22,6 @@
 
     source.onerror = function(err) {
       console.error("Crabstar live-reload connection error:", err);
-      if (attempts >= 30) {
-        window.location.reload();
-      }
 
       const delay = Math.min(50 * Math.pow(1.25, attempts), 1000);
       source.close();
