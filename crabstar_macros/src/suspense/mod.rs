@@ -5,7 +5,7 @@ pub use params::{Params, params};
 
 use proc_macro2::TokenStream;
 use quote::quote;
-use syn::{Attribute, Data, DeriveInput, Error, Fields, Ident, Path, Visibility};
+use syn::{Attribute, Data, DeriveInput, Error, Fields, Ident, LitStr, Path, Visibility};
 
 use crate::{
     askama_config::{ASKAMA_CONFIG, ReadTemplate},
@@ -114,17 +114,34 @@ pub fn prepare<'a>(input: &'a DeriveInput) -> Result<Prepared<'a>, Error> {
     })
 }
 
-fn suspense_body(delayed_fields: &[DelayedField]) -> TokenStream {
+fn suspense_body(is_child: bool, path: &LitStr, delayed_fields: &[DelayedField]) -> TokenStream {
     let immediate_field = if delayed_fields.is_empty() {
         quote! { self }
     } else {
         quote! { self.0 }
     };
 
-    let immediate_call = quote! {
-        use ::askama::Template;
-        let mut r = #immediate_field.render().map_err(::crabstar::suspense::Error::Render);
-        tx.send(r)
+    let immediate_call = if is_child {
+        // TODO: there might be a way to do it at compile-time
+        // like creating two templates at the same time
+        // one for child suspense use and the other for PatchElements etc.
+        // or just figure out some mono-attribute macro approach
+        quote! {
+            use ::askama::Template;
+            let mut r = format!(r#"<template id="crabstar-template-{}" data-on-load="streamSsr(el.id, '{}')">"#, #path, #path);
+            let result = #immediate_field.render_into(&mut r).map_err(::crabstar::suspense::Error::Render);
+            let mut r = result.map(|_| r);
+            if let Ok(r) = &mut r {
+                r.push_str("</template>");
+            }
+            tx.send(r)
+        }
+    } else {
+        quote! {
+            use ::askama::Template;
+            let mut r = #immediate_field.render().map_err(::crabstar::suspense::Error::Render);
+            tx.send(r)
+        }
     };
 
     if delayed_fields.is_empty() {
@@ -265,7 +282,7 @@ pub fn expand_attr(
         }
     };
 
-    let suspense_body = suspense_body(&delayed_fields);
+    let suspense_body = suspense_body(params.is_child, &params.path, &delayed_fields);
 
     let into_suspense_impl = if delayed_fields.is_empty() {
         quote! {}
@@ -284,18 +301,9 @@ pub fn expand_attr(
     let path = params.path;
 
     let ReadTemplate {
-        content: mut source,
+        content: source,
         absolute_path,
     } = ASKAMA_CONFIG.read_template(&path, &path.value())?;
-
-    if params.is_child {
-        // TODO: this actually breaks with Askama extends etc.
-        let path = path.value();
-        source.insert_str(0, &format!(
-            r#"<template id="crabstar-template-{path}" data-on-load="streamSsr(el.id, '{path}')">"#
-        ));
-        source.push_str("</template>");
-    }
 
     let dependency_template = dependency_template(&absolute_path);
 

@@ -1,5 +1,8 @@
 use axum::{http::StatusCode, response::IntoResponse};
-use crabstar::events::{MorphMode, PatchElements, SseConnection};
+use crabstar::{
+    events::{MorphMode, PatchElements, SseConnection},
+    suspense,
+};
 
 use crate::read_axum_body;
 
@@ -29,15 +32,14 @@ data: selector #foo\n\n"
 
 #[tokio::test]
 async fn streams_patch_elements_with_elements() {
-    #[derive(askama::Template)]
-    #[template(source = "{{user}}", ext = "html")]
-    struct NewUser<'a> {
-        user: &'a str,
+    #[suspense(path = "post-content.html")]
+    struct PostContent<'a> {
+        content: &'a str,
     }
 
-    let user = "me".to_owned();
+    let content = "me";
     let patch = PatchElements::new()
-        .elements(NewUser { user: &user })
+        .elements(PostContent { content })
         .unwrap()
         .mode(MorphMode::Append)
         .use_view_transition(true);
@@ -56,7 +58,8 @@ async fn streams_patch_elements_with_elements() {
         body,
         format!(
             "event: datastar-patch-elements
-data: elements {user}
+data: elements {content}
+data: 
 data: mode append
 data: useViewTransition true\n\n"
         )

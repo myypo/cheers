@@ -92,8 +92,8 @@ async fn can_render_concurrently_in_order() {
         assert_ne!(home, home_unwrapped);
         assert!(
             home.starts_with(
-            home_unwrapped.as_bytes()
-        ));
+            home_unwrapped.as_bytes(),
+        ), "home = {:?}", home);
 
         // But the rest of chunks have to be wrapped in templates
         let post_wrapped = format!(
