@@ -210,7 +210,7 @@ pub fn expand_attr(
             .iter()
             .map(|DelayedField { output, future, .. }| {
                 quote! {
-                    #future: ::std::future::Future<Output = #output> + ::std::marker::Send + ::std::marker::Sync + 'static
+                    #future: ::std::future::Future<Output = #output> + ::std::marker::Send + 'static
                 }
             });
 
@@ -249,7 +249,7 @@ pub fn expand_attr(
             .iter()
             .map(|DelayedField { name, output, .. }| {
                 quote! {
-                    #vis #name: ::std::pin::Pin<::std::boxed::Box<dyn ::std::future::Future<Output = #output> + ::std::marker::Send + ::std::marker::Sync + 'static>>
+                    #vis #name: ::std::pin::Pin<::std::boxed::Box<dyn ::std::future::Future<Output = #output> + ::std::marker::Send + 'static>>
                 }
             });
 
