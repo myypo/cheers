@@ -53,3 +53,25 @@ data: elements <script>{s}</script>\n\n"
         )
     );
 }
+
+#[tokio::test]
+async fn works_with_multiline_scripts() {
+    let script = js_script!("console.log('hi');\nconsole.log('there');");
+
+    let (resp, conn) = SseConnection::new();
+    tokio::spawn(async move {
+        conn.send(script).await.unwrap();
+    });
+
+    let resp = read_axum_body(resp).await;
+    assert_eq!(
+        resp,
+        format!(
+            "event: datastar-patch-elements
+data: mode append
+data: selector body
+data: elements <script>console.log('hi');
+data: elements console.log('there');</script>\n\n"
+        )
+    );
+}

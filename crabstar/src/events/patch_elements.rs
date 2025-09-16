@@ -7,10 +7,10 @@ use crate::events::{DATASTAR_PATCH_ELEMENTS, Event, sanitize_axum_sse_data};
 
 #[derive(Debug, Clone)]
 pub struct PatchElements {
-    mode: Option<MorphMode>,
+    mode: Option<PatchElementsMode>,
     selector: Option<String>,
     use_view_transition: bool,
-    buf: String,
+    elements: Option<String>,
 }
 
 impl Default for PatchElements {
@@ -25,19 +25,11 @@ impl PatchElements {
             mode: None,
             selector: None,
             use_view_transition: false,
-            buf: String::new(),
+            elements: None,
         }
     }
 
-    pub fn elements<T>(mut self, elements: T) -> Result<Self, askama::Error>
-    where
-        T: Template,
-    {
-        elements.render_into(&mut self.buf)?;
-        Ok(self)
-    }
-
-    pub fn mode(mut self, mode: MorphMode) -> Self {
+    pub fn mode(mut self, mode: PatchElementsMode) -> Self {
         self.mode = Some(mode);
         self
     }
@@ -51,12 +43,16 @@ impl PatchElements {
         self.use_view_transition = use_view_transition;
         self
     }
+
+    pub fn elements<T: Template>(mut self, elements: T) -> Result<Self, askama::Error> {
+        self.elements = Some(elements.render()?);
+        Ok(self)
+    }
 }
 
-#[derive(Default, Debug, Clone, Copy)]
-pub enum MorphMode {
+#[derive(Debug, Clone, Copy)]
+pub enum PatchElementsMode {
     /// Morphs the outer HTML of the elements (default and recommended).
-    #[default]
     Outer,
     /// Morphs the inner HTML of the elements.
     Inner,
@@ -74,27 +70,19 @@ pub enum MorphMode {
     Remove,
 }
 
-impl Display for MorphMode {
+impl Display for PatchElementsMode {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            MorphMode::Outer => write!(f, "outer"),
-            MorphMode::Inner => write!(f, "inner"),
-            MorphMode::Replace => write!(f, "replace"),
-            MorphMode::Prepend => write!(f, "prepend"),
-            MorphMode::Append => write!(f, "append"),
-            MorphMode::Before => write!(f, "before"),
-            MorphMode::After => write!(f, "after"),
-            MorphMode::Remove => write!(f, "remove"),
+            PatchElementsMode::Outer => write!(f, "outer"),
+            PatchElementsMode::Inner => write!(f, "inner"),
+            PatchElementsMode::Replace => write!(f, "replace"),
+            PatchElementsMode::Prepend => write!(f, "prepend"),
+            PatchElementsMode::Append => write!(f, "append"),
+            PatchElementsMode::Before => write!(f, "before"),
+            PatchElementsMode::After => write!(f, "after"),
+            PatchElementsMode::Remove => write!(f, "remove"),
         }
     }
-}
-
-fn add_modifier(needs_newline: &mut bool, buf: &mut String, s: String) {
-    if *needs_newline {
-        buf.push('\n');
-    }
-    buf.push_str(&s);
-    *needs_newline = true;
 }
 
 impl From<PatchElements> for Event {
@@ -103,33 +91,46 @@ impl From<PatchElements> for Event {
             mode,
             selector,
             use_view_transition,
-            mut buf,
+            elements,
         }: PatchElements,
     ) -> Self {
-        let mut needs_newline = !buf.is_empty();
-        if !buf.is_empty() {
-            // TODO: this sucks to do
-            // but gives flexibility to implement IntoResponse for PatchElements
-            buf.insert_str(0, "elements ");
+        fn add_sse_line(data: &mut String, line: String) {
+            if !data.is_empty() {
+                data.push('\n');
+            }
+            data.push_str(&line);
         }
 
+        let mut data = String::new();
+
         if let Some(mode) = mode {
-            add_modifier(&mut needs_newline, &mut buf, format!("mode {mode}"));
+            add_sse_line(&mut data, format!("mode {mode}"));
         }
         if let Some(selector) = selector {
-            add_modifier(&mut needs_newline, &mut buf, format!("selector {selector}"));
+            add_sse_line(&mut data, format!("selector {selector}"));
         }
         if use_view_transition {
-            add_modifier(
-                &mut needs_newline,
-                &mut buf,
-                format!("useViewTransition {use_view_transition}"),
-            );
+            add_sse_line(&mut data, "useViewTransition true".to_owned());
+        }
+        if let Some(elements) = elements {
+            let mut lines = elements.lines();
+            if let Some(l) = lines.next() {
+                if !data.is_empty() {
+                    data.push('\n');
+                }
+                data.push_str("elements ");
+                data.push_str(l);
+            }
+            for l in lines {
+                data.push('\n');
+                data.push_str("elements ");
+                data.push_str(l);
+            }
         }
 
         let ev = sse::Event::default()
             .event(DATASTAR_PATCH_ELEMENTS)
-            .data(sanitize_axum_sse_data(buf));
+            .data(sanitize_axum_sse_data(data));
 
         Self(ev)
     }
@@ -141,7 +142,7 @@ impl IntoResponse for PatchElements {
             mode,
             selector,
             use_view_transition,
-            buf,
+            elements,
         }: Self = self;
 
         let mut r = axum::response::Response::builder().header("Content-Type", "text/html");
@@ -155,8 +156,9 @@ impl IntoResponse for PatchElements {
         if use_view_transition {
             r = r.header("datastar-use-view-transition", "true");
         }
+        let body = elements.map(sanitize_axum_sse_data).unwrap_or_default();
 
-        r.body(buf)
+        r.body(body)
             .map(IntoResponse::into_response)
             .unwrap_or_else(|_| axum::http::StatusCode::INTERNAL_SERVER_ERROR.into_response())
     }

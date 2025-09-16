@@ -1,5 +1,5 @@
 mod patch_elements;
-pub use patch_elements::{MorphMode, PatchElements};
+pub use patch_elements::{PatchElements, PatchElementsMode};
 
 mod js_script;
 pub use js_script::JsScript;

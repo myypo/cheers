@@ -1,6 +1,7 @@
 use std::{fmt::Display, future::Future, marker::Send};
 
 // TODO: look into moving more code from the macro to this module???
+#[allow(clippy::type_complexity)]
 pub trait Suspense {
     fn suspense(
         self,

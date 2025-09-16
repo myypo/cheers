@@ -9,12 +9,20 @@ pub struct JsScript(String);
 
 impl From<JsScript> for Event {
     fn from(value: JsScript) -> Self {
-        let script = sanitize_axum_sse_data(value.0);
+        let lines = sanitize_axum_sse_data(value.0);
+        let mut lines = lines.lines();
+
+        let mut script = String::new();
+        if let Some(s) = lines.next() {
+            script.push_str(&format!("elements <script>{}", s));
+        }
+        for l in lines {
+            script.push_str(&format!("\nelements {l}"));
+        }
+
         let ev = sse::Event::default()
             .event(DATASTAR_PATCH_ELEMENTS)
-            .data(format!(
-                "mode append\nselector body\nelements <script>{script}</script>"
-            ));
+            .data(format!("mode append\nselector body\n{script}</script>"));
         Self(ev)
     }
 }
