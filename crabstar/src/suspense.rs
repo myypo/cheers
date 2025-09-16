@@ -1,6 +1,4 @@
-use std::{future::Future, marker::Send};
-
-use askama::DynTemplate;
+use std::{fmt::Display, future::Future, marker::Send};
 
 // TODO: look into moving more code from the macro to this module???
 pub trait Suspense {
@@ -16,20 +14,22 @@ pub trait Suspense {
                 Result<String, Box<dyn std::error::Error + Send + Sync>>,
             >,
         >,
-    > + Send;
+    >;
 
     fn path() -> &'static str;
 }
 
-pub struct Error(Box<dyn DynTemplate + Send>);
+// TODO: boxing to avoid lots of generics in the macros
+// but generics might actually be fine, have to benchmark compile-time
+pub struct Error(Box<dyn Display + Send>);
 
 impl Error {
-    pub fn dyn_render_into(&self, writer: &mut dyn std::fmt::Write) -> Result<(), askama::Error> {
-        self.0.dyn_render_into(writer)
+    pub fn display(&self) -> String {
+        self.0.to_string()
     }
 }
 
-impl<T: DynTemplate + Send + 'static> From<T> for Error {
+impl<T: Display + Send + 'static> From<T> for Error {
     fn from(value: T) -> Self {
         Self(Box::new(value))
     }
@@ -55,12 +55,9 @@ impl<T: Suspense + Send> Suspense for Result<T, Error> {
                     r#"<template id="crabstar-template-{}" data-on-load="streamSsr(el.id, '{}')">"#,
                     path, path
                 );
-                let result = e.dyn_render_into(&mut r).map_err(Into::into);
-                let mut r = result.map(|_| r);
-                if let Ok(r) = &mut r {
-                    r.push_str("</template>");
-                }
-                tx.send(r)
+                r.push_str(&e.display());
+                r.push_str("</template>");
+                tx.send(Ok(r))
             }
         }
     }
