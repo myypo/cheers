@@ -6,7 +6,7 @@ use axum::{
 };
 
 use crate::{
-    BUNDLER,
+    CSS_BUNDLER,
     datastar_bundler::{self, datastar_url},
 };
 use crate::{css_url, router::Error};
@@ -32,11 +32,11 @@ where
     S: Clone + Send + Sync + 'static,
 {
     #[cfg(not(debug_assertions))]
-    let stylesheet = BUNDLER.bundle()?;
+    let stylesheet = CSS_BUNDLER.bundle()?;
 
     let css_handler = || async move {
         #[cfg(debug_assertions)]
-        let stylesheet = match BUNDLER.bundle() {
+        let stylesheet = match CSS_BUNDLER.bundle() {
             Ok(stylesheet) => stylesheet,
             Err(e) => {
                 let body = format!("Error bundling CSS in dev mode: {e}");

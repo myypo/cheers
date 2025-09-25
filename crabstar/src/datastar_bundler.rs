@@ -1,6 +1,8 @@
-use std::env;
 use std::path::Path;
 use std::sync::LazyLock;
+use std::{env, path::PathBuf};
+
+use ignore::{WalkBuilder, types::TypesBuilder};
 
 pub fn datastar_url() -> &'static str {
     "/assets/datastar.js"
@@ -9,8 +11,11 @@ pub fn datastar_url() -> &'static str {
 pub static BUNDLE: LazyLock<&'static str> = LazyLock::new(|| {
     let html_files = collect_html_files().expect("Failed to scan workspace for HTML files");
 
-    let bundle =
-        bundlestar::bundle(true, html_files.iter().map(String::as_str)).expect("bundlestar error");
+    let bundle = bundlestar::bundle(
+        true,
+        html_files.iter().map(|(p, c)| (p.as_path(), c.as_str())),
+    )
+    .expect("bundlestar error");
 
     bundle.leak()
 });
@@ -39,44 +44,39 @@ fn find_workspace_root() -> Result<std::path::PathBuf, Box<dyn std::error::Error
 }
 
 fn traverse_for_html_files(
-    dir: &Path,
-    html_files: &mut Vec<std::path::PathBuf>,
-) -> Result<(), Box<dyn std::error::Error>> {
-    if !dir.is_dir() {
-        return Ok(());
-    }
+    dir: &std::path::Path,
+) -> Result<Vec<std::path::PathBuf>, Box<dyn std::error::Error>> {
+    let mut html_files = Vec::new();
 
-    for entry in std::fs::read_dir(dir)? {
+    let mut types = TypesBuilder::new();
+    types.add("html", "*.html")?;
+    types.select("html");
+    let types = types.build()?;
+
+    let walker = WalkBuilder::new(dir).types(types).build();
+
+    for entry in walker {
         let entry = entry?;
         let path = entry.path();
-
-        if path.is_dir() {
-            if let Some(dir_name) = path.file_name().and_then(|n| n.to_str())
-                && matches!(dir_name, "target" | ".git" | "node_modules" | ".cargo")
-            {
-                continue;
-            }
-            traverse_for_html_files(&path, html_files)?;
-        } else if path.extension().and_then(|ext| ext.to_str()) == Some("html") {
-            html_files.push(path);
+        if path.is_file() {
+            html_files.push(path.to_path_buf());
         }
     }
 
-    Ok(())
+    Ok(html_files)
 }
 
-fn collect_html_files() -> Result<Vec<String>, Box<dyn std::error::Error>> {
+fn collect_html_files() -> Result<Vec<(PathBuf, String)>, Box<dyn std::error::Error>> {
     let workspace_root = find_workspace_root()?;
-    let mut html_files = Vec::new();
 
-    traverse_for_html_files(&workspace_root, &mut html_files)?;
+    let file_paths = traverse_for_html_files(&workspace_root)?;
 
-    let mut file_contents = Vec::new();
-    for file_path in html_files {
-        let content = std::fs::read_to_string(&file_path)
-            .map_err(|e| format!("Failed to read {}: {}", file_path.display(), e))?;
-        file_contents.push(content);
+    let mut files = Vec::new();
+    for path in file_paths {
+        let content = std::fs::read_to_string(&path)
+            .map_err(|e| format!("Failed to read {}: {}", path.display(), e))?;
+        files.push((path, content));
     }
 
-    Ok(file_contents)
+    Ok(files)
 }

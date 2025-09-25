@@ -14,9 +14,17 @@ use futures::StreamExt;
 
 const DATASTAR_PATCH_ELEMENTS: &str = "datastar-patch-elements";
 
-struct Events(tokio::sync::mpsc::Receiver<sse::Event>);
+// TODO: write an impl that allows to construct this type from a stream
+pub struct SseEvents(tokio::sync::mpsc::Receiver<sse::Event>);
 
-impl IntoResponse for Events {
+impl SseEvents {
+    pub fn new() -> (SseConnection, Self) {
+        let (tx, rx) = tokio::sync::mpsc::channel(128);
+        (SseConnection { tx }, Self(rx))
+    }
+}
+
+impl IntoResponse for SseEvents {
     fn into_response(self) -> Response {
         let stream = tokio_stream::wrappers::ReceiverStream::new(self.0);
         let stream = stream.map(Ok::<sse::Event, Infallible>);
@@ -50,11 +58,6 @@ pub struct SseConnection {
 }
 
 impl SseConnection {
-    pub fn new() -> (impl IntoResponse, Self) {
-        let (tx, rx) = tokio::sync::mpsc::channel(128);
-        (Events(rx), Self { tx })
-    }
-
     pub async fn send<T>(&self, ev: T) -> Result<(), Error>
     where
         T: Into<Event>,

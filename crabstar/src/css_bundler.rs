@@ -112,7 +112,7 @@ impl CssBundler {
     }
 }
 
-pub static BUNDLER: LazyLock<CssBundler> = LazyLock::new(|| CssBundler(Mutex::new(Vec::new())));
+pub static CSS_BUNDLER: LazyLock<CssBundler> = LazyLock::new(|| CssBundler(Mutex::new(Vec::new())));
 
 #[cfg(test)]
 mod tests {
@@ -150,7 +150,7 @@ mod tests {
     fn can_include_css_in_workspace() {
         include_css!("../tests/assets/css/hello.css");
 
-        let got = BUNDLER.bundle().unwrap();
+        let got = CSS_BUNDLER.bundle().unwrap();
         let want = if cfg!(debug_assertions) {
             ".container {\n  width: 100%;\n}\n"
         } else {

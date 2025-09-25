@@ -1,6 +1,6 @@
 use axum::{http::StatusCode, response::IntoResponse};
 use crabstar::{
-    events::{PatchElements, PatchElementsMode, SseConnection},
+    events::{PatchElements, PatchElementsMode, SseEvents},
     suspense,
 };
 
@@ -12,7 +12,7 @@ async fn streams_patch_elements_without_elements() {
         .mode(PatchElementsMode::Remove)
         .selector("#foo");
 
-    let (resp, conn) = SseConnection::new();
+    let (conn, resp) = SseEvents::new();
     tokio::spawn(async move {
         conn.send(patch).await.unwrap();
     });
@@ -44,7 +44,7 @@ async fn streams_patch_elements_with_elements() {
         .mode(PatchElementsMode::Append)
         .use_view_transition(true);
 
-    let (resp, conn) = SseConnection::new();
+    let (conn, resp) = SseEvents::new();
     tokio::spawn(async move {
         conn.send(patch).await.unwrap();
     });
@@ -78,7 +78,7 @@ async fn works_with_multiine_elements() {
         .unwrap()
         .mode(PatchElementsMode::Inner);
 
-    let (resp, conn) = SseConnection::new();
+    let (conn, resp) = SseEvents::new();
     tokio::spawn(async move {
         conn.send(patch).await.unwrap();
     });

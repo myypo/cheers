@@ -1,5 +1,5 @@
 use axum::response::IntoResponse;
-use crabstar::{events::SseConnection, js_script};
+use crabstar::{events::SseEvents, js_script};
 
 use crate::read_axum_body;
 
@@ -37,7 +37,7 @@ async fn enclosed_in_script_tags_in_sse() {
     let s = r#"history.pushState({}, "", "456");"#.to_owned();
 
     let script = js_script!(r#"history.pushState({{}}, "", "456");"#);
-    let (resp, conn) = SseConnection::new();
+    let (conn, resp) = SseEvents::new();
     tokio::spawn(async move {
         conn.send(script).await.unwrap();
     });
@@ -58,7 +58,7 @@ data: elements <script>{s}</script>\n\n"
 async fn works_with_multiline_scripts() {
     let script = js_script!("console.log('hi');\nconsole.log('there');");
 
-    let (resp, conn) = SseConnection::new();
+    let (conn, resp) = SseEvents::new();
     tokio::spawn(async move {
         conn.send(script).await.unwrap();
     });

@@ -6,11 +6,11 @@ const STREAMING_SSR_SCRIPT: &str = include_str!("./streaming-ssr-script.html");
 const LIVE_RELOAD_SCRIPT: &str = include_str!("./live-reload-script.html");
 
 fn inject_script(path: &LitStr, content: &mut String, script: &str) -> Result<(), Error> {
-    let pos = content.rfind("<!-- inject-crabstar -->")
+    let pos = content.rfind("<!-- crabstar: inject_scripts() -->")
     .or_else(|| content.rfind("</body>"))
     .ok_or_else(|| Error::new_spanned(
         path,
-        "Page template must either contain a visible closing </body> tag or explicitly state where to inject scripts with '<!-- inject-crabstar -->' comment",
+        "Page template must either contain a visible closing </body> tag or explicitly state where to inject scripts with '<!-- crabstar: inject_scripts() -->' comment",
     ))?;
 
     content.insert_str(pos, script);

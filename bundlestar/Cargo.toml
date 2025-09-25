@@ -18,6 +18,7 @@ swc_atoms.workspace = true
 regex.workspace = true
 anyhow.workspace = true
 path-clean.workspace = true
+nom.workspace = true
 
 [build-dependencies]
 walkdir.workspace = true

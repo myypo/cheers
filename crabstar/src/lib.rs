@@ -10,7 +10,7 @@ pub use signal::{Nested, NestedSignal};
 pub mod router;
 
 mod css_bundler;
-pub use css_bundler::{BUNDLER, css_url};
+pub use css_bundler::{CSS_BUNDLER, css_url};
 mod datastar_bundler;
 pub use datastar_bundler::datastar_url;
 
@@ -22,7 +22,7 @@ pub mod de;
 #[macro_export]
 macro_rules! include_css {
     ($css_file:expr) => {
-        ($crate::BUNDLER).add({
+        ($crate::CSS_BUNDLER).add({
             if cfg!(debug_assertions) {
                 let __manifest_dir = ::std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
                 let mut __file_path = ::std::path::PathBuf::from(file!());

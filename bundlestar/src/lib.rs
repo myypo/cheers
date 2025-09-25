@@ -1,33 +1,34 @@
-use std::fmt::Display;
+use std::{fmt::Display, path::Path};
 
 use crate::{
-    analyzer::Analyzer,
+    analyze::analyze,
     plugins::{ON_LOAD_ATTR_PLUGIN, Plugin},
 };
 
-mod analyzer;
+mod analyze;
 mod plugins;
 mod swc;
 
 #[derive(Debug)]
-pub enum Error {
+pub enum Error<'a> {
     Swc(Box<dyn std::error::Error>),
+    Analyze(analyze::Error<'a>),
 }
 
-impl Display for Error {
+impl<'a> Display for Error<'a> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Error::Swc(err) => write!(f, "SWC: {}", err),
+            Error::Analyze(err) => write!(f, "Analyze: {}", err),
         }
     }
 }
 
 pub fn bundle<'a>(
     suspense: bool,
-    html_files: impl IntoIterator<Item = &'a str>,
-) -> Result<String, Error> {
-    let analyzer = Analyzer::new();
-    let elements = analyzer.analyze(html_files);
+    html_files: impl IntoIterator<Item = (&'a Path, &'a str)>,
+) -> Result<String, Error<'a>> {
+    let elements = analyze(html_files)?;
 
     let attr_plugins = plugins::AttrPlugins;
     let action_plugins = plugins::ActionPlugins;
@@ -86,9 +87,20 @@ mod tests {
     #[test]
     fn uses_backend_put_action() {
         let html = r#"<button data-on-click="@put('/endpoint')"></button>"#;
-        let result = bundle(false, [html]).unwrap();
+        let result = bundle(false, [(Path::new("uses_backend_put_action.html"), html)]).unwrap();
         assert!(result.contains("PUT"));
         assert!(result.contains("datastar-patch-elements"));
         assert!(result.contains("datastar-patch-signals"));
+    }
+
+    #[test]
+    fn short_circuits_on_analyze_error() {
+        let html = r#"<button data-{{mystery }}="@put('/endpoint')"></button>"#;
+        let e = bundle(
+            false,
+            [(Path::new("short_circuits_on_analyze_error.html"), html)],
+        )
+        .unwrap_err();
+        assert!(matches!(e, Error::Analyze(_)));
     }
 }
