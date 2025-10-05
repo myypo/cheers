@@ -17,6 +17,7 @@ use notify::{RecommendedWatcher, Watcher};
 
 static DEBOUNCE: Duration = Duration::from_millis(50);
 
+// TODO: it is redundant right now, because the JS script is going to reload on stream error
 pub fn router<S>() -> Router<S>
 where
     S: Clone + Send + Sync + 'static,
@@ -29,20 +30,20 @@ where
 
         let mut watcher: RecommendedWatcher = match Watcher::new(
             move |res: Result<notify::Event, notify::Error>| {
-                let Ok(e) = res else {
+                let Ok(ev) = res else {
                     return;
                 };
-                if !e
+                if !ev
                     .paths
                     .iter()
-                    .any(|p| p.extension().is_some_and(|e| e == "css" || e == "js"))
+                    .any(|p| p.extension().is_some_and(|e| e == "rs" || e == "html"))
                 {
                     return;
                 };
 
                 if let notify::EventKind::Create(_)
                 | notify::EventKind::Modify(_)
-                | notify::EventKind::Remove(_) = &e.kind
+                | notify::EventKind::Remove(_) = &ev.kind
                 {
                     let now = Instant::now();
                     if now.duration_since(last_update) < DEBOUNCE {

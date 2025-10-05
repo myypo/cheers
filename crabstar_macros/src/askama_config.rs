@@ -29,6 +29,8 @@ pub struct ReadTemplate {
 
 impl AskamaConfig {
     fn find_path(&self, span: &LitStr, path: &str) -> Result<String, Error> {
+        let start_at = std::path::PathBuf::from(&proc_macro::Span::call_site().start().file());
+
         if let Some(cached_path) = ABSOLUTE_PATH_CACHE.lock().expect("lock").get(path) {
             return Ok(cached_path.clone());
         }
@@ -38,14 +40,16 @@ impl AskamaConfig {
             .dirs
             .iter()
             .find_map(|dir| {
-                let full_path = dir.join(path);
-                match std::fs::exists(&full_path) {
-                    Ok(true) => Some(Ok(full_path.to_string_lossy().to_string())),
-                    Ok(false) => None,
-                    Err(e) => Some(Err(Error::new_spanned(
-                        span,
-                        format!("failed to check template path: {e}"),
-                    ))),
+                let relative = start_at.with_file_name(path);
+                if relative.exists() {
+                    return Some(relative.to_string_lossy().to_string());
+                }
+
+                let absolute_path_path = dir.join(path);
+                if absolute_path_path.exists() {
+                    Some(absolute_path_path.to_string_lossy().to_string())
+                } else {
+                    None
                 }
             })
             .ok_or_else(|| {
@@ -53,7 +57,7 @@ impl AskamaConfig {
                     span,
                     format!("template {} not found in any configured directory", path),
                 )
-            })??;
+            })?;
 
         ABSOLUTE_PATH_CACHE
             .lock()

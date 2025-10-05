@@ -1,9 +1,6 @@
 mod patch_elements;
 pub use patch_elements::{PatchElements, PatchElementsMode};
 
-mod js_script;
-pub use js_script::JsScript;
-
 use std::{convert::Infallible, fmt::Display};
 
 use axum::response::{
@@ -12,7 +9,7 @@ use axum::response::{
 };
 use futures::StreamExt;
 
-const DATASTAR_PATCH_ELEMENTS: &str = "datastar-patch-elements";
+pub(crate) const DATASTAR_PATCH_ELEMENTS: &str = "datastar-patch-elements";
 
 // TODO: write an impl that allows to construct this type from a stream
 pub struct SseEvents(tokio::sync::mpsc::Receiver<sse::Event>);
@@ -35,7 +32,7 @@ impl IntoResponse for SseEvents {
     }
 }
 
-pub struct Event(sse::Event);
+pub struct Event(pub(crate) sse::Event);
 
 #[derive(Debug)]
 pub enum Error {
@@ -68,6 +65,6 @@ impl SseConnection {
 }
 
 /// Axum SSE panics if it encounters carriage return
-fn sanitize_axum_sse_data(data: String) -> String {
+pub(crate) fn sanitize_axum_sse_data(data: String) -> String {
     data.replace("\r\n", "\n").replace('\r', "\n")
 }

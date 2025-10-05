@@ -16,6 +16,9 @@ pub use datastar_bundler::datastar_url;
 
 pub mod events;
 
+mod js_script;
+pub use js_script::JsScript;
+
 /// Deserialization helpers used by proc-macros
 pub mod de;
 
