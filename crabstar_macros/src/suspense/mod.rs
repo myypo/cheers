@@ -10,8 +10,8 @@ use syn::{Attribute, Data, DeriveInput, Error, Fields, Ident, LitStr, Path, Visi
 use crate::{
     askama_config::{ASKAMA_CONFIG, ReadTemplate},
     helpers::{
-        DelayedField, NamedField, complete_ident, dependency_template, lifetimes,
-        partition_delayed_immediate_fields,
+        DelayedField, NamedField, complete_ident, dependency_template, generic_args,
+        generic_params, partition_delayed_immediate_fields,
     },
 };
 
@@ -65,7 +65,8 @@ pub struct Prepared<'a> {
     pub boxed_delayed_ident: Ident,
     pub delayed_fields: Vec<DelayedField<'a>>,
     pub complete_ident: Ident,
-    pub lifetimes: TokenStream,
+    pub struct_generic_params: TokenStream,
+    pub struct_generic_args: TokenStream,
 }
 
 pub fn prepare<'a>(input: &'a DeriveInput) -> Result<Prepared<'a>, Error> {
@@ -83,7 +84,8 @@ pub fn prepare<'a>(input: &'a DeriveInput) -> Result<Prepared<'a>, Error> {
         }
     };
     SupportedAttributes::validate(&data_struct.fields)?;
-    let lifetimes = lifetimes(&input.generics);
+    let struct_generic_params = generic_params(&input.generics);
+    let struct_generic_args = generic_args(&input.generics);
 
     let named_fields = NamedField::from_fields(&data_struct.fields)?;
     let (delayed_fields, immediate_fields) = partition_delayed_immediate_fields(named_fields)?;
@@ -110,7 +112,8 @@ pub fn prepare<'a>(input: &'a DeriveInput) -> Result<Prepared<'a>, Error> {
         boxed_delayed_ident,
         delayed_fields,
         complete_ident,
-        lifetimes,
+        struct_generic_params,
+        struct_generic_args,
     })
 }
 
@@ -188,7 +191,8 @@ pub fn expand_attr(
         boxed_delayed_ident,
         delayed_fields,
         complete_ident,
-        lifetimes,
+        struct_generic_params,
+        struct_generic_args,
     } = prepare(&input)?;
 
     let immediate_fields = immediate_fields.iter().map(
@@ -276,11 +280,12 @@ pub fn expand_attr(
 
     let complete_struct = if delayed_fields.is_empty() {
         quote! {
-            #vis type #complete_ident #lifetimes = #ident #lifetimes;
+            #[allow(type_alias_bounds)]
+            #vis type #complete_ident #struct_generic_params = #ident #struct_generic_args;
         }
     } else {
         quote! {
-            #vis struct #complete_ident #lifetimes (#ident #lifetimes, #boxed_delayed_ident);
+            #vis struct #complete_ident #struct_generic_params (#ident #struct_generic_args, #boxed_delayed_ident);
         }
     };
 
@@ -290,8 +295,8 @@ pub fn expand_attr(
         quote! {}
     } else {
         quote! {
-            impl #lifetimes #ident #lifetimes {
-                #vis fn into_suspense<#(#generic_params,)*>(self, delayed: #delayed_ident<#(#generic_params,)*>) -> #complete_ident #lifetimes
+            impl #struct_generic_params #ident #struct_generic_args {
+                #vis fn into_suspense<#(#generic_params,)*>(self, delayed: #delayed_ident<#(#generic_params,)*>) -> #complete_ident #struct_generic_args
                 #where_clause
                 {
                     #complete_ident(self, delayed.into())
@@ -315,7 +320,7 @@ pub fn expand_attr(
         #(#attrs)*
         #[derive(::askama::Template)]
         #[template(source = #source, ext = "html")]
-        #vis struct #ident #lifetimes {
+        #vis struct #ident #struct_generic_params {
             #(#immediate_fields,)*
         }
 
@@ -325,9 +330,9 @@ pub fn expand_attr(
 
         #complete_struct
 
-        impl #lifetimes ::crabstar::suspense::Suspense for #complete_ident #lifetimes
+        impl #struct_generic_params ::crabstar::suspense::Suspense for #complete_ident #struct_generic_args
         where
-            #ident #lifetimes: 'static,
+            #ident #struct_generic_args: 'static,
         {
             async fn suspense(self, tx: &::tokio::sync::mpsc::UnboundedSender<::std::result::Result<::std::string::String, #boxed_error>>)
                 -> ::std::result::Result<

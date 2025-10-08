@@ -3,16 +3,22 @@ mod templates;
 
 use proc_macro2::TokenStream;
 use quote::quote;
-use syn::{Data, DeriveInput, Error, Ident, Lifetime, LifetimeParam};
+use syn::{Data, DeriveInput, Error, Ident};
 
 use crate::{
     askama_config::ASKAMA_CONFIG,
-    helpers::{NamedField, complete_ident},
+    helpers::{NamedField, complete_ident, generic_args, generic_params},
     page::params::{Params, params},
     suspense::{self},
 };
 
-fn into_response_impl(ident: &Ident, lifetimes: &TokenStream, params: &Params) -> TokenStream {
+fn into_response_impl(
+    ident: &Ident,
+    generic_params: &TokenStream,
+    generic_args: &TokenStream,
+    where_clause: &Option<syn::WhereClause>,
+    params: &Params,
+) -> TokenStream {
     let status = &params.status;
     let body = if params.suspense {
         let stream_impl = quote! {
@@ -83,7 +89,7 @@ fn into_response_impl(ident: &Ident, lifetimes: &TokenStream, params: &Params) -
         quote! {}
     } else {
         quote! {
-            impl #lifetimes ::axum::response::IntoResponse for &#ident #lifetimes {
+            impl #generic_params ::axum::response::IntoResponse for &#ident #generic_args #where_clause {
                 fn into_response(self) -> ::axum::response::Response {
                     #body
                 }
@@ -92,7 +98,7 @@ fn into_response_impl(ident: &Ident, lifetimes: &TokenStream, params: &Params) -
     };
 
     quote! {
-        impl #lifetimes ::axum::response::IntoResponse for #ident #lifetimes {
+        impl #generic_params ::axum::response::IntoResponse for #ident #generic_args #where_clause {
             fn into_response(self) -> ::axum::response::Response {
                 #body
             }
@@ -105,19 +111,9 @@ fn into_response_impl(ident: &Ident, lifetimes: &TokenStream, params: &Params) -
 pub fn expand_attr(args: TokenStream, input: DeriveInput) -> Result<TokenStream, Error> {
     let ident = &input.ident.clone();
 
-    let lifetimes = {
-        let lifetimes: Vec<&Lifetime> = input
-            .generics
-            .lifetimes()
-            .map(|LifetimeParam { lifetime, .. }| lifetime)
-            .collect();
-
-        if lifetimes.is_empty() {
-            quote! {}
-        } else {
-            quote! { <#(#lifetimes),*> }
-        }
-    };
+    let generic_params = generic_params(&input.generics);
+    let generic_args = generic_args(&input.generics);
+    let where_clause = &input.generics.where_clause;
 
     let params = params(args)?;
 
@@ -125,7 +121,8 @@ pub fn expand_attr(args: TokenStream, input: DeriveInput) -> Result<TokenStream,
     let source =
         templates::template_with_scripts(params.suspense, &params.path, read_template.content)?;
 
-    let into_response_impl = into_response_impl(ident, &lifetimes, &params);
+    let into_response_impl =
+        into_response_impl(ident, &generic_params, &generic_args, where_clause, &params);
 
     let input_struct = if params.suspense {
         suspense::expand_attr(Ok(params.into()), input)?
@@ -159,7 +156,7 @@ pub fn expand_attr(args: TokenStream, input: DeriveInput) -> Result<TokenStream,
             #(#attrs)*
             #[derive(::askama::Template)]
             #[template(source = #source, ext = "html")]
-            #vis struct #ident #lifetimes {
+            #vis struct #ident #generic_params #where_clause {
                 #(#fields,)*
             }
         }

@@ -6,7 +6,10 @@ use syn::{Data, DeriveInput, Error, Fields, Ident, Type, TypePath, Visibility};
 
 use crate::{
     askama_config::ASKAMA_CONFIG,
-    helpers::{NamedField, dependency_template, lifetimes, partition_delayed_immediate_fields},
+    helpers::{
+        NamedField, dependency_template, generic_args, generic_params,
+        partition_delayed_immediate_fields,
+    },
     signal::opts::{ReactFieldAttr, SignalAttr},
 };
 
@@ -147,7 +150,9 @@ pub fn expand_attr(args: TokenStream, mut input: DeriveInput) -> Result<TokenStr
         }
     }
 
-    let lifetimes = lifetimes(&input.generics);
+    let generic_params = generic_params(&input.generics);
+    let generic_args = generic_args(&input.generics);
+    let where_clause = &input.generics.where_clause;
     let signal_fields_tokens = signal_fields_tokens(&signal_fields);
     let signal_methods_tokens = signal_methods_tokens(&signal_fields);
 
@@ -171,7 +176,7 @@ pub fn expand_attr(args: TokenStream, mut input: DeriveInput) -> Result<TokenStr
             let id_ty = &id.ty;
 
             quote! {
-                fn signals(#id_ident: impl ::std::convert::Into<#id_ty>) -> #signal_ident #lifetimes {
+                fn signals(#id_ident: impl ::std::convert::Into<#id_ty>) -> #signal_ident #generic_args {
                     #dependency_template
 
                     #signal_ident { #id_ident: #id_ident.into(), #(#fields: ::std::option::Option::None),* }
@@ -179,7 +184,7 @@ pub fn expand_attr(args: TokenStream, mut input: DeriveInput) -> Result<TokenStr
             }
         } else {
             quote! {
-                fn signals() -> #signal_ident #lifetimes {
+                fn signals() -> #signal_ident #generic_args {
                     #dependency_template
 
                     #signal_ident { #(#fields: ::std::option::Option::None),* }
@@ -210,7 +215,7 @@ pub fn expand_attr(args: TokenStream, mut input: DeriveInput) -> Result<TokenStr
             let id_ident_str = &id.ident.to_string();
 
             quote! {
-                impl #lifetimes ::crabstar::NestedSignal for #signal_ident #lifetimes {
+                impl #generic_params ::crabstar::NestedSignal for #signal_ident #generic_args #where_clause {
                     type Id = #id_ty;
 
                     fn id(&self) -> &Self::Id {
@@ -228,11 +233,11 @@ pub fn expand_attr(args: TokenStream, mut input: DeriveInput) -> Result<TokenStr
 
         quote! {
             #derives
-            #vis struct #signal_ident #lifetimes {
+            #vis struct #signal_ident #generic_params #where_clause {
                 #(#signal_fields_tokens),*
             }
 
-            impl #lifetimes #signal_ident #lifetimes {
+            impl #generic_params #signal_ident #generic_args #where_clause {
                 #(#signal_methods_tokens)*
             }
 
@@ -265,12 +270,12 @@ pub fn expand_attr(args: TokenStream, mut input: DeriveInput) -> Result<TokenStr
 
         #signal_struct_tokens
 
-        impl #lifetimes #ident #lifetimes {
+        impl #generic_params #ident #generic_args #where_clause {
             #[must_use]
             #signals_method
         }
 
-        impl #lifetimes ::axum::response::IntoResponse for #signal_ident #lifetimes {
+        impl #generic_params ::axum::response::IntoResponse for #signal_ident #generic_args #where_clause {
             fn into_response(self) -> ::axum::response::Response {
                 #body
 

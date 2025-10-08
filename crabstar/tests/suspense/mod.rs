@@ -1,3 +1,4 @@
+use askama::Template;
 use axum::response::IntoResponse;
 use crabstar::{page, suspense};
 use futures::StreamExt;
@@ -224,4 +225,26 @@ async fn error_handling_works() {
     );
 
     assert!(body.next().await.is_none());
+}
+
+#[tokio::test]
+async fn works_with_generics() {
+    #[suspense(path = "post-content.html")]
+    struct Child {
+        content: String,
+    }
+
+    #[suspense(path = "post-content.html")]
+    struct Parent<C: Template> {
+        content: C,
+    }
+
+    let parent = Parent {
+        content: Child {
+            content: "test".to_string(),
+        },
+    };
+
+    let response = parent.render().unwrap();
+    assert!(response.contains("test"));
 }

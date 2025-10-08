@@ -2,8 +2,7 @@ use proc_macro2::{Span, TokenStream};
 use quote::quote;
 use std::fmt::Display;
 use syn::{
-    Attribute, Error, Fields, Generics, Ident, LifetimeParam, Type, TypePath, Visibility,
-    spanned::Spanned,
+    Attribute, Error, Fields, Generics, Ident, Type, TypePath, Visibility, spanned::Spanned,
 };
 
 use crate::suspense;
@@ -53,16 +52,39 @@ impl<'a> NamedField<'a> {
     }
 }
 
-pub fn lifetimes(generics: &Generics) -> TokenStream {
-    let lifetimes: TokenStream = generics
-        .lifetimes()
-        .map(|LifetimeParam { lifetime, .. }| quote! { #lifetime })
-        .collect();
-
-    if lifetimes.is_empty() {
+pub fn generic_params(generics: &Generics) -> TokenStream {
+    let params = &generics.params;
+    if params.is_empty() {
         quote! {}
     } else {
-        quote! { < #lifetimes > }
+        quote! { < #params > }
+    }
+}
+
+pub fn generic_args(generics: &Generics) -> TokenStream {
+    let args: Vec<TokenStream> = generics
+        .params
+        .iter()
+        .map(|param| match param {
+            syn::GenericParam::Lifetime(l) => {
+                let lifetime = &l.lifetime;
+                quote! { #lifetime }
+            }
+            syn::GenericParam::Type(t) => {
+                let ident = &t.ident;
+                quote! { #ident }
+            }
+            syn::GenericParam::Const(c) => {
+                let ident = &c.ident;
+                quote! { #ident }
+            }
+        })
+        .collect();
+
+    if args.is_empty() {
+        quote! {}
+    } else {
+        quote! { < #(#args),* > }
     }
 }
 
