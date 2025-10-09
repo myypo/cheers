@@ -1,10 +1,8 @@
-pub use crabstar_macros::page;
+pub use crabstar_macros::crabstar;
 
 pub mod suspense;
-pub use crabstar_macros::suspense;
 
 mod signal;
-pub use crabstar_macros::signal;
 pub use signal::{Nested, NestedSignal};
 
 pub mod router;

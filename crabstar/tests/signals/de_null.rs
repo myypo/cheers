@@ -1,18 +1,18 @@
-use crabstar::signal;
+use crabstar::crabstar;
 
-#[signal]
+#[crabstar(path = "empty.html", signal)]
 #[derive(Debug, PartialEq, Clone)]
 struct Subscription {
-    #[react]
+    #[signal]
     plan: String,
-    #[react]
+    #[signal]
     active: bool,
 }
 
-#[signal]
+#[crabstar(path = "empty.html", signal)]
 #[derive(Default, Debug, PartialEq)]
 struct Profile {
-    #[react]
+    #[signal]
     subscription: Option<SubscriptionSignals>,
 }
 

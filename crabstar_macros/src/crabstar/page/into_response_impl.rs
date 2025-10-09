@@ -1,26 +1,20 @@
-mod params;
-mod templates;
-
 use proc_macro2::TokenStream;
 use quote::quote;
-use syn::{Data, DeriveInput, Error, Ident};
+use syn::{Ident, WhereClause};
 
-use crate::{
-    askama_config::ASKAMA_CONFIG,
-    helpers::{NamedField, complete_ident, generic_args, generic_params},
-    page::params::{Params, params},
-    suspense::{self},
-};
+use crate::crabstar::{params::PageParams, shared::complete_ident};
 
-fn into_response_impl(
+pub fn into_response_impl(
     ident: &Ident,
     generic_params: &TokenStream,
     generic_args: &TokenStream,
-    where_clause: &Option<syn::WhereClause>,
-    params: &Params,
+    where_clause: &Option<WhereClause>,
+    page: &PageParams,
+    suspense: bool,
 ) -> TokenStream {
-    let status = &params.status;
-    let body = if params.suspense {
+    let status = &page.status;
+
+    let body = if suspense {
         let stream_impl = quote! {
             struct UnboundedReceiverStream<T>(::tokio::sync::mpsc::UnboundedReceiver<T>);
             impl<T> ::futures::stream::Stream for UnboundedReceiverStream<T> {
@@ -79,13 +73,13 @@ fn into_response_impl(
         }
     };
 
-    let ident = if params.suspense {
+    let ident = if suspense {
         &complete_ident(ident)
     } else {
         ident
     };
 
-    let ref_impl = if params.suspense {
+    let ref_impl = if suspense {
         quote! {}
     } else {
         quote! {
@@ -106,65 +100,4 @@ fn into_response_impl(
 
         #ref_impl
     }
-}
-
-pub fn expand_attr(args: TokenStream, input: DeriveInput) -> Result<TokenStream, Error> {
-    let ident = &input.ident.clone();
-
-    let generic_params = generic_params(&input.generics);
-    let generic_args = generic_args(&input.generics);
-    let where_clause = &input.generics.where_clause;
-
-    let params = params(args)?;
-
-    let read_template = ASKAMA_CONFIG.read_template(&params.path, &params.path.value())?;
-    let source =
-        templates::template_with_scripts(params.suspense, &params.path, read_template.content)?;
-
-    let into_response_impl =
-        into_response_impl(ident, &generic_params, &generic_args, where_clause, &params);
-
-    let input_struct = if params.suspense {
-        suspense::expand_attr(Ok(params.into()), input)?
-    } else {
-        let attrs = &input.attrs;
-        let vis = &input.vis;
-
-        let data_struct = match &input.data {
-            Data::Struct(fields) => fields,
-            _ => {
-                return Err(Error::new_spanned(
-                    ident,
-                    "Page can be created only from regular structs with named fields",
-                ));
-            }
-        };
-        let fields = NamedField::from_fields(&data_struct.fields)?;
-        let fields = fields.iter().map(
-            |NamedField {
-                 ident,
-                 ty,
-                 attrs,
-                 vis,
-                 ..
-             }| {
-                quote! { #(#attrs)* #vis #ident: #ty }
-            },
-        );
-
-        quote! {
-            #(#attrs)*
-            #[derive(::askama::Template)]
-            #[template(source = #source, ext = "html")]
-            #vis struct #ident #generic_params #where_clause {
-                #(#fields,)*
-            }
-        }
-    };
-
-    Ok(quote! {
-        #input_struct
-
-        #into_response_impl
-    })
 }

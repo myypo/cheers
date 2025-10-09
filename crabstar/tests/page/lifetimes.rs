@@ -1,5 +1,5 @@
 use askama::Template;
-use crabstar::page;
+use crabstar::crabstar;
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Deserialize, Serialize, Default, Debug)]
@@ -7,7 +7,7 @@ struct PostContent<'a> {
     rating: &'a str,
 }
 
-#[page(path = "nested-post.html")]
+#[crabstar(path = "nested-post.html", page)]
 #[derive(Deserialize, Serialize, Default)]
 struct Post<'a> {
     title: &'a str,

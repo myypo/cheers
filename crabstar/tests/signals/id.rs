@@ -1,7 +1,7 @@
 use std::fmt::Display;
 use std::str::FromStr;
 
-use crabstar::{Nested, signal};
+use crabstar::{Nested, crabstar};
 use serde::{Deserialize, Serialize};
 
 use crate::read_axum_body;
@@ -29,21 +29,21 @@ impl Display for Id {
     }
 }
 
-#[signal(path = "empty.html")]
+#[crabstar(path = "empty.html", signal)]
 #[derive(PartialEq, Eq, Debug, Clone)]
 struct Pet {
-    #[react(id)]
+    #[signal(id)]
     id: Id,
-    #[react]
+    #[signal]
     name: String,
 }
 
-#[signal]
+#[crabstar(path = "empty.html", signal)]
 #[derive(PartialEq, Eq, Debug, Clone)]
 struct Owner {
-    #[react(id)]
+    #[signal(id)]
     id: i32,
-    #[react]
+    #[signal]
     pets: Nested<PetSignals>,
     ssn: i32,
 }
@@ -53,23 +53,23 @@ struct Tag {
     value: String,
 }
 
-#[signal]
+#[crabstar(path = "empty.html", signal)]
 #[derive(PartialEq, Eq, Debug, Clone)]
 struct Country {
-    #[react(id)]
+    #[signal(id)]
     id: i32,
-    #[react]
+    #[signal]
     owners: Nested<OwnerSignals>,
-    #[react]
+    #[signal]
     tags: Vec<Tag>,
 }
 
-#[signal]
+#[crabstar(path = "empty.html", signal)]
 #[derive(PartialEq, Eq, Debug, Clone)]
 struct Page {
-    #[react]
+    #[signal]
     name: String,
-    #[react]
+    #[signal]
     countries: Nested<CountrySignals>,
 }
 

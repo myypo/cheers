@@ -1,31 +1,31 @@
-use crabstar::signal;
+use crabstar::crabstar;
 
-#[signal]
+#[crabstar(path = "empty.html", signal)]
 #[derive(Clone, Default, Debug, PartialEq)]
 struct User {
-    #[react]
+    #[signal]
     name: String,
     registered: bool,
-    #[react]
+    #[signal]
     achievements: Vec<AchievementSignals>,
 }
 
-#[signal]
+#[crabstar(path = "empty.html", signal)]
 #[derive(Debug, PartialEq, Clone)]
 struct Achievement {
-    #[react]
+    #[signal]
     name: String,
-    #[react]
+    #[signal]
     points: Option<i32>,
 }
 
-#[signal]
+#[crabstar(path = "empty.html", signal)]
 #[derive(Debug, Default, PartialEq, Clone)]
 struct Header {
     tip: String,
-    #[react]
+    #[signal]
     user: Option<UserSignals>,
-    #[react]
+    #[signal]
     avatar: String,
 }
 

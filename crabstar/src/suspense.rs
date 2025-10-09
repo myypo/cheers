@@ -17,7 +17,7 @@ pub trait Suspense {
         >,
     >;
 
-    fn path() -> &'static str;
+    const PATH: &'static str;
 }
 
 // TODO: boxing to avoid lots of generics in the macros
@@ -51,7 +51,7 @@ impl<T: Suspense + Send> Suspense for Result<T, Error> {
         match self {
             Ok(v) => v.suspense(tx).await,
             Err(e) => {
-                let path = T::path();
+                let path = T::PATH;
                 let mut r = format!(
                     r#"<template id="crabstar-template-{}" data-on-load="streamSsr(el.id, '{}')">"#,
                     path, path
@@ -63,7 +63,5 @@ impl<T: Suspense + Send> Suspense for Result<T, Error> {
         }
     }
 
-    fn path() -> &'static str {
-        T::path()
-    }
+    const PATH: &'static str = T::PATH;
 }

@@ -17,11 +17,16 @@ fn inject_script(path: &LitStr, content: &mut String, script: &str) -> Result<()
     Ok(())
 }
 
-pub fn template_with_scripts(
+pub fn source(
     suspense: bool,
+    page: bool,
     path: &LitStr,
     mut content: String,
 ) -> Result<String, Error> {
+    if !page {
+        return Ok(content);
+    }
+
     let path_str = path.value();
 
     if suspense {

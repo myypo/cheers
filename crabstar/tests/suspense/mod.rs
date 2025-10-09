@@ -1,6 +1,6 @@
 use askama::Template;
 use axum::response::IntoResponse;
-use crabstar::{page, suspense};
+use crabstar_macros::crabstar;
 use futures::StreamExt;
 use std::sync::Arc;
 use std::time::Duration;
@@ -8,29 +8,29 @@ use tokio::sync::{Barrier, Mutex};
 
 use crate::next_axum_chunk;
 
-#[suspense(path = "post-content.html")]
-pub struct PostContent {
+#[crabstar(path = "post-content.html", suspense)]
+struct PostContent {
     content: String,
 }
 
-#[suspense(path = "post.html")]
-pub struct Post {
+#[crabstar(path = "post.html", suspense)]
+struct Post {
     title: String,
-    #[delayed]
+    #[suspense]
     content: PostContent,
 }
 
-#[suspense(path = "status.html")]
-pub struct Status {
+#[crabstar(path = "status.html", suspense)]
+struct Status {
     outages_today: i32,
 }
 
-#[page(path = "home.html", suspense)]
+#[crabstar(path = "home.html", page, suspense)]
 struct HomePage {
     user: String,
-    #[delayed]
+    #[suspense]
     post: Post,
-    #[delayed]
+    #[suspense]
     status: Status,
 }
 
@@ -57,13 +57,13 @@ async fn can_render_concurrently_in_order() {
         let mutex_a_status = mutex_a.clone();
         let mutex_c_status = mutex_c.clone();
 
-        HomePage { user: user.clone() }.into_suspense(HomePageDelayed {
+        HomePage { user: user.clone() }.into_suspense(HomePageSuspense {
             post: async move {
                 let _guard_a = mutex_a_post.lock().await;
                 barrier_post.wait().await;
                 let _guard_b = mutex_b_post.lock().await;
 
-                Ok(Post { title }.into_suspense(PostDelayed {
+                Ok(Post { title }.into_suspense(PostSuspense {
                     content: async move { Ok(PostContent { content }) },
                 }))
             },
@@ -94,7 +94,7 @@ async fn can_render_concurrently_in_order() {
         assert!(
             home.starts_with(
             home_unwrapped.as_bytes(),
-        ), "home = {:?}", home);
+        ), "{:?}", home);
 
         // But the rest of chunks have to be wrapped in templates
         let post_wrapped = format!(
@@ -127,7 +127,7 @@ Content:
 
 #[tokio::test]
 async fn streaming_ssr_script_works_with_extends() {
-    #[page(path = "child.html", suspense)]
+    #[crabstar(path = "child.html", page, suspense)]
     struct ChildPage {
         user: String,
     }
@@ -154,9 +154,9 @@ async fn can_stream_with_axum() {
     let content = "content".to_owned();
     let outages_today = 4;
 
-    let resp = HomePage { user: user.clone() }.into_suspense(HomePageDelayed {
+    let resp = HomePage { user: user.clone() }.into_suspense(HomePageSuspense {
         post: async move {
-            Ok(Post { title }.into_suspense(PostDelayed {
+            Ok(Post { title }.into_suspense(PostSuspense {
                 content: async move { Ok(PostContent { content }) },
             }))
         },
@@ -178,7 +178,7 @@ async fn can_stream_with_axum() {
 
 #[tokio::test]
 async fn error_handling_works() {
-    #[suspense(path = "post-content.html")]
+    #[crabstar(path = "post-content.html", suspense)]
     pub struct Error {
         content: String,
     }
@@ -187,7 +187,7 @@ async fn error_handling_works() {
     let post = "post".to_owned();
     let status = "status".to_owned();
 
-    let resp = HomePage { user: user.clone() }.into_suspense(HomePageDelayed {
+    let resp = HomePage { user: user.clone() }.into_suspense(HomePageSuspense {
         post: {
             let post = post.clone();
             async move { Err(Error { content: post }.into()) }
@@ -229,12 +229,12 @@ async fn error_handling_works() {
 
 #[tokio::test]
 async fn works_with_generics() {
-    #[suspense(path = "post-content.html")]
+    #[crabstar(path = "post-content.html")]
     struct Child {
         content: String,
     }
 
-    #[suspense(path = "post-content.html")]
+    #[crabstar(path = "post-content.html")]
     struct Parent<C: Template> {
         content: C,
     }

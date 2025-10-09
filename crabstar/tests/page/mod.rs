@@ -1,11 +1,11 @@
 mod lifetimes;
 
 use axum::response::IntoResponse;
-use crabstar::page;
+use crabstar_macros::crabstar;
 
 #[tokio::test]
 async fn respects_page_status() {
-    #[page(path = "empty.html", status = CREATED)]
+    #[crabstar(path = "empty.html", page(status = CREATED))]
     struct SignUp {}
 
     let sign_up = SignUp {};
@@ -17,7 +17,7 @@ async fn respects_page_status() {
 
 #[tokio::test]
 async fn respects_page_status_with_suspense() {
-    #[page(path = "empty.html", status = UNAUTHORIZED, suspense)]
+    #[crabstar (path = "empty.html", page(status = UNAUTHORIZED), suspense)]
     struct SignUp {}
 
     let sign_up = SignUp {};
