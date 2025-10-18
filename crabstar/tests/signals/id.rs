@@ -1,12 +1,13 @@
 use std::fmt::Display;
 use std::str::FromStr;
 
-use crabstar::{Nested, crabstar};
+use askama::Template;
+use crabstar::Nested;
 use serde::{Deserialize, Serialize};
 
 use crate::read_axum_body;
 
-#[derive(Serialize, Deserialize, PartialEq, Eq, Debug, Clone)]
+#[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
 struct Id(String);
 
 impl From<&str> for Id {
@@ -29,8 +30,8 @@ impl Display for Id {
     }
 }
 
-#[crabstar(path = "empty.html", signal)]
-#[derive(PartialEq, Eq, Debug, Clone)]
+#[derive(Template, PartialEq, Debug, Clone)]
+#[template(path = "empty.html")]
 struct Pet {
     #[signal(id)]
     id: Id,
@@ -38,8 +39,8 @@ struct Pet {
     name: String,
 }
 
-#[crabstar(path = "empty.html", signal)]
-#[derive(PartialEq, Eq, Debug, Clone)]
+#[derive(Template, PartialEq, Debug, Clone)]
+#[template(path = "empty.html")]
 struct Owner {
     #[signal(id)]
     id: i32,
@@ -48,13 +49,13 @@ struct Owner {
     ssn: i32,
 }
 
-#[derive(Serialize, Deserialize, PartialEq, Eq, Debug, Clone)]
+#[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
 struct Tag {
     value: String,
 }
 
-#[crabstar(path = "empty.html", signal)]
-#[derive(PartialEq, Eq, Debug, Clone)]
+#[derive(Template, PartialEq, Debug, Clone)]
+#[template(path = "empty.html")]
 struct Country {
     #[signal(id)]
     id: i32,
@@ -64,8 +65,8 @@ struct Country {
     tags: Vec<Tag>,
 }
 
-#[crabstar(path = "empty.html", signal)]
-#[derive(PartialEq, Eq, Debug, Clone)]
+#[derive(Template, PartialEq, Debug, Clone)]
+#[template(path = "empty.html")]
 struct Page {
     #[signal]
     name: String,

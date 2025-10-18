@@ -4,7 +4,6 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-crabstar_macros.workspace = true
 bundlestar.workspace = true
 
 askama.workspace = true

@@ -1,2 +1,2 @@
 [files]
-extend-exclude = ["bundlestar/vendor/datastar"]
+extend-exclude = ["bundlestar/vendor/datastar", "askama"]

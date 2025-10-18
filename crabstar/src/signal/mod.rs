@@ -10,7 +10,7 @@ pub trait NestedSignal: for<'de> Deserialize<'de> + Serialize {
     fn id_field_name() -> &'static str;
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct Nested<T: NestedSignal> {
     value: Vec<T>,
 }

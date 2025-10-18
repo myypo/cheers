@@ -1,7 +1,7 @@
-use crabstar::crabstar;
+use askama::Template;
 
-#[crabstar(path = "empty.html", signal)]
-#[derive(Clone, Default, Debug, PartialEq)]
+#[derive(Template, Clone, Default, Debug, PartialEq)]
+#[template(path = "empty.html")]
 struct User {
     #[signal]
     name: String,
@@ -10,8 +10,8 @@ struct User {
     achievements: Vec<AchievementSignals>,
 }
 
-#[crabstar(path = "empty.html", signal)]
-#[derive(Debug, PartialEq, Clone)]
+#[derive(Template, Debug, PartialEq, Clone)]
+#[template(path = "empty.html")]
 struct Achievement {
     #[signal]
     name: String,
@@ -19,8 +19,8 @@ struct Achievement {
     points: Option<i32>,
 }
 
-#[crabstar(path = "empty.html", signal)]
-#[derive(Debug, Default, PartialEq, Clone)]
+#[derive(Template, Debug, Default, PartialEq, Clone)]
+#[template(path = "empty.html")]
 struct Header {
     tip: String,
     #[signal]
