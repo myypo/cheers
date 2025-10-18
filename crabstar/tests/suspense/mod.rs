@@ -1,6 +1,5 @@
 use askama::Template;
 use axum::response::IntoResponse;
-use crabstar_macros::crabstar;
 use futures::StreamExt;
 use std::sync::Arc;
 use std::time::Duration;
@@ -8,30 +7,34 @@ use tokio::sync::{Barrier, Mutex};
 
 use crate::next_axum_chunk;
 
-#[crabstar(path = "post-content.html", suspense)]
+#[derive(Template)]
+#[template(path = "post-content.html")]
+#[suspense()]
 struct PostContent {
     content: String,
 }
 
-#[crabstar(path = "post.html", suspense)]
+#[derive(Template)]
+#[template(path = "post.html")]
+#[suspense(PostContent, content)]
 struct Post {
     title: String,
-    #[suspense]
-    content: PostContent,
 }
 
-#[crabstar(path = "status.html", suspense)]
+#[derive(Template)]
+#[template(path = "status.html")]
+#[suspense()]
 struct Status {
     outages_today: i32,
 }
 
-#[crabstar(path = "home.html", page, suspense)]
+#[derive(Template)]
+#[template(path = "home.html")]
+#[page]
+#[suspense(Post)]
+#[suspense(Status)]
 struct HomePage {
     user: String,
-    #[suspense]
-    post: Post,
-    #[suspense]
-    status: Status,
 }
 
 #[tokio::test]
@@ -100,17 +103,14 @@ async fn can_render_concurrently_in_order() {
         let post_wrapped = format!(
             r#"<template id="crabstar-template-post.html" data-on-load="streamSsr(el.id, 'post.html')">Hello
 Content:
-<div data-suspense="post-content.html">Loading content...</div>
-</template>"#,
+<div data-suspense="post-content.html">Loading content...</div></template>"#,
         );
         let status_wrapped = format!(
-            r#"<template id="crabstar-template-status.html" data-on-load="streamSsr(el.id, 'status.html')">{}
-</template>"#,
+            r#"<template id="crabstar-template-status.html" data-on-load="streamSsr(el.id, 'status.html')">{}</template>"#,
             outages_today
         );
         let post_content_wrapped = format!(
-            r#"<template id="crabstar-template-post-content.html" data-on-load="streamSsr(el.id, 'post-content.html')">{}
-</template>"#,
+            r#"<template id="crabstar-template-post-content.html" data-on-load="streamSsr(el.id, 'post-content.html')">{}</template>"#,
             content
         );
 
@@ -127,7 +127,10 @@ Content:
 
 #[tokio::test]
 async fn streaming_ssr_script_works_with_extends() {
-    #[crabstar(path = "child.html", page, suspense)]
+    #[derive(Template)]
+    #[template(path = "child.html")]
+    #[page]
+    #[suspense()]
     struct ChildPage {
         user: String,
     }
@@ -178,7 +181,9 @@ async fn can_stream_with_axum() {
 
 #[tokio::test]
 async fn error_handling_works() {
-    #[crabstar(path = "post-content.html", suspense)]
+    #[derive(Template)]
+    #[template(path = "post-content.html")]
+    #[suspense()]
     pub struct Error {
         content: String,
     }
@@ -210,7 +215,7 @@ async fn error_handling_works() {
     assert_eq!(
         error_chunk1,
         format!(
-            "<template id=\"crabstar-template-post.html\" data-on-load=\"streamSsr(el.id, 'post.html')\">{}\n</template>",
+            "<template id=\"crabstar-template-post.html\" data-on-load=\"streamSsr(el.id, 'post.html')\">{}</template>",
             post
         )
     );
@@ -219,7 +224,7 @@ async fn error_handling_works() {
     assert_eq!(
         error_chunk2,
         format!(
-            "<template id=\"crabstar-template-status.html\" data-on-load=\"streamSsr(el.id, 'status.html')\">{}\n</template>",
+            "<template id=\"crabstar-template-status.html\" data-on-load=\"streamSsr(el.id, 'status.html')\">{}</template>",
             status
         )
     );
@@ -229,12 +234,14 @@ async fn error_handling_works() {
 
 #[tokio::test]
 async fn works_with_generics() {
-    #[crabstar(path = "post-content.html")]
+    #[derive(Template)]
+    #[template(path = "post-content.html")]
     struct Child {
         content: String,
     }
 
-    #[crabstar(path = "post-content.html")]
+    #[derive(Template)]
+    #[template(path = "post-content.html")]
     struct Parent<C: Template> {
         content: C,
     }

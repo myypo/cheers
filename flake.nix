@@ -96,10 +96,15 @@
       checks = forEachSupportedSystem (
         { pkgs, pre-commit-hooks, ... }:
         let
-          testFlagsMatrix = [
-            ""
-            "--release"
-          ];
+          testFlagsMatrix =
+            let
+              skipAskama = "--exclude askama";
+            in
+            [
+              skipAskama
+              "${skipAskama} --release"
+              "--exclude crabstar -F nocrabstar"
+            ];
 
           testHooks = builtins.listToAttrs (
             builtins.map (flags: {
@@ -132,9 +137,13 @@
                   # Specifying configPath seems broken - the exclude is not respected
                   excludes = [
                     "bundlestar/vendor/datastar"
+                    "askama"
                   ];
                 };
-                taplo.enable = true;
+                taplo = {
+                  enable = true;
+                  excludes = [ "^askama/" ];
+                };
                 actionlint.enable = true;
 
                 clippy = {

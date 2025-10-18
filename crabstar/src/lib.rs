@@ -1,4 +1,7 @@
-pub use crabstar_macros::crabstar;
+pub use ::askama::Template;
+pub mod askama {
+    pub use askama::*;
+}
 
 pub mod suspense;
 

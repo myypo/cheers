@@ -1,6 +1,6 @@
+use askama::Template;
 use axum::{http::StatusCode, response::IntoResponse};
 use crabstar::events::{PatchElements, PatchElementsMode, SseEvents};
-use crabstar_macros::crabstar;
 
 use crate::read_axum_body;
 
@@ -30,7 +30,9 @@ data: selector #foo\n\n"
 
 #[tokio::test]
 async fn streams_patch_elements_with_elements() {
-    #[crabstar(path = "post-content.html", suspense)]
+    #[derive(Template)]
+    #[template(path = "post-content.html")]
+    #[suspense()]
     struct PostContent<'a> {
         content: &'a str,
     }
@@ -65,7 +67,9 @@ data: elements {content}\n\n"
 
 #[tokio::test]
 async fn works_with_multiine_elements() {
-    #[crabstar(path = "home.html", suspense)]
+    #[derive(Template)]
+    #[template(path = "home.html")]
+    #[suspense()]
     struct Home<'a> {
         user: &'a str,
     }

@@ -1,7 +1,7 @@
-use crabstar::crabstar;
+use askama::Template;
 
-#[crabstar(path = "empty.html", signal)]
-#[derive(Debug, PartialEq, Clone)]
+#[derive(Template, Debug, PartialEq, Clone)]
+#[template(path = "empty.html")]
 struct Subscription {
     #[signal]
     plan: String,
@@ -9,8 +9,8 @@ struct Subscription {
     active: bool,
 }
 
-#[crabstar(path = "empty.html", signal)]
-#[derive(Default, Debug, PartialEq)]
+#[derive(Template, Default, Debug, PartialEq)]
+#[template(path = "empty.html")]
 struct Profile {
     #[signal]
     subscription: Option<SubscriptionSignals>,

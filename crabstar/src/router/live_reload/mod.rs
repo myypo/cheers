@@ -6,10 +6,7 @@ use std::{
 
 use axum::{
     Router,
-    response::{
-        Sse,
-        sse::{Event, KeepAlive},
-    },
+    response::{Sse, sse::Event},
     routing::get,
 };
 use futures::StreamExt;
@@ -78,7 +75,7 @@ where
         let rx = tx.clone().subscribe();
         let stream = tokio_stream::wrappers::BroadcastStream::new(rx)
             .map(|_| Ok::<Event, Infallible>(Event::default().data("reload")));
-        Sse::new(stream).keep_alive(KeepAlive::default())
+        Sse::new(stream)
     };
 
     Router::new().route("/live-reload", get(handler))
