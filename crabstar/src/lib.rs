@@ -21,7 +21,8 @@ mod js_script;
 pub use js_script::JsScript;
 
 /// Deserialization helpers used by proc-macros
-pub mod de;
+#[doc(hidden)]
+pub mod helpers;
 
 #[macro_export]
 macro_rules! include_css {

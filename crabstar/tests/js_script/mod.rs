@@ -1,3 +1,5 @@
+use std::time::Duration;
+
 use axum::response::IntoResponse;
 use crabstar::{JsScript, events::SseEvents};
 
@@ -24,7 +26,7 @@ async fn enclosed_in_script_tags_in_sse() {
     let script = JsScript::new(r#"history.pushState({}, "", "456");"#);
     let (conn, resp) = SseEvents::new();
     tokio::spawn(async move {
-        conn.send(script).await.unwrap();
+        conn.send(script).unwrap();
     });
 
     let resp = read_axum_body(resp).await;
@@ -46,7 +48,7 @@ async fn respects_persist_in_sse() {
     let script = JsScript::new(r#"history.pushState({}, "", "456");"#).persist();
     let (conn, resp) = SseEvents::new();
     tokio::spawn(async move {
-        conn.send(script).await.unwrap();
+        conn.send(script).unwrap();
     });
 
     let resp = read_axum_body(resp).await;
@@ -67,7 +69,7 @@ async fn works_with_multiline_scripts_in_sse() {
 
     let (conn, resp) = SseEvents::new();
     tokio::spawn(async move {
-        conn.send(script).await.unwrap();
+        conn.send(script).unwrap();
     });
 
     let resp = read_axum_body(resp).await;

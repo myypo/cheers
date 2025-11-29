@@ -61,22 +61,22 @@ async fn can_render_concurrently_in_order() {
         let mutex_c_status = mutex_c.clone();
 
         HomePage { user: user.clone() }.into_suspense(HomePageSuspense {
-            post: async move {
+            post: Box::pin(async move {
                 let _guard_a = mutex_a_post.lock().await;
                 barrier_post.wait().await;
                 let _guard_b = mutex_b_post.lock().await;
 
                 Ok(Post { title }.into_suspense(PostSuspense {
-                    content: async move { Ok(PostContent { content }) },
+                    content: Box::pin(async move { Ok(PostContent { content }) }),
                 }))
-            },
-            status: async move {
+            }),
+            status: Box::pin(async move {
                 let _guard_c = mutex_c_status.lock().await;
                 barrier_status.wait().await;
                 let _guard_a = mutex_a_status.lock().await;
 
                 Ok(Status { outages_today })
-            },
+            }),
         })
     };
 
@@ -158,12 +158,12 @@ async fn can_stream_with_axum() {
     let outages_today = 4;
 
     let resp = HomePage { user: user.clone() }.into_suspense(HomePageSuspense {
-        post: async move {
+        post: Box::pin(async move {
             Ok(Post { title }.into_suspense(PostSuspense {
-                content: async move { Ok(PostContent { content }) },
+                content: Box::pin(async move { Ok(PostContent { content }) }),
             }))
-        },
-        status: async move { Ok(Status { outages_today }) },
+        }),
+        status: Box::pin(async move { Ok(Status { outages_today }) }),
     });
 
     let resp = resp.into_response();
@@ -195,11 +195,11 @@ async fn error_handling_works() {
     let resp = HomePage { user: user.clone() }.into_suspense(HomePageSuspense {
         post: {
             let post = post.clone();
-            async move { Err(Error { content: post }.into()) }
+            Box::pin(async move { Err(Error { content: post }.into()) })
         },
         status: {
             let status = status.clone();
-            async move { Err(Error { content: status }.into()) }
+            Box::pin(async move { Err(Error { content: status }.into()) })
         },
     });
 

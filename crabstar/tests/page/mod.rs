@@ -33,7 +33,7 @@ async fn respects_page_status_with_suspense() {
     assert_eq!(
         SignUp {}
             .into_suspense(SignUpSuspense {
-                method: async move { Ok(Method {}) }
+                method: Box::pin(async move { Ok(Method {}) })
             })
             .into_response()
             .status(),

@@ -1,5 +1,5 @@
 [workspace]
-members = ["crabstar", "bundlestar"]
+members = ["crabstar", "crabstar_macros", "bundlestar"]
 resolver = "3"
 
 [workspace.dependencies]
@@ -20,26 +20,27 @@ futures = { version = "0.3" }
 tower = { version = "0.5" }
 notify = { version = "8" }
 tower-http = { version = "0.6", features = ["compression-full"] }
-lightningcss = { version = "1.0.0-alpha.67" }
+lightningcss = { version = "1.0.0-alpha.68" }
 base64.version = "0.22"
 tracing = "0.1"
 toml = { version = "0.9" }
 ignore = { version = "0.4" }
 nom = { version = "8" }
+# minify-html = { version = "0.18.1" }
 
 # Bundler
-swc_common = { version = "14.0.2", features = ["tty-emitter"] }
-swc_ecma_ast = { version = "14.0.0" }
-swc_ecma_parser = { version = "22.0.3" }
-swc_ecma_minifier = { version = "29.0.0" }
-swc_ecma_codegen = { version = "16.0.0" }
-swc_ecma_transforms_base = { version = "24.0.0" }
-swc_bundler = { version = "28.0.0" }
-swc_ecma_loader = { version = "14.0.0", features = ["node", "cache"] }
-swc_ecma_transforms_typescript = "26.0.0"
-swc_ecma_visit = "14.0.0"
-swc_atoms = "7.0.0"
-regex = "1.11.1"
+swc_common = { version = "17.0.1", features = ["tty-emitter"] }
+swc_ecma_ast = { version = "18.0.0" }
+swc_ecma_parser = { version = "27.0.7" }
+swc_ecma_minifier = { version = "36.0.4" }
+swc_ecma_codegen = { version = "20.0.2" }
+swc_ecma_transforms_base = { version = "30.0.1" }
+swc_bundler = { version = "35.0.0" }
+swc_ecma_loader = { version = "17.0.0", features = ["node", "cache"] }
+swc_ecma_transforms_typescript = "33.0.0"
+swc_ecma_visit = "18.0.1"
+swc_atoms = "9.0.0"
+regex = "1.12.2"
 anyhow = "1"
 walkdir = "2"
 path-clean = "1"

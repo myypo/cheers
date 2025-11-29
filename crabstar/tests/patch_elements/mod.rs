@@ -12,7 +12,7 @@ async fn streams_patch_elements_without_elements() {
 
     let (conn, resp) = SseEvents::new();
     tokio::spawn(async move {
-        conn.send(patch).await.unwrap();
+        conn.send(patch).unwrap();
     });
 
     let resp = resp.into_response();
@@ -46,7 +46,7 @@ async fn streams_patch_elements_with_elements() {
 
     let (conn, resp) = SseEvents::new();
     tokio::spawn(async move {
-        conn.send(patch).await.unwrap();
+        conn.send(patch).unwrap();
     });
 
     let resp = resp.into_response();
@@ -82,7 +82,7 @@ async fn works_with_multiine_elements() {
 
     let (conn, resp) = SseEvents::new();
     tokio::spawn(async move {
-        conn.send(patch).await.unwrap();
+        conn.send(patch).unwrap();
     });
 
     let resp = resp.into_response();

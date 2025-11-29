@@ -11,3 +11,6 @@ where
     let opt = std::option::Option::<T>::deserialize(deserializer)?;
     std::result::Result::Ok(std::option::Option::Some(opt))
 }
+
+#[doc(hidden)]
+pub use axum;

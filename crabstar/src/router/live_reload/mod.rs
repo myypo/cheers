@@ -12,17 +12,17 @@ use axum::{
 use futures::StreamExt;
 use notify::{RecommendedWatcher, Watcher};
 
-static DEBOUNCE: Duration = Duration::from_millis(50);
+static DEBOUNCE: Duration = Duration::from_millis(500);
 
 // TODO: it is redundant right now, because the JS script is going to reload on stream error
 pub fn router<S>() -> Router<S>
 where
     S: Clone + Send + Sync + 'static,
 {
-    let (tx, _) = tokio::sync::broadcast::channel(42);
+    let (tx, rx) = tokio::sync::broadcast::channel(42);
 
     let fs_tx = tx.clone();
-    tokio::task::spawn_blocking(move || {
+    std::thread::spawn(move || {
         let mut last_update = Instant::now();
 
         let mut watcher: RecommendedWatcher = match Watcher::new(

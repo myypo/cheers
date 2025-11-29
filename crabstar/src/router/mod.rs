@@ -54,15 +54,16 @@ where
     fn serve_crabstar_application(self) -> Result<Router<S>, Error> {
         let router = self.merge(assets_router()?);
 
-        let router = router.nest("/crabstar-dev", live_reload::router());
-
         // TODO: currently just avoid compressing suspense streaming
         // later make it work with async-compression
-        let router = router.layer(CompressionLayer::new().compress_when(CompressionPredicate));
+        // FIXME: it fucks up SSE
+        // let router = router.layer(CompressionLayer::new().compress_when(CompressionPredicate));
 
         let router = router.layer(axum::middleware::from_fn(
             redirect_trailing_slash::redirect_trailing_slash,
         ));
+
+        let router = router.nest("/crabstar-dev", live_reload::router());
 
         Ok(router)
     }
