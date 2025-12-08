@@ -1,2 +1,0 @@
-# askama toml files are formatted differently
-exclude = ["askama/**"]

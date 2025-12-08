@@ -85,6 +85,8 @@
                   rustfmt
                 ]
               )
+
+              inputs.self.packages.${pkgs.stdenv.hostPlatform.system}.default
             ];
 
             inherit (pre-commit-check) shellHook;
@@ -96,15 +98,10 @@
       checks = forEachSupportedSystem (
         { pkgs, pre-commit-hooks, ... }:
         let
-          testFlagsMatrix =
-            let
-              skipAskama = "--exclude askama";
-            in
-            [
-              skipAskama
-              "${skipAskama} --release"
-              "--exclude crabstar -F nocrabstar"
-            ];
+          testFlagsMatrix = [
+            ""
+            "--release"
+          ];
 
           testHooks = builtins.listToAttrs (
             builtins.map (flags: {
@@ -134,15 +131,9 @@
                 typos = {
                   enable = true;
                   stages = default_stages ++ [ "commit-msg" ];
-                  # Specifying configPath seems broken - the exclude is not respected
-                  excludes = [
-                    "bundlestar/vendor/datastar"
-                    "askama"
-                  ];
                 };
                 taplo = {
                   enable = true;
-                  excludes = [ "^askama/" ];
                 };
                 actionlint.enable = true;
 
@@ -165,6 +156,21 @@
                 };
               };
             };
+        }
+      );
+
+      packages = forEachSupportedSystem (
+        { pkgs, ... }:
+        {
+          default = pkgs.rustPlatform.buildRustPackage {
+            name = "maudfmt";
+            src = ./.;
+            cargoBuildFlags = [ "-p=maudfmt" ];
+
+            cargoHash = "sha256-XyN2MIGW332n3RvvxYoJ9GRXlPgYVXYBemMmI+EzCJk=";
+
+            doCheck = false;
+          };
         }
       );
     };

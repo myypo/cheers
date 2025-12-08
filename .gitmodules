@@ -1,6 +1,3 @@
 [submodule "bundlestar/vendor/datastar"]
 	path = bundlestar/vendor/datastar
 	url = https://github.com/starfederation/datastar.git
-[submodule "askama"]
-	path = askama
-	url = https://github.com/myypo/askama.git

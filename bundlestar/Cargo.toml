@@ -1,7 +1,16 @@
 [package]
 name = "bundlestar"
-version = "0.1.0"
-edition = "2024"
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
+description.workspace = true
+readme.workspace = true
+homepage.workspace = true
+repository.workspace = true
+license.workspace = true
+keywords.workspace = true
+categories.workspace = true
+publish = false
 
 [dependencies]
 swc_common.workspace = true
@@ -14,14 +23,11 @@ swc_bundler.workspace = true
 swc_ecma_loader.workspace = true
 swc_ecma_transforms_typescript.workspace = true
 swc_ecma_visit.workspace = true
-swc_atoms.workspace = true
-regex.workspace = true
 anyhow.workspace = true
-path-clean.workspace = true
-nom.workspace = true
 
 [build-dependencies]
 walkdir.workspace = true
+anyhow.workspace = true
 
 [lints]
 workspace = true

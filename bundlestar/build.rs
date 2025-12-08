@@ -1,12 +1,17 @@
-use std::fs;
-use std::path::Path;
+use std::{fs, path::Path};
 
-fn main() {
+use anyhow::{Context, Error, bail};
+
+fn main() -> Result<(), Error> {
     let manifest_dir = std::env::var("CARGO_MANIFEST_DIR")
-        .expect("read CARGO_MANIFEST_DIR env var to infer vendor path");
+        .context("read CARGO_MANIFEST_DIR env var to infer vendor path")?;
     let vendor_dir = Path::new(&manifest_dir).join("vendor/datastar/library/src");
+    if !vendor_dir.exists() {
+        bail!("vendor dir does not exist: {}", vendor_dir.display());
+    }
+
     let out_dir = std::env::var("OUT_DIR")
-        .expect("read OUT_DIR env var to infer the datastar_loader.rs destination");
+        .context("read OUT_DIR env var to infer the datastar_loader.rs destination")?;
     let dest_path = Path::new(&out_dir).join("datastar_loader.rs");
 
     let mut code = String::new();
@@ -16,38 +21,35 @@ fn main() {
         "        let content: &str = match module_specifier.to_string_lossy().as_ref() {\n",
     );
 
-    if vendor_dir.exists() {
-        for entry in
-            walkdir::WalkDir::new(&vendor_dir).sort_by(|a, b| a.file_name().cmp(b.file_name()))
-        {
-            let entry = entry.expect("read vendor dir entry");
-            if !entry.file_type().is_file() {
-                continue;
-            }
-
-            let path = entry.path();
-            let Some(ext) = path.extension() else {
-                continue;
-            };
-
-            if ext != "ts" {
-                continue;
-            }
-
-            let relative_path = path
-                .strip_prefix(&vendor_dir)
-                .expect("make path relative to vendor dir");
-            let module_name = relative_path
-                .with_extension("")
-                .to_string_lossy()
-                .replace('\\', "/");
-
-            let absolute_path = path.to_string_lossy().replace('\\', "/");
-            code.push_str(&format!(
-                "            \"{}\" => include_str!(\"{}\"),\n",
-                module_name, absolute_path
-            ));
+    for entry in walkdir::WalkDir::new(&vendor_dir).sort_by(|a, b| a.file_name().cmp(b.file_name()))
+    {
+        let entry = entry.context("read vendor dir entry")?;
+        if !entry.file_type().is_file() {
+            continue;
         }
+
+        let path = entry.path();
+        let Some(ext) = path.extension() else {
+            continue;
+        };
+
+        if ext != "ts" {
+            continue;
+        }
+
+        let relative_path = path
+            .strip_prefix(&vendor_dir)
+            .context("make path relative to vendor dir")?;
+        let module_name = relative_path
+            .with_extension("")
+            .to_string_lossy()
+            .replace('\\', "/");
+
+        let absolute_path = path.to_string_lossy().replace('\\', "/");
+        code.push_str(&format!(
+            "            \"{}\" => include_str!(\"{}\"),\n",
+            module_name, absolute_path
+        ));
     }
 
     code.push_str(
@@ -62,6 +64,8 @@ fn main() {
     code.push_str("}\n");
 
     fs::write(&dest_path, &code)
-        .expect("write file with datastar module resolution implementation");
+        .context("write file with datastar module resolution implementation")?;
     println!("cargo:rerun-if-changed=vendor/");
+
+    Ok(())
 }

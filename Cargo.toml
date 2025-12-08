@@ -1,32 +1,57 @@
 [workspace]
-members = ["crabstar", "crabstar_macros", "bundlestar"]
+members = [
+  "bundlestar",
+  "cheers",
+  "cheers_ast",
+  "cheers_macros",
+  "maudfmt",
+  "examples/realtime",
+]
 resolver = "3"
+
+[workspace.package]
+version = "0.0.0"
+authors = ["Mykyta Polchanov <nikirsmcgl@gmail.com>"]
+edition = "2024"
+description = "Fullstack hypermedia framework"
+readme = "README.md"
+homepage = "https://github.com/myypo/cheers"
+repository = "https://github.com/myypo/cheers"
+license = "MIT"
+keywords = ["hypermedia", "web", "data-star"]
+categories = ["Web programming"]
 
 [workspace.dependencies]
 serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1" }
-askama = { path = "./askama/askama" }
 axum = { version = "0.8" }
-trybuild = { version = "1.0", features = ["diff"] }
-syn = { version = "2" }
+tower = { version = "0.5" }
+syn = { version = "2", features = ["full"] }
 quote = { version = "1", default-features = false }
 proc-macro2 = { version = "1", default-features = false }
 tokio = { version = "1", features = [
   "macros",
-  "sync",
+  "rt-multi-thread",
 ], default-features = false }
+itoa = { version = "1" }
+ryu = { version = "1" }
 tokio-stream = { version = "0.1", features = ["sync"] }
 futures = { version = "0.3" }
-tower = { version = "0.5" }
 notify = { version = "8" }
-tower-http = { version = "0.6", features = ["compression-full"] }
 lightningcss = { version = "1.0.0-alpha.68" }
 base64.version = "0.22"
 tracing = "0.1"
-toml = { version = "0.9" }
 ignore = { version = "0.4" }
-nom = { version = "8" }
-# minify-html = { version = "0.18.1" }
+html-escape = { version = "0.2" }
+rustc-hash = { version = "2" }
+clap = { version = "4", features = ["derive"] }
+glob = "0.3"
+crop = "0.4"
+prettyplease = { version = "0.2", features = ["verbatim"] }
+pretty_assertions = "1"
+predicates = "3"
+assert_fs = "1"
+assert_cmd = "2"
 
 # Bundler
 swc_common = { version = "17.0.1", features = ["tty-emitter"] }
@@ -39,15 +64,16 @@ swc_bundler = { version = "35.0.0" }
 swc_ecma_loader = { version = "17.0.0", features = ["node", "cache"] }
 swc_ecma_transforms_typescript = "33.0.0"
 swc_ecma_visit = "18.0.1"
-swc_atoms = "9.0.0"
-regex = "1.12.2"
 anyhow = "1"
 walkdir = "2"
-path-clean = "1"
 
+# Workspace crates
 crabstar = { path = "./crabstar" }
 crabstar_macros = { path = "./crabstar_macros" }
 bundlestar = { path = "./bundlestar" }
+cheers = { path = "./cheers" }
+cheers_ast = { path = "./cheers_ast" }
+cheers_macros = { path = "./cheers_macros" }
 
 [workspace.lints.clippy]
 unwrap_used = "deny"
