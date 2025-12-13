@@ -71,6 +71,7 @@
 
               act
 
+              cargo-deny
               cargo-machete
 
               rust-analyzer-nightly
@@ -98,21 +99,21 @@
       checks = forEachSupportedSystem (
         { pkgs, pre-commit-hooks, ... }:
         let
-          testFlagsMatrix = [
-            ""
-            "--release"
-          ];
-
           testHooks = builtins.listToAttrs (
-            builtins.map (flags: {
-              name = "tests-(${flags})";
-              value = {
-                enable = true;
-                name = "Unit and integration tests (${flags})";
-                entry = "cargo test --workspace ${flags}";
-                pass_filenames = false;
-              };
-            }) testFlagsMatrix
+            builtins.map
+              (flags: {
+                name = "tests-(${flags})";
+                value = {
+                  enable = true;
+                  name = "Unit and integration tests (${flags})";
+                  entry = "cargo test --workspace ${flags}";
+                  pass_filenames = false;
+                };
+              })
+              [
+                ""
+                "--release"
+              ]
           );
         in
         {
@@ -167,7 +168,7 @@
             src = ./.;
             cargoBuildFlags = [ "-p=maudfmt" ];
 
-            cargoHash = "sha256-XyN2MIGW332n3RvvxYoJ9GRXlPgYVXYBemMmI+EzCJk=";
+            cargoHash = "sha256-GSK71wlmNVTpz5BIfnLyJMjAn+5S0Sr3N7tnG5adBqo=";
 
             doCheck = false;
           };
