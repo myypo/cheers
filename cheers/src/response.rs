@@ -1,77 +1,11 @@
-use std::{convert::Infallible, fmt::Display, pin::Pin};
+use std::{convert::Infallible, pin::Pin};
 
 use futures::{Stream, StreamExt, stream::SelectAll};
 
 use crate::{
-    context::{AttributeValue, Context},
+    context::Context,
     render::{Buffer, Lazy, Render, Rendered},
 };
-
-#[derive(Debug, PartialEq, Eq)]
-pub(crate) enum InnerElementId {
-    Static(&'static str),
-    Dynamic(String),
-}
-
-#[derive(Debug, PartialEq, Eq)]
-#[repr(transparent)]
-pub struct ElementId(pub(crate) InnerElementId);
-
-impl Display for ElementId {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match &self.0 {
-            InnerElementId::Static(s) => f.write_str(s),
-            InnerElementId::Dynamic(s) => f.write_str(s),
-        }
-    }
-}
-
-impl AsRef<ElementId> for ElementId {
-    fn as_ref(&self) -> &ElementId {
-        self
-    }
-}
-
-impl ElementId {
-    #[doc(hidden)]
-    pub fn __static(s: &'static str) -> Self {
-        Self(InnerElementId::Static(s))
-    }
-
-    #[doc(hidden)]
-    pub fn __dynamic(s: String) -> Self {
-        Self(InnerElementId::Dynamic(s))
-    }
-}
-
-impl Render<AttributeValue> for ElementId {
-    fn render_to(&self, buffer: &mut Buffer<AttributeValue>) {
-        let s = match &self.0 {
-            InnerElementId::Static(s) => s,
-            InnerElementId::Dynamic(s) => s.as_str(),
-        };
-
-        html_escape::encode_unquoted_attribute_to_string(s, buffer.dangerously_get_string());
-    }
-}
-
-#[macro_export]
-macro_rules! element_id {
-    ($static:literal) => {
-        ::cheers::prelude::ElementId::__static($static)
-    };
-    ($namespace:literal, $($arg:expr),*) => {
-        ::cheers::prelude::ElementId::__dynamic({
-            let mut s = ::std::string::String::new();
-            s.push_str($namespace);
-            $(
-                s.push('-');
-                s.push_str(&$arg.to_string());
-            )*
-            s
-        })
-    };
-}
 
 pub struct AsyncLazy<R: Render> {
     immediate: R,

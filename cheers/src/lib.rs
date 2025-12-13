@@ -1,6 +1,7 @@
 pub mod components;
 pub mod context;
 mod events;
+mod reference;
 mod render;
 mod response;
 pub mod router;
@@ -19,16 +20,16 @@ pub mod macros {
     };
 }
 pub mod prelude {
-    pub use cheers_macros::html;
+    pub use cheers_macros::{Component, html};
 
     pub use crate::{
-        element_id,
         events::{
             Event, EventReceiver, EventSender, JsScript, PatchElements, PatchElementsMode, events,
         },
         include_css,
+        reference::{ElementId, Signal},
         render::{Lazy, LazyAttribute, Render, RenderExt as _},
-        response::{AsyncLazy, ElementId},
+        response::AsyncLazy,
     };
 }
 pub use render::{Buffer, Raw, RawAttribute, Rendered};

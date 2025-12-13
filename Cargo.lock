@@ -439,6 +439,9 @@ name = "cheers_macros"
 version = "0.0.0"
 dependencies = [
  "cheers_ast",
+ "proc-macro2",
+ "quote",
+ "syn 2.0.110",
 ]
 
 [[package]]

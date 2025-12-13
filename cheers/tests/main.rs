@@ -17,21 +17,6 @@ use futures::StreamExt;
 use tokio::sync::{Barrier, Mutex};
 
 #[test]
-fn class_id_html() {
-    let result = html! {
-        div id=(element_id!("profile")) class="profile" {
-            h1 { "Hello, world!" }
-        }
-    }
-    .render();
-
-    assert_eq!(
-        result.as_inner(),
-        r#"<div id="profile" class="profile"><h1>Hello, world!</h1></div>"#
-    );
-}
-
-#[test]
 fn can_render_vec() {
     let groceries = ["milk", "eggs", "bread"]
         .into_iter()
@@ -521,4 +506,54 @@ fn component_dotdot_default() {
     .render();
 
     assert_eq!(result.as_inner(), r#"<p>Great</p>"#);
+}
+
+#[test]
+fn id() {
+    #[expect(dead_code)]
+    #[derive(Component)]
+    #[id(number)]
+    #[id("location", city, street, number)]
+    struct House<'a> {
+        city: &'a str,
+        street: &'a str,
+        number: u32,
+    }
+
+    let number = 42;
+    let house_id = House::id(number);
+    assert_eq!(house_id.to_string(), "house-42");
+    let location_id = House::location_id("Berlin", "Main St", number);
+    assert_eq!(location_id.to_string(), "house-location-Berlin-Main St-42");
+}
+
+#[test]
+fn nested_signal() {
+    #[expect(dead_code)]
+    #[derive(Component)]
+    struct Room<'a> {
+        #[signal(id)]
+        number: u32,
+        #[signal]
+        name: &'a str,
+    }
+
+    #[expect(dead_code)]
+    #[derive(Component)]
+    struct House<'a> {
+        #[signal(id)]
+        number: u32,
+        #[signal(nested)]
+        rooms: Vec<Room<'a>>,
+    }
+
+    #[expect(dead_code)]
+    #[derive(Component)]
+    struct Street<'a> {
+        #[signal(nested)]
+        houses: Vec<House<'a>>,
+    }
+
+    let room_signal = StreetSignals::houses(HouseSignals::rooms(9, RoomSignals::name(42)));
+    assert_eq!(room_signal.path(), "houses.9.rooms.42.name");
 }

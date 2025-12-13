@@ -9,7 +9,6 @@ use axum::{
 use cheers::{
     Buffer,
     components::{Css, Doctype, Scripts},
-    element_id,
     prelude::*,
     router::CheersRouterExt,
 };
@@ -42,15 +41,11 @@ impl<T: Render> Render for Base<T> {
     }
 }
 
+#[derive(Component)]
+#[id(id)]
 struct Stock<'a> {
     id: &'a str,
     name: &'a str,
-}
-
-impl<'a> Stock<'a> {
-    fn id(id: &str) -> ElementId {
-        element_id!("stock", id)
-    }
 }
 
 impl<'a> Render for Stock<'a> {
@@ -109,12 +104,10 @@ async fn create_subscription(ctx: State<Ctx>) -> impl IntoResponse {
     tokio::spawn(async move {
         let mut stocks_rx = ctx.stocks_tx.subscribe();
         while let Ok((id, name)) = stocks_rx.recv().await {
-            if let Err(e) = tx.send(PatchElements::new().element_id(Stock::id(&id)).component(
-                Stock {
-                    id: &id,
-                    name: &name,
-                },
-            )) {
+            if let Err(e) = tx.send(PatchElements::new().id(Stock::id(&id)).component(Stock {
+                id: &id,
+                name: &name,
+            })) {
                 eprintln!("error forwarding update to subscription: {e}");
                 break;
             } else {

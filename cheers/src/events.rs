@@ -100,10 +100,10 @@ mod patch_elements {
             self
         }
 
-        pub fn element_id<I: AsRef<ElementId>>(mut self, id: I) -> Self {
+        pub fn id<I: AsRef<ElementId>>(mut self, id: I) -> Self {
             let mut id = match &id.as_ref().0 {
-                crate::response::InnerElementId::Static(s) => s,
-                crate::response::InnerElementId::Dynamic(s) => s.as_str(),
+                crate::reference::InnerElementId::Static(s) => s,
+                crate::reference::InnerElementId::Dynamic(s) => s.as_str(),
             }
             .to_owned();
             id.insert(0, '#');
