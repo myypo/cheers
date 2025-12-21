@@ -2,8 +2,8 @@ use std::fmt::{Debug, Display};
 
 use crate::{
     Buffer,
-    context::{Context, Element},
-    prelude::{Component, Lazy, Signal},
+    context::Context,
+    prelude::{Component, Lazy},
     render::Render,
     router::css_url,
 };
@@ -11,7 +11,7 @@ use crate::{
 pub struct Doctype;
 
 impl Component for Doctype {
-    fn component(&self) -> Lazy<impl Fn(&mut Buffer)> {
+    fn component(&self) -> impl Render {
         Lazy::dangerously_create(|buffer| {
             buffer.dangerously_get_string().push_str("<!DOCTYPE html>");
         })
@@ -21,10 +21,7 @@ impl Component for Doctype {
 pub struct Scripts;
 
 impl Component for Scripts {
-    fn component(&self) -> Lazy<impl Fn(&mut Buffer)>
-    where
-        Self: Sized,
-    {
+    fn component(&self) -> impl Render {
         Lazy::dangerously_create(|buffer| {
             buffer.dangerously_get_string().push_str("<script>function __ssrStream(key){const t=document.querySelector(`[data-ssr='${key}-t']`),s=document.querySelector(`[data-ssr='${key}']`);s.replaceWith(t.content);t.remove();document.querySelector(`[data-ssr='${key}-s']`).remove()}</script>");
             buffer
@@ -80,7 +77,7 @@ impl Component for Scripts {
 pub struct Css;
 
 impl Component for Css {
-    fn component(&self) -> Lazy<impl Fn(&mut Buffer)> {
+    fn component(&self) -> impl Render {
         Lazy::dangerously_create(|buffer| {
             let link = format!(r#"<link rel="stylesheet" href="/cheers{}">"#, css_url());
             buffer.dangerously_get_string().push_str(&link);

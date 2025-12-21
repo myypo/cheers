@@ -1,7 +1,6 @@
 use syn::{
     Ident, LitBool, LitChar, LitFloat, LitInt, LitStr, Token, braced,
     ext::IdentExt,
-    parenthesized,
     parse::{Parse, ParseStream},
     token::{Brace, Paren},
 };

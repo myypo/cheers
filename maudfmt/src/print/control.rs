@@ -1,6 +1,6 @@
 use cheers_ast::{
-    ElementNode,
-    control::{Control, ControlIfOrBlock, ControlKind, If, Let, MatchNodeArmBody},
+    AttributeValueNode, ElementNode, Node,
+    control::{Control, ControlBlock, ControlIfOrBlock, ControlKind, If, Let, MatchNodeArmBody},
 };
 use syn::Expr;
 
@@ -11,10 +11,47 @@ use crate::{
 
 impl<'a, 'b> Printer<'a, 'b> {
     pub fn print_control(&mut self, control: Control<ElementNode>, indent_level: usize) {
+        self.print_control_with(
+            control,
+            indent_level,
+            true,
+            |p, node, i, pb| p.print_element_node(node, i, pb),
+            |p, block, i, _| p.print_control_block(block, i),
+        );
+    }
+
+    pub fn print_control_attribute_value(
+        &mut self,
+        control: Control<AttributeValueNode>,
+        indent_level: usize,
+        preserve_blank_lines: bool,
+    ) {
+        self.print_control_with(
+            control,
+            indent_level,
+            preserve_blank_lines,
+            |p, node, i, pb| p.print_attribute_value_node(node, i, pb),
+            |p, block, i, pb| p.print_control_block_attribute_value(block, i, pb),
+        );
+    }
+
+    fn print_control_with<N: Node>(
+        &mut self,
+        control: Control<N>,
+        indent_level: usize,
+        child_preserve_blank_lines: bool,
+        mut print_node: impl FnMut(&mut Self, N, usize, bool),
+        mut print_block: impl FnMut(&mut Self, ControlBlock<N>, usize, bool),
+    ) {
         match control.kind {
             ControlKind::If(if_) => {
                 self.write("@");
-                self.print_if(if_, indent_level);
+                self.print_if_with(
+                    if_,
+                    indent_level,
+                    child_preserve_blank_lines,
+                    &mut print_block,
+                );
             }
             ControlKind::For(for_) => {
                 self.write("@for ");
@@ -30,7 +67,7 @@ impl<'a, 'b> Printer<'a, 'b> {
                     }
                 }
                 self.write(" ");
-                self.print_control_block(for_.block, indent_level);
+                print_block(self, for_.block, indent_level, child_preserve_blank_lines);
             }
             ControlKind::Let(Let(local)) => {
                 let let_indent_level = match indent_level {
@@ -70,10 +107,15 @@ impl<'a, 'b> Printer<'a, 'b> {
 
                     match arm.body {
                         MatchNodeArmBody::Block(control) => {
-                            self.print_control_block(control, indent_level + 1);
+                            print_block(
+                                self,
+                                control,
+                                indent_level + 1,
+                                child_preserve_blank_lines,
+                            );
                         }
                         MatchNodeArmBody::Node(node) => {
-                            self.print_element_node(node, indent_level + 1, true);
+                            print_node(self, node, indent_level + 1, child_preserve_blank_lines);
                         }
                     };
                 }
@@ -99,7 +141,12 @@ impl<'a, 'b> Printer<'a, 'b> {
                         self.write(" ");
                     }
                 }
-                self.print_control_block(while_expr.block, indent_level);
+                print_block(
+                    self,
+                    while_expr.block,
+                    indent_level,
+                    child_preserve_blank_lines,
+                );
             }
             ControlKind::Async(async_expr) => {
                 self.write("@async ");
@@ -110,7 +157,13 @@ impl<'a, 'b> Printer<'a, 'b> {
         }
     }
 
-    fn print_if(&mut self, if_: If<ElementNode>, indent_level: usize) {
+    fn print_if_with<N: Node>(
+        &mut self,
+        if_: If<N>,
+        indent_level: usize,
+        child_preserve_blank_lines: bool,
+        print_block: &mut impl FnMut(&mut Self, ControlBlock<N>, usize, bool),
+    ) {
         self.write("if ");
         match if_.cond {
             Expr::Let(expr_let) => {
@@ -128,17 +181,22 @@ impl<'a, 'b> Printer<'a, 'b> {
             }
         }
 
-        self.print_control_block(if_.then_block, indent_level);
+        print_block(
+            self,
+            if_.then_block,
+            indent_level,
+            child_preserve_blank_lines,
+        );
 
         if let Some((_, if_or_block)) = if_.else_branch {
             self.write(" @else ");
 
             match *if_or_block {
                 ControlIfOrBlock::If(if_) => {
-                    self.print_if(if_, indent_level);
+                    self.print_if_with(if_, indent_level, child_preserve_blank_lines, print_block);
                 }
                 ControlIfOrBlock::Block(block) => {
-                    self.print_control_block(block, indent_level);
+                    print_block(self, block, indent_level, child_preserve_blank_lines);
                 }
             }
         }

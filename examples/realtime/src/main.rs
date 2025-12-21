@@ -7,7 +7,6 @@ use axum::{
     routing::{get, post},
 };
 use cheers::{
-    Buffer,
     components::{Css, Doctype, Scripts},
     prelude::*,
     router::CheersRouterExt,
@@ -24,10 +23,7 @@ struct Base<T> {
 }
 
 impl<T: Render> Component for Base<T> {
-    fn component(&self) -> Lazy<impl Fn(&mut Buffer)>
-    where
-        Self: Sized,
-    {
+    fn component(&self) -> impl Render {
         html! {
             Doctype;
             html {
@@ -54,10 +50,7 @@ struct Stock<'a> {
 }
 
 impl<'a> Component for Stock<'a> {
-    fn component(&self) -> Lazy<impl Fn(&mut Buffer)>
-    where
-        Self: Sized,
-    {
+    fn component(&self) -> impl Render {
         let price_cents_signal = Stock::price_cents_signal(self.id);
         html! {
             section id=(Self::id(self.id)) {
@@ -73,7 +66,7 @@ impl<'a> Component for Stock<'a> {
     }
 }
 
-async fn home_page(ctx: State<Ctx>) -> AsyncLazy<Lazy<impl Fn(&mut Buffer)>> {
+async fn home_page(ctx: State<Ctx>) -> AsyncLazy<impl Render> {
     let fetching = Signal::<bool>::scoped("fetching");
     html! {
         Base {
@@ -86,9 +79,10 @@ async fn home_page(ctx: State<Ctx>) -> AsyncLazy<Lazy<impl Fn(&mut Buffer)>> {
                         !style("display": { (fetching) " && 'none'" })
                     { "Do stuff" }
                     h1 { "Sum" }
-                    p !text({
-                        0 @for (id, _) in stocks.iter() { "+" (Stock::price_cents_signal(id)) }
-                    }) {}
+                    p   !text({
+                            0
+                            @for (id, _) in stocks.iter() { "+" (Stock::price_cents_signal(id)) }
+                        }) {}
                     @for (id, (name, price_cents)) in stocks.iter() {
                         Stock id name price_cents=(*price_cents);
                     }
@@ -109,7 +103,7 @@ async fn update_stock(ctx: State<Ctx>) -> PatchElements {
         "hardcoded Wow
 stock",
     );
-    *price_cents = *price_cents + 1;
+    *price_cents += 1;
     if let Err(e) = ctx
         .stocks_tx
         .send((id.to_owned(), name.clone(), *price_cents))
@@ -118,8 +112,8 @@ stock",
     };
 
     let stock = Stock {
-        id: &id,
-        name: &name,
+        id,
+        name,
         price_cents: *price_cents,
     };
     PatchElements::new().element(stock.component())

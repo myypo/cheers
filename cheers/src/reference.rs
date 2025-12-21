@@ -1,12 +1,8 @@
-use std::{
-    borrow::Cow,
-    fmt::{Display, Write},
-    marker::PhantomData,
-};
+use std::{fmt::Display, marker::PhantomData};
 
 use crate::{
     context::AttributeValue,
-    render::{Buffer, Lazy, Render},
+    render::{Buffer, Render},
 };
 
 #[derive(Debug, PartialEq, Eq)]

@@ -7,11 +7,10 @@ mod syntax;
 use std::marker::PhantomData;
 
 pub use basics::UnquotedName;
-use proc_macro2::{Span, TokenStream, TokenTree, token_stream};
-use quote::{ToTokens, TokenStreamExt, quote};
+use proc_macro2::{Span, TokenStream};
+use quote::{ToTokens, quote};
 use syn::{
-    Error, Expr, FieldValue, Ident, Lit, LitBool, LitChar, LitFloat, LitInt, LitStr, Token, braced,
-    bracketed,
+    Error, Expr, Ident, LitBool, LitChar, LitFloat, LitInt, LitStr, Token, braced, bracketed,
     ext::IdentExt,
     parenthesized,
     parse::{Parse, ParseStream},
@@ -531,7 +530,6 @@ impl Parse for Toggle {
 
 pub struct DataExprValue<V: Parse> {
     pub ident: Expr,
-    colon_token: Token![:],
     pub value: V,
 }
 
@@ -539,12 +537,15 @@ impl<V: Parse> Parse for DataExprValue<V> {
     fn parse(input: ParseStream) -> syn::Result<Self> {
         Ok(Self {
             ident: input.parse()?,
-            colon_token: input.parse()?,
-            value: input.parse()?,
+            value: {
+                input.parse::<Token![:]>()?;
+                input.parse()?
+            },
         })
     }
 }
 
+#[allow(clippy::large_enum_variant)]
 pub enum DataContent {
     Node(AttributeValueNode),
     Signals(Punctuated<DataExprValue<Expr>, Token![,]>),
@@ -566,13 +567,12 @@ impl Parse for Data {
     // should rather use some kind of enums
     fn parse(input: ParseStream) -> syn::Result<Self> {
         let mut namespace = None::<UnquotedName>;
-        let name;
 
         if input.peek2(Token![:]) {
             namespace = Some(input.parse()?);
             input.parse::<Token![:]>()?;
         }
-        name = input.parse()?;
+        let name = input.parse()?;
 
         // HACK: this is to improve the completion
         // without allowing these attributes to have no value

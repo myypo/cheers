@@ -2,7 +2,7 @@ use cheers_ast::{
     Attribute, AttributeKind, AttributeName, AttributeValueNode, DataContent, DataExprValue,
     ElementBody, ElementNode, Node, ParenExpr, Toggle,
     component::{ComponentAttribute, ComponentAttributeValue},
-    control::ControlBlock,
+    control::{self, ControlBlock},
 };
 use syn::{Expr, Ident, Token, punctuated::Punctuated, spanned::Spanned};
 
@@ -40,17 +40,17 @@ pub fn element_len(ident: &Ident, attrs: &[Attribute], body: &ElementBody) -> Op
                         element_len += 1;
                         element_len += attribute_value_len(value)?;
                         if let Some(toggle) = toggle {
-                            element_len += toggle_len(&toggle)?;
+                            element_len += toggle_len(toggle)?;
                         };
                     }
                     AttributeKind::Option(toggle) => {
-                        let len = toggle_len(&toggle)?;
+                        let len = toggle_len(toggle)?;
                         // `=`
                         element_len += 1 + len;
                     }
                     AttributeKind::Empty(maybe_toggle) => {
                         if let Some(toggle) = maybe_toggle {
-                            element_len += toggle_len(&toggle)?;
+                            element_len += toggle_len(toggle)?;
                         }
 
                         // Empty attribute with no toggle - no additional length
@@ -201,7 +201,10 @@ fn toggle_len(toggle: &Toggle) -> Option<usize> {
     span_len(&toggle.expr).map(|len| len + 2)
 }
 
-pub fn control_block_len(block: &ControlBlock<ElementNode>) -> Option<usize> {
+pub fn control_block_len_with<N: Node>(
+    block: &ControlBlock<N>,
+    node_len: impl Fn(&N) -> Option<usize>,
+) -> Option<usize> {
     let mut element_len = 0usize;
 
     // `{` + ` `
@@ -222,13 +225,105 @@ pub fn control_block_len(block: &ControlBlock<ElementNode>) -> Option<usize> {
     Some(element_len)
 }
 
+fn control_attribute_value_len(control: &control::Control<AttributeValueNode>) -> Option<usize> {
+    use control::{ControlIfOrBlock, ControlKind};
+
+    let mut len = 1; // `@`
+
+    match &control.kind {
+        ControlKind::If(if_) => {
+            // `if `
+            len += 3;
+            len += span_len(&if_.cond)?;
+            // ` `
+            len += 1;
+
+            len += control_block_len_with(&if_.then_block, attribute_value_len)?;
+
+            if let Some((_, if_or_block)) = &if_.else_branch {
+                // ` @else `
+                len += 7;
+
+                match &**if_or_block {
+                    ControlIfOrBlock::If(else_if) => {
+                        // Recursively calculate the else-if length (without the leading @)
+                        len += if_attribute_value_len(else_if)?;
+                    }
+                    ControlIfOrBlock::Block(block) => {
+                        len += control_block_len_with(block, attribute_value_len)?;
+                    }
+                }
+            }
+
+            Some(len)
+        }
+        ControlKind::For(for_) => {
+            // `for `
+            len += 4;
+            len += span_len(&for_.pat)?;
+            // ` in `
+            len += 4;
+            len += span_len(&for_.expr)?;
+            // ` `
+            len += 1;
+
+            len += control_block_len_with(&for_.block, attribute_value_len)?;
+
+            Some(len)
+        }
+        ControlKind::While(while_) => {
+            // `while `
+            len += 6;
+            len += span_len(&while_.cond)?;
+            // ` `
+            len += 1;
+
+            // block
+            len += control_block_len_with(&while_.block, attribute_value_len)?;
+
+            Some(len)
+        }
+        ControlKind::Match(_) => None,
+        ControlKind::Let(_) => None,
+        ControlKind::Async(_) => None,
+    }
+}
+
+fn if_attribute_value_len(if_: &control::If<AttributeValueNode>) -> Option<usize> {
+    let mut len = 0;
+
+    // `if `
+    len += 3;
+    len += span_len(&if_.cond)?;
+    // ` `
+    len += 1;
+
+    len += control_block_len_with(&if_.then_block, attribute_value_len)?;
+
+    if let Some((_, if_or_block)) = &if_.else_branch {
+        // ` @else `
+        len += 7;
+
+        match &**if_or_block {
+            control::ControlIfOrBlock::If(else_if) => {
+                len += if_attribute_value_len(else_if)?;
+            }
+            control::ControlIfOrBlock::Block(block) => {
+                len += control_block_len_with(block, attribute_value_len)?;
+            }
+        }
+    }
+
+    Some(len)
+}
+
 pub fn attribute_value_len(value: &AttributeValueNode) -> Option<usize> {
     match value {
         AttributeValueNode::Literal(lit) => span_len(lit),
         AttributeValueNode::Ident(ident) => span_len(ident),
         AttributeValueNode::Expr(paren_expr) => paren_expr_len(paren_expr),
         AttributeValueNode::Group(group) => attribute_value_group_len(&group.0.0),
-        AttributeValueNode::Control(_) => None,
+        AttributeValueNode::Control(control) => control_attribute_value_len(control),
     }
 }
 
@@ -280,7 +375,7 @@ pub fn data_decl_len_attr_values(
             total_len += 2;
         }
 
-        total_len += data_decl_len_attr_value(&d)?;
+        total_len += data_decl_len_attr_value(d)?;
     }
     Some(total_len)
 }

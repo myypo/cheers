@@ -64,7 +64,7 @@ fn field_fn_params(item: &ItemStruct, arg_field_names: &[Ident]) -> Result<Token
                     return Ok(&f.ty);
                 }
             }
-            Err(Error::new_spanned(&arg_field_name, "field not found"))
+            Err(Error::new_spanned(arg_field_name, "field not found"))
         })
         .collect::<Result<Vec<&Type>, Error>>()?;
     let field_names = &arg_field_names;

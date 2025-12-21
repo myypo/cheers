@@ -36,15 +36,17 @@ impl<'a, 'b> Printer<'a, 'b> {
 
         self.write(&name.lit().value());
 
-        for (idx, attr) in attrs.into_iter().enumerate() {
+        let mut first = true;
+        for attr in attrs.into_iter() {
             if !should_wrap {
                 self.write(" ");
-            } else if idx == 0 && element_name_len < 4 {
+            } else if first && element_name_len < 4 {
                 // First attribute of short element name: pad with spaces for alignment
                 self.write(&" ".repeat(4 - element_name_len));
             } else if should_wrap {
                 self.new_line(indent_level + 1);
             }
+            first = false;
 
             match attr {
                 Attribute::Regular { name, kind } => {
@@ -717,6 +719,38 @@ mod test {
         r#"
         html! {
             p "class"="bold" { "text" }
+        }
+        "#
+    );
+
+    test_default!(
+        attribute_value_control_inline,
+        r#"
+        html! {
+            p class=@if enabled { "on" } @else { "off" } {}
+        }
+        "#,
+        r#"
+        html! {
+            p class=@if enabled { "on" } @else { "off" } {}
+        }
+        "#
+    );
+
+    test_default!(
+        attribute_value_control_expanded_blocks,
+        r#"
+        html! {
+            p class=@if enabled { "This is a very very very very very very very very very very long string" } @else { "This is another very very very very very very very very very very long string" };
+        }
+        "#,
+        r#"
+        html! {
+            p   class=@if enabled {
+                    "This is a very very very very very very very very very very long string"
+                } @else {
+                    "This is another very very very very very very very very very very long string"
+                };
         }
         "#
     );

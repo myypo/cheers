@@ -148,7 +148,7 @@ fn component() {
     }
 
     impl<R: Render> Component for Repeater<R> {
-        fn component(&self) -> Lazy<impl Fn(&mut Buffer)> {
+        fn component(&self) -> impl Render {
             html! {
                 @for _ in 0..self.count { (self.children) }
             }
@@ -276,7 +276,7 @@ struct Base<T> {
 }
 
 impl<T: Render> Component for Base<T> {
-    fn component(&self) -> Lazy<impl Fn(&mut Buffer)> {
+    fn component(&self) -> impl Render {
         html! {
             Doctype;
             html {
@@ -474,7 +474,7 @@ fn component_dotdot_default() {
     }
 
     impl<'a> Component for Feedback<'a> {
-        fn component(&self) -> Lazy<impl Fn(&mut Buffer)> {
+        fn component(&self) -> impl Render {
             html! {
                 @if let Some(name) = self.name {
                     h3 { (name) }
@@ -515,6 +515,7 @@ fn id() {
 
 #[test]
 fn data_indicator() {
+    #[expect(dead_code)]
     #[derive(Component)]
     struct Something {
         #[signal]
@@ -536,12 +537,14 @@ fn data_indicator() {
 
 #[test]
 fn data_signals() {
+    #[expect(dead_code)]
     #[derive(Component)]
     struct Counter {
         #[signal]
         count: i32,
     }
 
+    #[expect(dead_code)]
     #[derive(Component)]
     struct Other {
         #[signal]
@@ -564,6 +567,7 @@ fn data_signals() {
 
 #[test]
 fn data_style() {
+    #[expect(dead_code)]
     #[derive(Component)]
     struct Options {
         #[signal]
@@ -598,7 +602,7 @@ fn signal_computed() {
     }
 
     impl Component for Input {
-        fn component(&self) -> Lazy<impl Fn(&mut Buffer)> {
+        fn component(&self) -> impl Render {
             let a = Input::a_signal();
             let b = Input::b_signal();
             let c = Input::c_signal();
@@ -615,7 +619,7 @@ fn signal_computed() {
     }
 
     impl Component for Calculator {
-        fn component(&self) -> Lazy<impl Fn(&mut Buffer)> {
+        fn component(&self) -> impl Render {
             let Input { a, b, c, d } = self.input;
             html! {
                 div {
@@ -663,6 +667,6 @@ fn signal_without_field() {
 
     assert_eq!(
         result.render().as_inner(),
-        r#"<p data-bind="keepsake" data-on:close="$keepsake + 'noooo'">El</p>"#
+        r#"<p data-bind="keepsake-El" data-on:close="$keepsake-El + 'noooo'">El</p>"#
     )
 }

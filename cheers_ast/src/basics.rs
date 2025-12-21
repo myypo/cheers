@@ -11,7 +11,7 @@ pub struct UnquotedName(pub Ident);
 
 impl PartialEq<&str> for UnquotedName {
     fn eq(&self, other: &&str) -> bool {
-        self.0.to_string() == *other
+        self.0 == *other
     }
 }
 
