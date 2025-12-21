@@ -11,7 +11,7 @@ use crate::{
 pub struct Doctype;
 
 impl Component for Doctype {
-    fn component(&self, _: &Signal<Self>) -> Lazy<impl Fn(&mut Buffer)> {
+    fn component(&self) -> Lazy<impl Fn(&mut Buffer)> {
         Lazy::dangerously_create(|buffer| {
             buffer.dangerously_get_string().push_str("<!DOCTYPE html>");
         })
@@ -21,7 +21,7 @@ impl Component for Doctype {
 pub struct Scripts;
 
 impl Component for Scripts {
-    fn component(&self, _: &Signal<Self>) -> Lazy<impl Fn(&mut Buffer)>
+    fn component(&self) -> Lazy<impl Fn(&mut Buffer)>
     where
         Self: Sized,
     {
@@ -80,7 +80,7 @@ impl Component for Scripts {
 pub struct Css;
 
 impl Component for Css {
-    fn component(&self, _: &Signal<Self>) -> Lazy<impl Fn(&mut Buffer)> {
+    fn component(&self) -> Lazy<impl Fn(&mut Buffer)> {
         Lazy::dangerously_create(|buffer| {
             let link = format!(r#"<link rel="stylesheet" href="/cheers{}">"#, css_url());
             buffer.dangerously_get_string().push_str(&link);

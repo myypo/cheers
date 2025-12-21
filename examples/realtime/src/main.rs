@@ -24,7 +24,7 @@ struct Base<T> {
 }
 
 impl<T: Render> Component for Base<T> {
-    fn component(&self, _: &Signal<Self>) -> Lazy<impl Fn(&mut Buffer)>
+    fn component(&self) -> Lazy<impl Fn(&mut Buffer)>
     where
         Self: Sized,
     {
@@ -54,20 +54,18 @@ struct Stock<'a> {
 }
 
 impl<'a> Component for Stock<'a> {
-    fn component(&self, signal: &Signal<Self>) -> Lazy<impl Fn(&mut Buffer)>
+    fn component(&self) -> Lazy<impl Fn(&mut Buffer)>
     where
         Self: Sized,
     {
-        let price_cents_signal = Stock::price_cents_signal(signal, self.id);
+        let price_cents_signal = Stock::price_cents_signal(self.id);
         html! {
             section id=(Self::id(self.id)) {
                 h3 { "Name " (self.name) }
                 input
                     value=(self.price_cents)
                     type="number"
-                    !signals(
-                        price_cents_signal: self.price_cents
-                    )
+                    !signals(price_cents_signal: self.price_cents)
                     !bind(price_cents_signal);
                 p !text(price_cents_signal) { (self.price_cents) }
             }
@@ -85,13 +83,11 @@ async fn home_page(ctx: State<Ctx>) -> AsyncLazy<Lazy<impl Fn(&mut Buffer)>> {
                     button
                         !on:click("@post('/')")
                         !indicator(fetching)
-                        !style(
-                            "display": {(fetching) " && 'none'"}
-                        )
+                        !style("display": { (fetching) " && 'none'" })
                     { "Do stuff" }
                     h1 { "Sum" }
                     p !text({
-                        0 @for (id, _) in stocks.iter() { "+" (Stock::price_cents_signal(&Signal::root(), id)) }
+                        0 @for (id, _) in stocks.iter() { "+" (Stock::price_cents_signal(id)) }
                     }) {}
                     @for (id, (name, price_cents)) in stocks.iter() {
                         Stock id name price_cents=(*price_cents);
@@ -126,7 +122,7 @@ stock",
         name: &name,
         price_cents: *price_cents,
     };
-    PatchElements::new().element(stock.component(&Signal::root()))
+    PatchElements::new().element(stock.component())
 }
 
 async fn create_subscription(ctx: State<Ctx>) -> impl IntoResponse {
@@ -143,7 +139,7 @@ async fn create_subscription(ctx: State<Ctx>) -> impl IntoResponse {
             if let Err(e) = tx.send(
                 PatchElements::new()
                     .id(Stock::id(&id))
-                    .element(stock.component(&Signal::root())),
+                    .element(stock.component()),
             ) {
                 eprintln!("error forwarding update to subscription: {e}");
                 break;

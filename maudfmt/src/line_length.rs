@@ -1,10 +1,10 @@
 use cheers_ast::{
-    Attribute, AttributeKind, AttributeName, AttributeValueNode, DataContent, DataDecl,
+    Attribute, AttributeKind, AttributeName, AttributeValueNode, DataContent, DataExprValue,
     ElementBody, ElementNode, Node, ParenExpr, Toggle,
     component::{ComponentAttribute, ComponentAttributeValue},
     control::ControlBlock,
 };
-use syn::{Ident, spanned::Spanned};
+use syn::{Expr, Ident, Token, punctuated::Punctuated, spanned::Spanned};
 
 fn paren_expr_len<N: Node>(paren_expr: &ParenExpr<N>) -> Option<usize> {
     span_len(&paren_expr.expr).map(|len| len + 2)
@@ -60,10 +60,19 @@ pub fn element_len(ident: &Ident, attrs: &[Attribute], body: &ElementBody) -> Op
             Attribute::Data(data) => {
                 // `!`
                 element_len += 1;
-                element_len += attribute_name_len(&data.name)?;
 
-                // `(` + `)` = 2
-                element_len += 2;
+                if let Some(namespace) = &data.namespace {
+                    element_len += span_len(&namespace.0)?;
+                    // `:`
+                    element_len += 1;
+                }
+
+                element_len += span_len(&data.name.0)?;
+
+                if !matches!(data.content, DataContent::Empty) {
+                    // `(` + `)` = 2
+                    element_len += 2;
+                }
 
                 match &data.content {
                     DataContent::Bind(expr) => {
@@ -72,9 +81,19 @@ pub fn element_len(ident: &Ident, attrs: &[Attribute], body: &ElementBody) -> Op
                     DataContent::Node(attribute_value_node) => {
                         element_len += attribute_value_len(attribute_value_node)?;
                     }
-                    DataContent::Signals(decls) | DataContent::IdentDecl(decls) => {
-                        element_len += data_decl_len(decls)?;
+                    DataContent::Signals(decls) => {
+                        element_len += data_decl_len_expr(decls)?;
                     }
+                    DataContent::Kv(decls) => {
+                        element_len += data_decl_len_attr_values(decls)?;
+                    }
+                    DataContent::Computed(decl) => {
+                        element_len += span_len(&decl.ident)?;
+                        // `: `
+                        element_len += 2;
+                        element_len += attribute_value_len(&decl.value)?;
+                    }
+                    DataContent::Empty => {}
                 }
             }
         }
@@ -228,16 +247,14 @@ fn attribute_value_group_len(nodes: &[AttributeValueNode]) -> Option<usize> {
     Some(len)
 }
 
-pub fn data_decl_len(
-    decls: &syn::punctuated::Punctuated<DataDecl, syn::Token![,]>,
-) -> Option<usize> {
+pub fn data_decl_len_expr(decls: &Punctuated<DataExprValue<Expr>, Token![,]>) -> Option<usize> {
     let mut total_len = 0usize;
     let mut first = true;
     for d in decls {
         if first {
             first = false;
         } else {
-            // `, ` between declarations
+            // `, `
             total_len += 2;
         }
         total_len += span_len(&d.ident)?;
@@ -247,5 +264,36 @@ pub fn data_decl_len(
 
         total_len += span_len(&d.value)?;
     }
+    Some(total_len)
+}
+
+pub fn data_decl_len_attr_values(
+    decls: &Punctuated<DataExprValue<AttributeValueNode>, Token![,]>,
+) -> Option<usize> {
+    let mut total_len = 0usize;
+    let mut first = true;
+    for d in decls {
+        if first {
+            first = false;
+        } else {
+            // `, `
+            total_len += 2;
+        }
+
+        total_len += data_decl_len_attr_value(&d)?;
+    }
+    Some(total_len)
+}
+
+pub fn data_decl_len_attr_value(decl: &DataExprValue<AttributeValueNode>) -> Option<usize> {
+    let mut total_len = 0usize;
+
+    total_len += span_len(&decl.ident)?;
+
+    // `: `
+    total_len += 2;
+
+    total_len += attribute_value_len(&decl.value)?;
+
     Some(total_len)
 }

@@ -121,10 +121,10 @@ mod patch_elements {
             self
         }
 
-        pub fn element<R: Render>(mut self, component: R) -> Self {
+        pub fn element<R: Render>(mut self, element: R) -> Self {
             if let Some(mut components) = self.components {
                 components.dangerously_get_string().push('\n');
-                component.render_to(&mut components);
+                element.render_to(&mut components);
                 Self {
                     mode: self.mode,
                     selector: self.selector,
@@ -133,7 +133,7 @@ mod patch_elements {
                 }
             } else {
                 let mut buffer = Buffer::new();
-                component.render_to(&mut buffer);
+                element.render_to(&mut buffer);
                 self.components = Some(buffer);
                 self
             }

@@ -5,31 +5,31 @@ use predicates::prelude::*;
 use pretty_assertions::assert_eq;
 
 static IN_FILE: &str = r#"
-use maud::{DOCTYPE, Markup, html};
+use cheers::prelude::*;
 
 /// A basic header with a dynamic `page_title`.
-fn header(page_title: &str) -> Markup {
+fn header(page_title: &str) -> impl Render {
     html!{(DOCTYPE) meta charset="utf-8";title{(page_title)}}
 }
 
 /// A static footer.
-fn footer() -> Markup {
+fn footer() -> impl Render {
     html!{footer{a href="rss.atom"{"RSS Feed"}}}
 }
 
 /// The final Markup, including `header` and `footer`.
 ///
-/// Additionally takes a `greeting_box` that's `Markup`, not `&str`.
-pub fn page(title: &str, greeting_box: Markup) -> Markup {
+/// Additionally takes a `greeting_box` that implements `Render`, not `&str`.
+pub fn page(title: &str, greeting_box: impl Render) -> impl Render {
     html!{(header(title)) h1{(title)}(greeting_box)(footer())}
 }
 "#;
 
 static OUT_FILE: &str = r#"
-use maud::{DOCTYPE, Markup, html};
+use cheers::prelude::*;
 
 /// A basic header with a dynamic `page_title`.
-fn header(page_title: &str) -> Markup {
+fn header(page_title: &str) -> impl Render {
     html! {
         (DOCTYPE)
         meta charset="utf-8";
@@ -38,7 +38,7 @@ fn header(page_title: &str) -> Markup {
 }
 
 /// A static footer.
-fn footer() -> Markup {
+fn footer() -> impl Render {
     html! {
         footer {
             a href="rss.atom" { "RSS Feed" }
@@ -48,8 +48,8 @@ fn footer() -> Markup {
 
 /// The final Markup, including `header` and `footer`.
 ///
-/// Additionally takes a `greeting_box` that's `Markup`, not `&str`.
-pub fn page(title: &str, greeting_box: Markup) -> Markup {
+/// Additionally takes a `greeting_box` that implements `Render`, not `&str`.
+pub fn page(title: &str, greeting_box: impl Render) -> impl Render {
     html! {
         (header(title))
         h1 { (title) }
@@ -135,50 +135,50 @@ fn format_file_from_stdin() -> Result<()> {
 }
 
 static CUSTOM_MACRO_IN_FILE: &str = r#"
-use hypertext::prelude::*;
+use cheers::prelude::*;
 
-fn header(page_title: &str) -> Markup {
-    maud!{(DOCTYPE) meta charset="utf-8";title{(page_title)}}
+fn header(page_title: &str) -> impl Render {
+    custom!{(DOCTYPE) meta charset="utf-8";title{(page_title)}}
 }
 
-fn footer() -> Markup {
-    hyperscript::maud!{footer{a href="rss.atom"{"RSS Feed"}}}
+fn footer() -> impl Render {
+    module::custom!{footer{a href="rss.atom"{"RSS Feed"}}}
 }
 
-fn sidebar() -> Markup {
+fn sidebar() -> impl Render {
     html!{div class="sidebar"{p{"This should not be formatted"}}}
 }
 
-pub fn page(title: &str, greeting_box: Markup) -> Markup {
-    maud!{(header(title)) h1{(title)}(greeting_box)(footer())(sidebar())}
+pub fn page(title: &str, greeting_box: impl Render) -> impl Render {
+    custom!{(header(title)) h1{(title)}(greeting_box)(footer())(sidebar())}
 }
 "#;
 
 static CUSTOM_MACRO_OUT_FILE: &str = r#"
-use hypertext::prelude::*;
+use cheers::prelude::*;
 
-fn header(page_title: &str) -> Markup {
-    maud! {
+fn header(page_title: &str) -> impl Render {
+    custom! {
         (DOCTYPE)
         meta charset="utf-8";
         title { (page_title) }
     }
 }
 
-fn footer() -> Markup {
-    hyperscript::maud! {
+fn footer() -> impl Render {
+    module::custom! {
         footer {
             a href="rss.atom" { "RSS Feed" }
         }
     }
 }
 
-fn sidebar() -> Markup {
+fn sidebar() -> impl Render {
     html!{div class="sidebar"{p{"This should not be formatted"}}}
 }
 
-pub fn page(title: &str, greeting_box: Markup) -> Markup {
-    maud! {
+pub fn page(title: &str, greeting_box: impl Render) -> impl Render {
+    custom! {
         (header(title))
         h1 { (title) }
         (greeting_box)
@@ -195,7 +195,7 @@ fn format_file_with_custom_macro_names() -> Result<()> {
 
     let mut cmd = cargo::cargo_bin_cmd!();
     cmd.arg("--macro-names")
-        .arg("maud,hyperscript::maud")
+        .arg("custom,module::custom")
         .arg(file.path());
 
     cmd.assert().success();
@@ -212,7 +212,7 @@ fn format_stdin_with_custom_macro_names() -> Result<()> {
     let mut cmd = cargo::cargo_bin_cmd!();
     cmd.arg("-s")
         .arg("--macro-names")
-        .arg("maud,hyperscript::maud")
+        .arg("custom,module::custom")
         .pipe_stdin(file)?;
 
     cmd.assert()
@@ -228,7 +228,7 @@ fn format_file_with_custom_macro_names_short_arg() -> Result<()> {
     file.write_str(CUSTOM_MACRO_IN_FILE)?;
 
     let mut cmd = cargo::cargo_bin_cmd!();
-    cmd.arg("-m").arg("maud,hyperscript::maud").arg(file.path());
+    cmd.arg("-m").arg("custom,module::custom").arg(file.path());
 
     cmd.assert().success();
     assert_eq!(std::fs::read_to_string(&file)?, CUSTOM_MACRO_OUT_FILE);
@@ -237,17 +237,17 @@ fn format_file_with_custom_macro_names_short_arg() -> Result<()> {
 }
 
 static LONG_LINE_IN_FILE: &str = r#"
-use maud::{Markup, html};
+use cheers::prelude::*;
 
-fn test() -> Markup {
+fn test() -> impl Render {
     html!{div class="very-long-class-name" id="super-long-id-name"{p data_attr="value"{"Content"}}}
 }
 "#;
 
 static LONG_LINE_OUT_FILE_SHORT_LENGTH: &str = r#"
-use maud::{Markup, html};
+use cheers::prelude::*;
 
-fn test() -> Markup {
+fn test() -> impl Render {
     html! {
         div class="very-long-class-name"
             id="super-long-id-name"
@@ -259,9 +259,9 @@ fn test() -> Markup {
 "#;
 
 static LONG_LINE_OUT_FILE_LONG_LENGTH: &str = r#"
-use maud::{Markup, html};
+use cheers::prelude::*;
 
-fn test() -> Markup {
+fn test() -> impl Render {
     html! {
         div class="very-long-class-name" id="super-long-id-name" {
             p data_attr="value" { "Content" }

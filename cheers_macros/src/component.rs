@@ -1,9 +1,9 @@
 use proc_macro2::TokenStream;
-use quote::quote;
+use quote::{TokenStreamExt, quote};
 use syn::{
     Error, GenericParam, Generics, Ident, ItemStruct, Lifetime, LitStr, Meta, Path, Token, Type,
     parse::{Parse, ParseStream},
-    parse_quote_spanned, parse2,
+    parse2,
     punctuated::Punctuated,
     spanned::Spanned,
     visit::{Visit, visit_path},
@@ -55,22 +55,38 @@ fn to_snake_case(s: &str) -> String {
     result
 }
 
+fn field_fn_params(item: &ItemStruct, arg_field_names: &[Ident]) -> Result<TokenStream, Error> {
+    let field_types = arg_field_names
+        .iter()
+        .map(|arg_field_name| {
+            for f in &item.fields {
+                if f.ident.as_ref() == Some(arg_field_name) {
+                    return Ok(&f.ty);
+                }
+            }
+            Err(Error::new_spanned(&arg_field_name, "field not found"))
+        })
+        .collect::<Result<Vec<&Type>, Error>>()?;
+    let field_names = &arg_field_names;
+    Ok(quote! { #(#field_names: #field_types),* })
+}
+
 fn generate_id_impls(item: &mut ItemStruct, struct_snake_case: &str) -> Result<TokenStream, Error> {
     let vis = &item.vis;
     let (id_attrs, remaining) = std::mem::take(&mut item.attrs)
         .into_iter()
-        .partition(|attr| attr.path().is_ident("id"));
+        .partition(|a| a.path().is_ident("id"));
     item.attrs = remaining;
 
     let mut impls = Vec::new();
-    for attr in id_attrs {
-        let args = match attr.meta {
+    for a in id_attrs {
+        let args = match a.meta {
             Meta::List(meta_list) => parse2(meta_list.tokens),
             Meta::Path(_) => Ok(IdArgs {
                 namespace: None,
                 fields: Vec::new(),
             }),
-            _ => Err(Error::new_spanned(attr, "expected #[id] or #[id(...)]")),
+            _ => Err(Error::new_spanned(a, "expected #[id] or #[id(...)]")),
         }?;
 
         let ref_ident = {
@@ -86,14 +102,7 @@ fn generate_id_impls(item: &mut ItemStruct, struct_snake_case: &str) -> Result<T
             Ident::new(&ref_ident, item.ident.span())
         };
 
-        let (body, params) = if args.fields.is_empty() {
-            let body = quote! {
-                ::cheers::prelude::ElementId::__static(#struct_snake_case)
-            };
-            let params = TokenStream::new();
-
-            (body, params)
-        } else {
+        let (body, params) = {
             let field_idents = &args.fields;
             let namespace_push = args
                 .namespace
@@ -116,17 +125,7 @@ fn generate_id_impls(item: &mut ItemStruct, struct_snake_case: &str) -> Result<T
                 ::cheers::prelude::ElementId::__dynamic(s)
             };
 
-            let field_types = args.fields.iter().filter_map(|arg_field_name| {
-                item.fields.iter().find_map(|f| {
-                    if f.ident.as_ref() == Some(arg_field_name) {
-                        Some(&f.ty)
-                    } else {
-                        None
-                    }
-                })
-            });
-            let field_names = &args.fields;
-            let params = quote! { #(#field_names: #field_types),* };
+            let params = field_fn_params(item, &args.fields)?;
 
             (body, params)
         };
@@ -150,47 +149,49 @@ fn generate_id_impls(item: &mut ItemStruct, struct_snake_case: &str) -> Result<T
     })
 }
 
-enum NestedArg {
-    Bare,
-    Hint(Type),
-}
-
-impl Parse for NestedArg {
-    fn parse(input: ParseStream) -> syn::Result<Self> {
-        if input.peek(Token![=]) {
-            input.parse::<Token![=]>()?;
-            Ok(Self::Hint(input.parse()?))
-        } else {
-            Ok(Self::Bare)
-        }
-    }
-}
-
-pub struct SignalArgs {
-    id: bool,
-    nested: Option<NestedArg>,
+struct SignalArgs {
+    name: LitStr,
+    ty: Type,
+    fields: Vec<Ident>,
 }
 
 impl Parse for SignalArgs {
-    fn parse(input: ParseStream) -> Result<Self, Error> {
-        if input.is_empty() {
-            return Ok(Self {
-                id: false,
-                nested: None,
-            });
+    fn parse(input: ParseStream) -> syn::Result<Self> {
+        let name: LitStr = input.parse()?;
+        input.parse::<Token![,]>().map_err(|_| {
+            Error::new_spanned(
+                &name,
+                r#"expected comma and type after signal name, like #[signal("...", Type)]"#,
+            )
+        })?;
+        let ty: Type = input.parse()?;
+
+        let mut fields = Vec::new();
+        while !input.is_empty() {
+            input.parse::<Token![,]>()?;
+            fields.push(input.parse()?);
         }
 
-        let mut this = Self {
-            id: false,
-            nested: None,
-        };
+        Ok(Self { name, ty, fields })
+    }
+}
+
+struct SignalFieldArgs {
+    id: bool,
+}
+
+impl Parse for SignalFieldArgs {
+    fn parse(input: ParseStream) -> Result<Self, Error> {
+        if input.is_empty() {
+            return Ok(Self { id: false });
+        }
+
+        let mut this = Self { id: false };
         while let Ok(ident) = input.parse::<Ident>() {
-            if ident == "nested" {
-                this.nested = Some(input.parse()?);
-            } else if ident == "id" {
+            if ident == "id" {
                 this.id = true;
             } else {
-                return Err(Error::new_spanned(ident, "expected `nested` or `id`"));
+                return Err(Error::new_spanned(ident, "expected `id`"));
             }
         }
 
@@ -247,7 +248,10 @@ fn filter_signal_generics<'a>(
     generics
 }
 
-fn generate_signal_impl(mut item: ItemStruct) -> Result<TokenStream, Error> {
+fn generate_signal_impl(
+    mut item: ItemStruct,
+    struct_snake_case: String,
+) -> Result<TokenStream, Error> {
     let mut ident_str = item.ident.to_string();
     let vis = &item.vis;
     let struct_ident = &item.ident;
@@ -255,6 +259,42 @@ fn generate_signal_impl(mut item: ItemStruct) -> Result<TokenStream, Error> {
         ident_str.push_str("Signals");
         Ident::new(&ident_str, item.ident.span())
     };
+
+    let (signal_attrs, remaining) = std::mem::take(&mut item.attrs)
+        .into_iter()
+        .partition(|a| a.path().is_ident("signal"));
+    item.attrs = remaining;
+    let mut struct_impls = TokenStream::new();
+    for a in signal_attrs {
+        let args: SignalArgs = match a.meta {
+            Meta::List(meta_list) => parse2(meta_list.tokens),
+            _ => Err(Error::new_spanned(a, r#"expected #[signal("...")]"#)),
+        }?;
+
+        let name = &args.name;
+        let ident = Ident::new(
+            &{
+                let mut s = name.value();
+                s.push_str("_signal");
+                s
+            },
+            args.name.span(),
+        );
+        let field_idents = &args.fields;
+        let ty = &args.ty;
+        let params = field_fn_params(&item, &args.fields)?;
+        struct_impls.append_all(quote! {
+            #vis fn #ident(#params) -> ::cheers::prelude::Signal::<#ty> {
+                let mut s = ::std::string::String::new();
+                s.push_str(#name);
+                #(
+                    s.push('-');
+                    s.push_str(&(#field_idents).to_string());
+                )*
+                ::cheers::prelude::Signal::__string(s)
+            }
+        });
+    }
 
     let mut fields = Vec::new();
     let mut id_field: Option<(Ident, Type)> = None;
@@ -265,10 +305,7 @@ fn generate_signal_impl(mut item: ItemStruct) -> Result<TokenStream, Error> {
         let attr = f.attrs.swap_remove(i);
         let args = match attr.meta {
             Meta::List(meta_list) => parse2(meta_list.tokens),
-            Meta::Path(_) => Ok(SignalArgs {
-                id: false,
-                nested: None,
-            }),
+            Meta::Path(_) => Ok(SignalFieldArgs { id: false }),
             _ => Err(Error::new_spanned(
                 &attr,
                 "expected #[signal] or #[signal(...)]",
@@ -287,24 +324,34 @@ fn generate_signal_impl(mut item: ItemStruct) -> Result<TokenStream, Error> {
                 .unwrap_or_else(|| Ident::new("id", f.span()));
             id_field = Some((id_field_ident, f.ty.clone()));
         }
-        fields.push((f, args));
+        fields.push(f);
     }
-    if fields.is_empty() {
-        return Ok(TokenStream::new());
-    }
-
-    item.generics = filter_signal_generics(item.generics, fields.iter().map(|(f, _)| &f.ty));
 
     let mut struct_field_impls = Vec::new();
     let mut signal_field_decls = Vec::new();
-    for (f, args) in &fields {
+    for f in &fields {
         let ident = &f.ident;
         let ty = &f.ty;
 
         let field_name = ident
             .as_ref()
-            .map(|i| LitStr::new(&i.to_string(), i.span()))
-            .unwrap_or_else(|| LitStr::new("signal", f.span()));
+            .map(|i| {
+                let mut s = struct_snake_case.clone();
+                s.push('.');
+                s.push_str(&i.to_string());
+                LitStr::new(&s, i.span())
+            })
+            .unwrap_or_else(|| {
+                LitStr::new(
+                    &{
+                        let mut s = struct_snake_case.clone();
+                        s.push('.');
+                        s.push_str("signal");
+                        s
+                    },
+                    f.span(),
+                )
+            });
         let fn_ident = ident
             .as_ref()
             .map(|i| {
@@ -314,65 +361,21 @@ fn generate_signal_impl(mut item: ItemStruct) -> Result<TokenStream, Error> {
             })
             .unwrap_or_else(|| Ident::new("signal", f.span()));
 
-        match (&id_field, &args.nested) {
-            (Some((id_field_ident, id_field_ty)), Some(nested)) => {
-                let ty = match nested {
-                    NestedArg::Bare => ty,
-                    NestedArg::Hint(hint_ty) => hint_ty,
-                };
-
+        match &id_field {
+            Some((id_field_ident, id_field_ty)) => {
                 struct_field_impls.push(quote! {
-                    #vis fn #fn_ident(signal: &::cheers::prelude::Signal<#struct_ident>, #id_field_ident: #id_field_ty) -> ::cheers::prelude::Signal::<#ty> {
-                        let mut s = signal.__path().to_string();
-                        if !s.is_empty() {
-                            s.push('.');
-                        }
-                        s.push_str(&#id_field_ident.to_string());
+                    #vis fn #fn_ident(#id_field_ident: #id_field_ty) -> ::cheers::prelude::Signal::<#ty> {
+                        let mut s = #id_field_ident.to_string();
                         s.push('.');
                         s.push_str(#field_name);
                         ::cheers::prelude::Signal::__string(s)
                     }
                 });
             }
-            (Some((id_field_ident, id_field_ty)), None) => {
+            None => {
                 struct_field_impls.push(quote! {
-                    #vis fn #fn_ident(signal: &::cheers::prelude::Signal<#struct_ident>, #id_field_ident: #id_field_ty) -> ::cheers::prelude::Signal::<#ty> {
-                        let mut s = signal.__path().to_string();
-                        if !s.is_empty() {
-                            s.push('.');
-                        }
-                        s.push_str(&#id_field_ident.to_string());
-                        s.push('.');
-                        s.push_str(#field_name);
-                        ::cheers::prelude::Signal::__string(s)
-                    }
-                });
-            }
-            (None, Some(nested)) => {
-                let ty = match nested {
-                    NestedArg::Bare => ty,
-                    NestedArg::Hint(hint_ty) => hint_ty,
-                };
-                struct_field_impls.push(quote! {
-                    #vis fn #fn_ident(signal: &::cheers::prelude::Signal<#struct_ident>) -> ::cheers::prelude::Signal::<#ty> {
-                        let mut s = signal.__path().to_string();
-                        if !s.is_empty() {
-                            s.push('.');
-                        }
-                        s.push_str(#field_name);
-                        ::cheers::prelude::Signal::__string(s)
-                    }
-                });
-            }
-            (None, None) => {
-                struct_field_impls.push(quote! {
-                    #vis fn #fn_ident(signal: &::cheers::prelude::Signal<#struct_ident>) -> ::cheers::prelude::Signal::<#ty> {
-                        let mut s = signal.__path().to_string();
-                        if !s.is_empty() {
-                            s.push('.');
-                        }
-                        s.push_str(#field_name);
-                        ::cheers::prelude::Signal::__string(s)
+                    #vis fn #fn_ident() -> ::cheers::prelude::Signal::<#ty> {
+                        ::cheers::prelude::Signal::__string(#field_name.to_owned())
                     }
                 });
             }
@@ -381,23 +384,35 @@ fn generate_signal_impl(mut item: ItemStruct) -> Result<TokenStream, Error> {
         signal_field_decls.push(quote! { #ident: #ty });
     }
 
-    let (impl_generics, ty_generics, where_clause) = item.generics.split_for_impl();
+    if fields.is_empty() && struct_impls.is_empty() {
+        return Ok(TokenStream::new());
+    }
+
+    let struct_impl = {
+        let (impl_generics, ty_generics, where_clause) = item.generics.split_for_impl();
+        quote! {
+            impl #impl_generics #struct_ident #ty_generics #where_clause {
+                #(#struct_field_impls)*
+                #struct_impls
+            }
+        }
+    };
+    item.generics = filter_signal_generics(item.generics, fields.iter().map(|f| &f.ty));
+    let (_, ty_generics, where_clause) = item.generics.split_for_impl();
     Ok(quote! {
         #[expect(dead_code)]
         #vis struct #signal_ident #ty_generics #where_clause {
             #(#signal_field_decls,)*
         }
 
-        impl #impl_generics #struct_ident #ty_generics #where_clause {
-            #(#struct_field_impls)*
-        }
+        #struct_impl
     })
 }
 
 pub fn generate(mut item: ItemStruct) -> Result<TokenStream, Error> {
     let struct_snake_case = to_snake_case(&item.ident.to_string());
     let id_impl = generate_id_impls(&mut item, &struct_snake_case)?;
-    let signal_impl = generate_signal_impl(item)?;
+    let signal_impl = generate_signal_impl(item, struct_snake_case)?;
 
     Ok(quote! {
         #id_impl

@@ -1,7 +1,7 @@
 use proc_macro2::TokenStream;
 use quote::{ToTokens, quote, quote_spanned};
 use syn::{
-    Expr, Ident, LitBool, LitChar, LitFloat, LitInt, LitStr, Token,
+    Ident, LitBool, LitChar, LitFloat, LitInt, LitStr, Token,
     parse::{Parse, ParseStream},
     spanned::Spanned,
     token::{Brace, Paren},
@@ -12,7 +12,6 @@ use crate::{AttributeValueNode, Context};
 
 pub struct Component {
     pub name: Ident,
-    pub path: Option<Expr>,
     pub attrs: Vec<ComponentAttribute>,
     pub dotdot: Option<Token![..]>,
     pub body: ElementBody,
@@ -58,10 +57,6 @@ impl Generate for Component {
         };
 
         let name = &self.name;
-        let path = match &self.path {
-            Some(path) => quote! { #path },
-            None => quote! { ::cheers::prelude::Signal::scoped("") },
-        };
 
         let default = self
             .dotdot
@@ -69,15 +64,15 @@ impl Generate for Component {
             .map(|dotdot| quote_spanned!(dotdot.span()=> ..::core::default::Default::default()))
             .unwrap_or_default();
 
-        let init = quote! {
+        let tokens = quote! {
             ::cheers::prelude::Component::component(&#name {
                 #(#fields)*
                 #children
                 #default
-            }, &#path)
+            })
         };
 
-        g.push_expr(Paren::default(), Self::CONTEXT, &init);
+        g.push_expr(Paren::default(), Self::CONTEXT, &tokens);
     }
 }
 

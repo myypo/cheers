@@ -88,15 +88,6 @@ impl Parse for Component {
     fn parse(input: ParseStream) -> syn::Result<Self> {
         Ok(Self {
             name: input.parse()?,
-            path: {
-                if input.peek(Paren) {
-                    let content;
-                    parenthesized!(content in input);
-                    Some(content.parse()?)
-                } else {
-                    None
-                }
-            },
             attrs: {
                 let mut attrs = Vec::new();
 

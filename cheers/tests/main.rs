@@ -148,7 +148,7 @@ fn component() {
     }
 
     impl<R: Render> Component for Repeater<R> {
-        fn component(&self, _: &Signal<Self>) -> Lazy<impl Fn(&mut Buffer)> {
+        fn component(&self) -> Lazy<impl Fn(&mut Buffer)> {
             html! {
                 @for _ in 0..self.count { (self.children) }
             }
@@ -276,7 +276,7 @@ struct Base<T> {
 }
 
 impl<T: Render> Component for Base<T> {
-    fn component(&self, _: &Signal<Self>) -> Lazy<impl Fn(&mut Buffer)> {
+    fn component(&self) -> Lazy<impl Fn(&mut Buffer)> {
         html! {
             Doctype;
             html {
@@ -365,7 +365,7 @@ async fn page_async_block_is_streamed() {
 
 #[test]
 fn data_attributes() {
-    let hello = Signal::<i32>::scoped("hello");
+    let hello: Signal<bool> = Signal::scoped("hello");
     let result = html! {
         div !on:interval("@get('/')") {}
         p !bind(hello) {}
@@ -474,7 +474,7 @@ fn component_dotdot_default() {
     }
 
     impl<'a> Component for Feedback<'a> {
-        fn component(&self, _: &Signal<Self>) -> Lazy<impl Fn(&mut Buffer)> {
+        fn component(&self) -> Lazy<impl Fn(&mut Buffer)> {
             html! {
                 @if let Some(name) = self.name {
                     h3 { (name) }
@@ -498,6 +498,7 @@ fn id() {
     #[derive(Component)]
     #[id(number)]
     #[id("location", city, street, number)]
+    #[id("hardcoded")]
     struct House<'a> {
         city: &'a str,
         street: &'a str,
@@ -509,78 +510,7 @@ fn id() {
     assert_eq!(house_id.to_string(), "house-42");
     let location_id = House::location_id("Berlin", "Main St", number);
     assert_eq!(location_id.to_string(), "house-location-Berlin-Main St-42");
-}
-
-#[test]
-fn nested_signal_polymorphic_paths() {
-    #[derive(Component)]
-    struct Display {
-        #[signal(id)]
-        value: i32,
-    }
-
-    impl Component for Display {
-        fn component(&self, signals: &Signal<Self>) -> Lazy<impl Fn(&mut Buffer)> {
-            let value = Self::value_signal(signals, self.value);
-            html! {
-                span !bind(value) { (self.value) }
-            }
-        }
-    }
-
-    #[derive(Component)]
-    struct Counter {
-        #[signal(nested)]
-        content: Display,
-    }
-
-    impl Component for Counter {
-        fn component(&self, signal: &Signal<Self>) -> Lazy<impl Fn(&mut Buffer)> {
-            html! {
-                div {
-                    Display (Self::content_signal(signal)) value=(self.content.value);
-                }
-            }
-        }
-    }
-
-    #[derive(Component)]
-    struct Temperature {
-        #[signal(nested = Display)]
-        measurements: Vec<Display>,
-    }
-
-    impl Component for Temperature {
-        fn component(&self, signal: &Signal<Self>) -> Lazy<impl Fn(&mut Buffer)> {
-            html! {
-                div {
-                    @for m in &self.measurements {
-                        Display (Self::measurements_signal(signal)) value=(m.value);
-                    }
-                }
-            }
-        }
-    }
-
-    let counter_signal = Signal::scoped("counter");
-    let counter_result = Counter {
-        content: Display { value: 42 },
-    }
-    .component(&counter_signal);
-    assert_eq!(
-        counter_result.render().as_inner(),
-        r#"<div><span data-bind="counter.content.42.value">42</span></div>"#
-    );
-    let temperature_result = Temperature {
-        measurements: vec![Display { value: 38 }, Display { value: -14 }],
-    };
-    assert_eq!(
-        temperature_result
-            .component(&Signal::scoped("temp"))
-            .render()
-            .as_inner(),
-        r#"<div><span data-bind="temp.measurements.38.value">38</span><span data-bind="temp.measurements.-14.value">-14</span></div>"#
-    );
+    assert_eq!(House::hardcoded_id().to_string(), "house-hardcoded");
 }
 
 #[test]
@@ -591,7 +521,7 @@ fn data_indicator() {
         fetching: bool,
     }
 
-    let fetching = Something::fetching_signal(&Signal::root());
+    let fetching = Something::fetching_signal();
     let result = html! {
         button !indicator(fetching) !json_signals {}
         div !show({ "!" (fetching) " || true" }) { "Loaded!" }
@@ -600,7 +530,7 @@ fn data_indicator() {
 
     assert_eq!(
         result.as_inner(),
-        r#"<button data-indicator="fetching" data-json-signals></button><div data-show="!$fetching || true">Loaded!</div>"#
+        r#"<button data-indicator="something.fetching" data-json-signals></button><div data-show="!$something.fetching || true">Loaded!</div>"#
     );
 }
 
@@ -613,46 +543,22 @@ fn data_signals() {
     }
 
     #[derive(Component)]
-    struct Container {
-        #[signal(nested)]
-        counter: Counter,
-    }
-
-    #[derive(Component)]
-    struct InnerMost {
+    struct Other {
         #[signal]
         value: i32,
     }
 
-    #[derive(Component)]
-    struct Middle {
-        #[signal(nested)]
-        inner: InnerMost,
-    }
-
-    #[derive(Component)]
-    struct Outer {
-        #[signal(nested)]
-        middle: Middle,
-    }
-
-    let outer_signal = Signal::scoped("outer");
-    let middle_signal = Outer::middle_signal(&outer_signal);
-    let inner_signal = Middle::inner_signal(&middle_signal);
-
-    let container_signal = Signal::scoped("container");
-    let counter_signal = Container::counter_signal(&container_signal);
-    let count_signal_new = Counter::count_signal(&counter_signal);
-    let value_signal_new = InnerMost::value_signal(&inner_signal);
+    let count = Counter::count_signal();
+    let value = Other::value_signal();
 
     let multiple_nested = html! {
-        div !signals(count_signal_new: 5, value_signal_new: 100) {}
+        div !signals(count: 5, value: 100) {}
     }
     .render();
 
     assert_eq!(
         multiple_nested.as_inner(),
-        r#"<div data-signals="{container:{counter:{count:5}},outer:{middle:{inner:{value:100}}}}"></div>"#
+        r#"<div data-signals="{counter:{count:5},other:{value:100}}"></div>"#
     );
 }
 
@@ -664,16 +570,16 @@ fn data_style() {
         hiding: bool,
     }
 
-    let hiding = Options::hiding_signal(&Signal::root());
+    let hiding = Options::hiding_signal();
     let name = "color";
     let result = html! {
-            pre !style("display": {(hiding) " ? 'none' : 'flex'"}, name: "'red'") {}
+        pre !style("display": { (hiding) " ? 'none' : 'flex'" }, name: "'red'") {}
     }
     .render();
 
     assert_eq!(
         result.as_inner(),
-        r#"<pre data-style="{display:$hiding ? 'none' : 'flex',color:'red'}"></pre>"#
+        r#"<pre data-style="{display:$options.hiding ? 'none' : 'flex',color:'red'}"></pre>"#
     )
 }
 
@@ -692,34 +598,33 @@ fn signal_computed() {
     }
 
     impl Component for Input {
-        fn component(&self, signal: &Signal<Self>) -> Lazy<impl Fn(&mut Buffer)> {
-            let a = Input::a_signal(signal);
-            let b = Input::b_signal(signal);
-            let c = Input::c_signal(signal);
+        fn component(&self) -> Lazy<impl Fn(&mut Buffer)> {
+            let a = Input::a_signal();
+            let b = Input::b_signal();
+            let c = Input::c_signal();
             html! {
-                p !computed(c: {(a) "+" (b)}) {}
+                p !computed(c: { (a) "+" (b) }) {}
             }
         }
     }
 
     #[derive(Component)]
     struct Calculator {
-        #[signal(nested)]
+        #[signal]
         input: Input,
     }
 
     impl Component for Calculator {
-        fn component(&self, signal: &Signal<Self>) -> Lazy<impl Fn(&mut Buffer)> {
+        fn component(&self) -> Lazy<impl Fn(&mut Buffer)> {
             let Input { a, b, c, d } = self.input;
             html! {
                 div {
-                    Input (Self::input_signal(signal)) a b c d;
+                    Input a b c d;
                 }
             }
         }
     }
 
-    let signal = Signal::root();
     let result = Calculator {
         input: Input {
             a: 1,
@@ -728,10 +633,36 @@ fn signal_computed() {
             d: 4,
         },
     }
-    .component(&signal);
+    .component();
 
     assert_eq!(
         result.render().as_inner(),
         r#"<div><p data-computed="{input:{c:()=>$input.a+$input.b}}"></p></div>"#
+    )
+}
+
+#[test]
+fn signal_without_field() {
+    #[derive(Component)]
+    #[signal("keepsake", String, name)]
+    struct Ghost<'a> {
+        name: &'a str,
+    }
+
+    const NAME: &str = "El";
+    impl<'a> Component for Ghost<'a> {
+        fn component(&self) -> impl Render {
+            let keepsake = Self::keepsake_signal(NAME);
+            html! {
+                p !bind(&keepsake) !on:close({ (keepsake) " + 'noooo'" }) { (self.name) }
+            }
+        }
+    }
+
+    let result = Ghost { name: "El" }.component();
+
+    assert_eq!(
+        result.render().as_inner(),
+        r#"<p data-bind="keepsake" data-on:close="$keepsake + 'noooo'">El</p>"#
     )
 }

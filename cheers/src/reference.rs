@@ -53,7 +53,7 @@ impl Render<AttributeValue> for ElementId {
             InnerElementId::Dynamic(s) => s.as_str(),
         };
 
-        html_escape::encode_unquoted_attribute_to_string(s, buffer.dangerously_get_string());
+        html_escape::encode_double_quoted_attribute_to_string(s, buffer.dangerously_get_string());
     }
 }
 
@@ -77,16 +77,9 @@ impl<T> Signal<T> {
         &self.path.0
     }
 
-    pub fn root() -> Self {
+    pub fn scoped(s: &'static str) -> Self {
         Self {
-            path: Path::__empty(),
-            ty: PhantomData::<T>,
-        }
-    }
-
-    pub fn scoped(s: impl Display) -> Self {
-        Self {
-            path: Path(s.to_string()),
+            path: Path(s.to_owned()),
             ty: PhantomData::<T>,
         }
     }
@@ -190,9 +183,7 @@ impl Path {
 }
 
 pub trait Component {
-    fn component(&self, signal: &Signal<Self>) -> Lazy<impl Fn(&mut Buffer)>
-    where
-        Self: Sized;
+    fn component(&self) -> impl Render;
 }
 
 #[cfg(test)]

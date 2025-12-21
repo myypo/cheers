@@ -1,9 +1,15 @@
-use cheers_ast::{Attribute, AttributeKind, AttributeName, DataContent, Element, ElementBody};
+use cheers_ast::{
+    Attribute, AttributeKind, AttributeName, AttributeValueNode, DataContent, DataExprValue,
+    Element, ElementBody,
+};
 use quote::ToTokens;
-use syn::{Token, punctuated::Punctuated};
+use syn::{Expr, Token, punctuated::Punctuated};
 
 use crate::{
-    line_length::{data_decl_len, element_len, node_len},
+    line_length::{
+        data_decl_len_attr_value, data_decl_len_attr_values, data_decl_len_expr, element_len,
+        node_len,
+    },
     print::Printer,
 };
 
@@ -80,28 +86,78 @@ impl<'a, 'b> Printer<'a, 'b> {
                 }
                 Attribute::Data(data) => {
                     self.write("!");
-                    self.print_attribute_name(&data.name);
-                    self.write("(");
+
+                    if let Some(namespace) = &data.namespace {
+                        self.write(&namespace.lit().value());
+                        self.write(":");
+                    }
+
+                    self.write(&data.name.lit().value());
+
+                    let attr_indent_level = if should_wrap {
+                        indent_level + 1
+                    } else {
+                        indent_level
+                    };
 
                     match data.content {
-                        DataContent::IdentDecl(decls) => {
-                            self.print_data_decl(decls, should_wrap, indent_level)
-                        }
                         DataContent::Signals(decls) => {
-                            self.print_data_decl(decls, should_wrap, indent_level)
+                            self.write("(");
+                            self.print_data_decl_expr(decls, attr_indent_level);
+                            self.write(")");
                         }
-                        DataContent::Node(node) => {
+                        DataContent::Kv(decls) => {
+                            self.write("(");
+                            self.print_data_decl_attr_value(decls, attr_indent_level);
+                            self.write(")");
+                        }
+                        DataContent::Computed(decl) => {
+                            self.write("(");
+
+                            let should_wrap_decl = {
+                                let decl_len = data_decl_len_attr_value(&decl);
+                                if let Some(decl_len) = decl_len {
+                                    (self.line_len() + decl_len) > self.options.line_length
+                                } else {
+                                    true
+                                }
+                            };
+
+                            if should_wrap_decl {
+                                self.new_line(attr_indent_level + 1);
+                            }
+
+                            self.print_expr(decl.ident, attr_indent_level);
+                            self.write(": ");
                             self.print_attribute_value_node(
-                                node,
-                                indent_level,
+                                decl.value,
+                                attr_indent_level + 1,
                                 preserve_blank_lines,
                             );
+
+                            if should_wrap_decl {
+                                self.write(",");
+                                self.new_line(attr_indent_level);
+                            }
+
+                            self.write(")");
+                        }
+                        DataContent::Node(node) => {
+                            self.write("(");
+                            self.print_attribute_value_node(
+                                node,
+                                attr_indent_level,
+                                preserve_blank_lines,
+                            );
+                            self.write(")");
                         }
                         DataContent::Bind(expr) => {
-                            self.print_expr(expr, indent_level);
+                            self.write("(");
+                            self.print_expr(expr, attr_indent_level);
+                            self.write(")");
                         }
+                        DataContent::Empty => {}
                     }
-                    self.write(")");
                 }
             }
         }
@@ -109,16 +165,55 @@ impl<'a, 'b> Printer<'a, 'b> {
         self.print_element_body(body, should_wrap, indent_level, preserve_blank_lines);
     }
 
-    fn print_data_decl(
+    fn print_data_decl_expr(
         &mut self,
-        decls: Punctuated<DataDecl, Token![,]>,
-        should_wrap: bool,
+        decls: Punctuated<DataExprValue<Expr>, Token![,]>,
         indent_level: usize,
     ) {
-        let should_wrap_decls = if should_wrap {
-            true
-        } else {
-            let decl_len = data_decl_len(&decls);
+        let should_wrap_decls = {
+            let decl_len = data_decl_len_expr(&decls);
+            if let Some(decl_len) = decl_len {
+                (self.line_len() + decl_len) > self.options.line_length
+            } else {
+                true
+            }
+        };
+
+        let mut first = true;
+        for d in decls.into_iter() {
+            if !first {
+                self.write(",");
+            }
+
+            if should_wrap_decls {
+                self.new_line(indent_level + 1);
+            } else if !first {
+                self.write(" ");
+            }
+
+            self.print_expr(d.ident, indent_level);
+            self.write(": ");
+            self.print_expr(d.value, indent_level + 1);
+
+            first = false;
+        }
+
+        let empty = first;
+        if should_wrap_decls && !empty {
+            // Trailing comma
+            self.write(",");
+            // Move `)` to its own line
+            self.new_line(indent_level);
+        }
+    }
+
+    fn print_data_decl_attr_value(
+        &mut self,
+        decls: Punctuated<DataExprValue<AttributeValueNode>, Token![,]>,
+        indent_level: usize,
+    ) {
+        let should_wrap_decls = {
+            let decl_len = data_decl_len_attr_values(&decls);
             if let Some(decl_len) = decl_len {
                 (self.line_len() + decl_len) > self.options.line_length
             } else {
@@ -133,19 +228,21 @@ impl<'a, 'b> Printer<'a, 'b> {
             }
 
             if should_wrap_decls {
-                self.new_line(indent_level + 2);
+                self.new_line(indent_level + 1);
             } else if idx > 0 {
                 self.write(" ");
             }
 
             self.print_expr(d.ident, indent_level);
             self.write(": ");
-            self.print_expr(d.value, indent_level + 1);
+            self.print_attribute_value_node(d.value, indent_level + 1, false);
         }
 
         if should_wrap_decls && !decls_empty {
+            // Trailing comma
+            self.write(",");
             // Move `)` to its own line
-            self.new_line(indent_level + 1);
+            self.new_line(indent_level);
         }
     }
 
@@ -787,35 +884,112 @@ mod test {
     );
 
     test_default!(
-        data_attributes_short_declarations,
+        data_attributes_short_style,
         r#"
         html! {
-            div !style(display:format!("{hiding} ? 'none' : 'flex'")) { "Hey" }
+            div !style("display":{(hiding)"? 'none' : 'flex'"}) { "Hey" }
         }
         "#,
         r#"
         html! {
-            div !style(display: format!("{hiding} ? 'none' : 'flex'")) { "Hey" }
+            div !style("display": { (hiding) "? 'none' : 'flex'" }) { "Hey" }
         }
         "#
     );
 
     test_small_line!(
-        data_attributes_long_declarations,
+        data_attributes_long_style,
         r#"
         html! {
-            div !style(display:format!("{hiding} ? 'none' : 'flex'"),flex_direction: "'column'",  color:format!("{using_red} ? 'red' : 'green'") !show(format!("!{hiding}")) { "Hey" }
+            div !style("display":{(hiding)"? 'none' : 'flex'"},"flex-direction": "'column'",  "color":{(using_red)"? 'red' : 'green'"}) !show({(hiding)"? 'block' : 'none'"}) { "Hey" }
         }
         "#,
         r#"
         html! {
             div !style(
-                    display: format!("{hiding} ? 'none' : 'flex'"),
-                    flex_direction: "'column'",
-                    color: format!("{using_red} ? 'red' : 'green'")
+                    "display": {
+                        (hiding)
+                        "? 'none' : 'flex'"
+                    },
+                    "flex-direction": "'column'",
+                    "color": {
+                        (using_red)
+                        "? 'red' : 'green'"
+                    },
                 )
-                !show(format!("!{hiding}"))
+                !show({
+                    (hiding)
+                    "? 'block' : 'none'"
+                })
             { "Hey" }
+        }
+        "#
+    );
+
+    test_default!(
+        data_attributes_signals_short,
+        r#"
+        html! {
+            div !signals(count:0,name:"test") { "content" }
+        }
+        "#,
+        r#"
+        html! {
+            div !signals(count: 0, name: "test") { "content" }
+        }
+        "#
+    );
+
+    test_small_line!(
+        data_attributes_signals_long,
+        r#"
+        html! {
+            div !signals(count:0,name:"a very long default name",enabled:true,description:"another long string") { "content" }
+        }
+        "#,
+        r#"
+        html! {
+            div !signals(
+                    count: 0,
+                    name: "a very long default name",
+                    enabled: true,
+                    description: "another long string",
+                )
+            { "content" }
+        }
+        "#
+    );
+
+    test_default!(
+        data_attributes_computed_short,
+        r#"
+        html! {
+            div !computed(display:{(visible)"block"}) { "content" }
+        }
+        "#,
+        r#"
+        html! {
+            div !computed(display: { (visible) "block" }) { "content" }
+        }
+        "#
+    );
+
+    test_small_line!(
+        data_attributes_computed_long,
+        r#"
+        html! {
+            div !computed(computed_property:{(some_long_condition)"this is a long string value"}) { "content" }
+        }
+        "#,
+        r#"
+        html! {
+            div !computed(
+                    computed_property: {
+                        (some_long_condition)
+                        "this is a long string value"
+                    },
+                )
+            { "content" }
         }
         "#
     );
