@@ -19,7 +19,6 @@ pub trait GlobalAttributes: Element {
     const autofocus: Attribute = Attribute;
 
     /// The class of the element.
-    #[doc(alias = ".", hidden)]
     const class: Attribute = Attribute;
 
     /// Whether the element is editable.
@@ -38,7 +37,6 @@ pub trait GlobalAttributes: Element {
     const hidden: Attribute = Attribute;
 
     /// A unique identifier for the element.
-    #[doc(alias = "#", hidden)]
     const id: Attribute = Attribute;
 
     /// Mark an element and its children as inert, disabling interaction.

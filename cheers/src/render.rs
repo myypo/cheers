@@ -5,10 +5,10 @@ use core::{
 };
 use std::{borrow::Cow, rc::Rc, sync::Arc};
 
-use crate::context::{AttributeValue, Context, Node};
+use crate::context::{AttributeValue, Context, Element};
 
 #[derive(Clone, Copy, Default, Eq, Hash)]
-pub struct Raw<T: AsRef<str>, C: Context = Node> {
+pub struct Raw<T: AsRef<str>, C: Context = Element> {
     inner: T,
     context: PhantomData<C>,
 }
@@ -132,7 +132,7 @@ pub(crate) use const_precise_live_drops_hack;
 /// without clearly indicating the risk of doing so.
 #[derive(Clone, Default, PartialEq, Eq)]
 #[repr(transparent)]
-pub struct Buffer<C: Context = Node> {
+pub struct Buffer<C: Context = Element> {
     inner: String,
     context: PhantomData<C>,
 }
@@ -317,7 +317,7 @@ impl Debug for Buffer {
 ///     r#"<main><div><h1>Alice</h1><p>Age: 20</p></div></main>"#,
 /// );
 /// ```
-pub trait Render<C: Context = Node> {
+pub trait Render<C: Context = Element> {
     /// Renders this value to the buffer.
     fn render_to(&self, buffer: &mut Buffer<C>);
 
@@ -369,7 +369,7 @@ impl<T: Render> RenderExt for T {}
 /// `&gt;`, and `"` to `&quot;`.
 #[derive(Clone, Copy)]
 #[must_use = "`Lazy` does nothing unless `.render()` or `.render_to()` is called"]
-pub struct Lazy<F: Fn(&mut Buffer<C>), C: Context = Node> {
+pub struct Lazy<F: Fn(&mut Buffer<C>), C: Context = Element> {
     f: F,
     context: PhantomData<C>,
 }
@@ -542,7 +542,7 @@ impl Render for String {
 
     #[inline]
     fn render(&self) -> Rendered<String> {
-        Render::<Node>::render(self.as_str())
+        Render::<Element>::render(self.as_str())
     }
 }
 

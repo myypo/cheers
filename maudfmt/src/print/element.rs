@@ -1,8 +1,9 @@
-use cheers_ast::{AttributeKind, AttributeName, Element, ElementBody};
+use cheers_ast::{Attribute, AttributeKind, AttributeName, DataContent, Element, ElementBody};
 use quote::ToTokens;
+use syn::{Token, punctuated::Punctuated};
 
 use crate::{
-    line_length::{element_len, node_len},
+    line_length::{data_decl_len, element_len, node_len},
     print::Printer,
 };
 
@@ -39,40 +40,113 @@ impl<'a, 'b> Printer<'a, 'b> {
                 self.new_line(indent_level + 1);
             }
 
-            self.print_attribute_name(&attr.name);
+            match attr {
+                Attribute::Regular { name, kind } => {
+                    self.print_attribute_name(&name);
 
-            match attr.kind {
-                AttributeKind::Value { value, toggle } => {
-                    if let Some(toggle) = toggle {
-                        self.write("=[");
-                        self.print_toggle_expr(toggle.expr, indent_level);
-                        self.write("]");
-                    } else {
-                        self.write("=");
+                    match kind {
+                        AttributeKind::Value { value, toggle } => {
+                            if let Some(toggle) = toggle {
+                                self.write("=[");
+                                self.print_toggle_expr(toggle.expr, indent_level);
+                                self.write("]");
+                            } else {
+                                self.write("=");
+                            }
+                            let attr_indent_level = if should_wrap {
+                                indent_level + 1
+                            } else {
+                                indent_level
+                            };
+                            self.print_attribute_value_node(
+                                value,
+                                attr_indent_level,
+                                preserve_blank_lines,
+                            );
+                        }
+                        AttributeKind::Option(toggle) => {
+                            self.write("=[");
+                            self.print_toggle_expr(toggle.expr, indent_level);
+                            self.write("]");
+                        }
+                        AttributeKind::Empty(toggle) => {
+                            if let Some(toggle) = toggle {
+                                self.write("[");
+                                self.print_toggle_expr(toggle.expr, indent_level);
+                                self.write("]");
+                            }
+                        }
                     }
-                    let attr_indent_level = if should_wrap {
-                        indent_level + 1
-                    } else {
-                        indent_level
-                    };
-                    self.print_attribute_value_node(value, attr_indent_level, preserve_blank_lines);
                 }
-                AttributeKind::Option(toggle) => {
-                    self.write("=[");
-                    self.print_toggle_expr(toggle.expr, indent_level);
-                    self.write("]");
-                }
-                AttributeKind::Empty(toggle) => {
-                    if let Some(toggle) = toggle {
-                        self.write("[");
-                        self.print_toggle_expr(toggle.expr, indent_level);
-                        self.write("]");
+                Attribute::Data(data) => {
+                    self.write("!");
+                    self.print_attribute_name(&data.name);
+                    self.write("(");
+
+                    match data.content {
+                        DataContent::IdentDecl(decls) => {
+                            self.print_data_decl(decls, should_wrap, indent_level)
+                        }
+                        DataContent::Signals(decls) => {
+                            self.print_data_decl(decls, should_wrap, indent_level)
+                        }
+                        DataContent::Node(node) => {
+                            self.print_attribute_value_node(
+                                node,
+                                indent_level,
+                                preserve_blank_lines,
+                            );
+                        }
+                        DataContent::Bind(expr) => {
+                            self.print_expr(expr, indent_level);
+                        }
                     }
+                    self.write(")");
                 }
             }
         }
 
         self.print_element_body(body, should_wrap, indent_level, preserve_blank_lines);
+    }
+
+    fn print_data_decl(
+        &mut self,
+        decls: Punctuated<DataDecl, Token![,]>,
+        should_wrap: bool,
+        indent_level: usize,
+    ) {
+        let should_wrap_decls = if should_wrap {
+            true
+        } else {
+            let decl_len = data_decl_len(&decls);
+            if let Some(decl_len) = decl_len {
+                (self.line_len() + decl_len) > self.options.line_length
+            } else {
+                true
+            }
+        };
+
+        let decls_empty = decls.is_empty();
+        for (idx, d) in decls.into_iter().enumerate() {
+            if idx > 0 {
+                self.write(",");
+            }
+
+            if should_wrap_decls {
+                self.new_line(indent_level + 2);
+            } else if idx > 0 {
+                self.write(" ");
+            }
+
+            self.print_expr(d.ident, indent_level);
+            self.write(": ");
+            self.print_expr(d.value, indent_level + 1);
+        }
+
+        if should_wrap_decls && !decls_empty {
+            // Move `)` to its own line
+            self.new_line(indent_level + 1);
+        }
     }
 
     pub fn element_body_block_will_collapse(&self, body: &ElementBody) -> bool {
@@ -100,20 +174,10 @@ impl<'a, 'b> Printer<'a, 'b> {
 
     fn print_attribute_name(&mut self, name: &AttributeName) {
         match name {
-            AttributeName::Normal { name, data } => {
-                if *data {
-                    self.write("!");
-                }
+            AttributeName::Normal { name } => {
                 self.write(&name.lit().value());
             }
-            AttributeName::Namespace {
-                data,
-                namespace,
-                rest,
-            } => {
-                if *data {
-                    self.write("!");
-                }
+            AttributeName::Namespace { namespace, rest } => {
                 self.write(&namespace.lit().value());
                 self.write(":");
                 self.write(&rest.lit().value());
@@ -691,16 +755,16 @@ mod test {
     );
 
     test_default!(
-        data_attributes,
+        data_attributes_whitespace_in_args,
         r#"
         html! {
             p
-                !interval="alert('timeout')" { "text" }
+                !effect( "{sum} = $first + $second"   ) { "text" }
         }
         "#,
         r#"
         html! {
-            p !interval="alert('timeout')" { "text" }
+            p !effect("{sum} = $first + $second") { "text" }
         }
         "#
     );
@@ -709,14 +773,49 @@ mod test {
         data_namespaced_attributes,
         r#"
         html! {
-            p !on:click="console.log('text')"
+            p !on:click(  "console.log('text')"
+                )
             {
                 "text" }
         }
         "#,
         r#"
         html! {
-            p !on:click="console.log('text')" { "text" }
+            p !on:click("console.log('text')") { "text" }
+        }
+        "#
+    );
+
+    test_default!(
+        data_attributes_short_declarations,
+        r#"
+        html! {
+            div !style(display:format!("{hiding} ? 'none' : 'flex'")) { "Hey" }
+        }
+        "#,
+        r#"
+        html! {
+            div !style(display: format!("{hiding} ? 'none' : 'flex'")) { "Hey" }
+        }
+        "#
+    );
+
+    test_small_line!(
+        data_attributes_long_declarations,
+        r#"
+        html! {
+            div !style(display:format!("{hiding} ? 'none' : 'flex'"),flex_direction: "'column'",  color:format!("{using_red} ? 'red' : 'green'") !show(format!("!{hiding}")) { "Hey" }
+        }
+        "#,
+        r#"
+        html! {
+            div !style(
+                    display: format!("{hiding} ? 'none' : 'flex'"),
+                    flex_direction: "'column'",
+                    color: format!("{using_red} ? 'red' : 'green'")
+                )
+                !show(format!("!{hiding}"))
+            { "Hey" }
         }
         "#
     );

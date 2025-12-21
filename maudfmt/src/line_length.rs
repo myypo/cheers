@@ -1,6 +1,6 @@
 use cheers_ast::{
-    Attribute, AttributeKind, AttributeName, AttributeValueNode, ElementBody, ElementNode, Node,
-    ParenExpr, Toggle,
+    Attribute, AttributeKind, AttributeName, AttributeValueNode, DataContent, DataDecl,
+    ElementBody, ElementNode, Node, ParenExpr, Toggle,
     component::{ComponentAttribute, ComponentAttributeValue},
     control::ControlBlock,
 };
@@ -30,28 +30,52 @@ pub fn element_len(ident: &Ident, attrs: &[Attribute], body: &ElementBody) -> Op
         // ` `
         element_len += 1;
 
-        element_len += attribute_name_len(&attr.name)?;
+        match attr {
+            Attribute::Regular { name, kind } => {
+                element_len += attribute_name_len(name)?;
 
-        match &attr.kind {
-            AttributeKind::Value { value, toggle } => {
-                // `=`
-                element_len += 1;
-                element_len += attribute_value_len(value)?;
-                if let Some(toggle) = toggle {
-                    element_len += toggle_len(toggle)?;
-                };
-            }
-            AttributeKind::Option(toggle) => {
-                let len = toggle_len(toggle)?;
-                // `=`
-                element_len += 1 + len;
-            }
-            AttributeKind::Empty(maybe_toggle) => {
-                if let Some(toggle) = maybe_toggle {
-                    element_len += toggle_len(toggle)?;
+                match kind {
+                    AttributeKind::Value { value, toggle } => {
+                        // `=`
+                        element_len += 1;
+                        element_len += attribute_value_len(value)?;
+                        if let Some(toggle) = toggle {
+                            element_len += toggle_len(&toggle)?;
+                        };
+                    }
+                    AttributeKind::Option(toggle) => {
+                        let len = toggle_len(&toggle)?;
+                        // `=`
+                        element_len += 1 + len;
+                    }
+                    AttributeKind::Empty(maybe_toggle) => {
+                        if let Some(toggle) = maybe_toggle {
+                            element_len += toggle_len(&toggle)?;
+                        }
+
+                        // Empty attribute with no toggle - no additional length
+                    }
                 }
+            }
+            Attribute::Data(data) => {
+                // `!`
+                element_len += 1;
+                element_len += attribute_name_len(&data.name)?;
 
-                // Empty attribute with no toggle - no additional length
+                // `(` + `)` = 2
+                element_len += 2;
+
+                match &data.content {
+                    DataContent::Bind(expr) => {
+                        element_len += span_len(expr)?;
+                    }
+                    DataContent::Node(attribute_value_node) => {
+                        element_len += attribute_value_len(attribute_value_node)?;
+                    }
+                    DataContent::Signals(decls) | DataContent::IdentDecl(decls) => {
+                        element_len += data_decl_len(decls)?;
+                    }
+                }
             }
         }
     }
@@ -138,25 +162,15 @@ fn span_len<S: Spanned>(s: &S) -> Option<usize> {
 
 fn attribute_name_len(attr_name: &AttributeName) -> Option<usize> {
     match attr_name {
-        AttributeName::Normal { data, name } => {
-            let mut name_len = span_len(&name.0)?;
-            if *data {
-                name_len += 1;
-            }
+        AttributeName::Normal { name } => {
+            let name_len = span_len(&name.0)?;
             Some(name_len)
         }
-        AttributeName::Namespace {
-            data,
-            namespace,
-            rest,
-        } => {
+        AttributeName::Namespace { namespace, rest } => {
             let ns_len = span_len(&namespace.0)?;
             let rest_len = span_len(&rest.0)?;
             // namespace + `:` + rest
-            let mut len = ns_len + 1 + rest_len;
-            if *data {
-                len += 1;
-            }
+            let len = ns_len + 1 + rest_len;
             Some(len)
         }
         AttributeName::Unchecked(lit) => span_len(lit),
@@ -212,4 +226,26 @@ fn attribute_value_group_len(nodes: &[AttributeValueNode]) -> Option<usize> {
         len += 1;
     }
     Some(len)
+}
+
+pub fn data_decl_len(
+    decls: &syn::punctuated::Punctuated<DataDecl, syn::Token![,]>,
+) -> Option<usize> {
+    let mut total_len = 0usize;
+    let mut first = true;
+    for d in decls {
+        if first {
+            first = false;
+        } else {
+            // `, ` between declarations
+            total_len += 2;
+        }
+        total_len += span_len(&d.ident)?;
+
+        // `: `
+        total_len += 2;
+
+        total_len += span_len(&d.value)?;
+    }
+    Some(total_len)
 }

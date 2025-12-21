@@ -87,7 +87,7 @@ impl Parse for Let {
 }
 
 impl Generate for Let {
-    const CONTEXT: Context = Context::Node;
+    const CONTEXT: Context = Context::Element;
 
     fn generate(&mut self, g: &mut Generator) {
         g.push_stmt(&self.0);
@@ -452,7 +452,7 @@ impl Async {
             .get_mut(self.else_block_first_elem_idx)
             .expect("the else block to have at least a single element node");
         if let ElementNode::Element(elem) = elem {
-            elem.attrs.push(Attribute {
+            elem.attrs.push(Attribute::Regular {
                 name: AttributeName::Unchecked(LitStr::new("data-ssr", Span::mixed_site())),
                 kind: AttributeKind::Value {
                     value: AttributeValueNode::Literal(Literal::Str(LitStr::new(

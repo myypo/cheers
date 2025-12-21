@@ -2,30 +2,37 @@ use std::fmt::{Debug, Display};
 
 use crate::{
     Buffer,
-    context::{Context, Node},
+    context::{Context, Element},
+    prelude::{Component, Lazy, Signal},
     render::Render,
     router::css_url,
 };
 
 pub struct Doctype;
 
-impl Render for Doctype {
-    fn render_to(&self, buffer: &mut Buffer<Node>) {
-        buffer.dangerously_get_string().push_str("<!DOCTYPE html>");
+impl Component for Doctype {
+    fn component(&self, _: &Signal<Self>) -> Lazy<impl Fn(&mut Buffer)> {
+        Lazy::dangerously_create(|buffer| {
+            buffer.dangerously_get_string().push_str("<!DOCTYPE html>");
+        })
     }
 }
 
 pub struct Scripts;
 
-impl Render for Scripts {
-    fn render_to(&self, buffer: &mut Buffer<Node>) {
-        buffer.dangerously_get_string().push_str("<script>function __ssrStream(key){const t=document.querySelector(`[data-ssr='${key}-t']`),s=document.querySelector(`[data-ssr='${key}']`);s.replaceWith(t.content);t.remove();document.querySelector(`[data-ssr='${key}-s']`).remove()}</script>");
-        buffer
-            .dangerously_get_string()
-            .push_str(r#"<script src="/cheers/assets/datastar.js"></script>"#);
-        if cfg!(debug_assertions) {
-            buffer.dangerously_get_string().push_str(
-                r#"
+impl Component for Scripts {
+    fn component(&self, _: &Signal<Self>) -> Lazy<impl Fn(&mut Buffer)>
+    where
+        Self: Sized,
+    {
+        Lazy::dangerously_create(|buffer| {
+            buffer.dangerously_get_string().push_str("<script>function __ssrStream(key){const t=document.querySelector(`[data-ssr='${key}-t']`),s=document.querySelector(`[data-ssr='${key}']`);s.replaceWith(t.content);t.remove();document.querySelector(`[data-ssr='${key}-s']`).remove()}</script>");
+            buffer
+                .dangerously_get_string()
+                .push_str(r#"<script src="/cheers/assets/datastar.js"></script>"#);
+            if cfg!(debug_assertions) {
+                buffer.dangerously_get_string().push_str(
+                    r#"
 <script>
 (function() {
   let attempts = 0;
@@ -64,17 +71,20 @@ impl Render for Scripts {
 })();
 </script>
                 "#,
-            );
-        }
+                );
+            }
+        })
     }
 }
 
 pub struct Css;
 
-impl Render for Css {
-    fn render_to(&self, buffer: &mut Buffer<Node>) {
-        let link = format!(r#"<link rel="stylesheet" href="/cheers{}">"#, css_url());
-        buffer.dangerously_get_string().push_str(&link);
+impl Component for Css {
+    fn component(&self, _: &Signal<Self>) -> Lazy<impl Fn(&mut Buffer)> {
+        Lazy::dangerously_create(|buffer| {
+            let link = format!(r#"<link rel="stylesheet" href="/cheers{}">"#, css_url());
+            buffer.dangerously_get_string().push_str(&link);
+        })
     }
 }
 
@@ -82,7 +92,6 @@ impl Render for Css {
 ///
 /// This will handle escaping special characters for you.
 #[derive(Debug, Clone, Copy)]
-#[doc(alias = "%(...)")]
 pub struct Displayed<T: Display>(pub T);
 
 impl<C: Context, T: Display> Render<C> for Displayed<T>
@@ -99,7 +108,6 @@ where
 ///
 /// This will handle escaping special characters for you.
 #[derive(Debug, Clone, Copy)]
-#[doc(alias = "?(...)")]
 pub struct Debugged<T: Debug>(pub T);
 
 impl<C: Context, T: Debug> Render<C> for Debugged<T>

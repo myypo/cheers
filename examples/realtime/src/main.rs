@@ -15,16 +15,19 @@ use cheers::{
 
 #[derive(Clone)]
 struct Ctx {
-    stocks: &'static Mutex<BTreeMap<String, String>>,
-    stocks_tx: tokio::sync::broadcast::Sender<(String, String)>,
+    stocks: &'static Mutex<BTreeMap<String, (String, u64)>>,
+    stocks_tx: tokio::sync::broadcast::Sender<(String, String, u64)>,
 }
 
 struct Base<T> {
     children: T,
 }
 
-impl<T: Render> Render for Base<T> {
-    fn render_to(&self, buffer: &mut Buffer<cheers::context::Node>) {
+impl<T: Render> Component for Base<T> {
+    fn component(&self, _: &Signal<Self>) -> Lazy<impl Fn(&mut Buffer)>
+    where
+        Self: Sized,
+    {
         html! {
             Doctype;
             html {
@@ -37,41 +40,61 @@ impl<T: Render> Render for Base<T> {
                 }
             }
         }
-        .render_to(buffer);
     }
 }
 
 #[derive(Component)]
 #[id(id)]
 struct Stock<'a> {
+    #[signal(id)]
     id: &'a str,
     name: &'a str,
+    #[signal]
+    price_cents: u64,
 }
 
-impl<'a> Render for Stock<'a> {
-    fn render_to(&self, buffer: &mut Buffer<cheers::context::Node>) {
+impl<'a> Component for Stock<'a> {
+    fn component(&self, signal: &Signal<Self>) -> Lazy<impl Fn(&mut Buffer)>
+    where
+        Self: Sized,
+    {
+        let price_cents_signal = Stock::price_cents_signal(signal, self.id);
         html! {
             section id=(Self::id(self.id)) {
-                h3 { "And the name is " (self.name) }
+                h3 { "Name " (self.name) }
+                input
+                    value=(self.price_cents)
+                    type="number"
+                    !signals(
+                        price_cents_signal: self.price_cents
+                    )
+                    !bind(price_cents_signal);
+                p !text(price_cents_signal) { (self.price_cents) }
             }
         }
-        .render_to(buffer);
     }
 }
 
 async fn home_page(ctx: State<Ctx>) -> AsyncLazy<Lazy<impl Fn(&mut Buffer)>> {
+    let fetching = Signal::<bool>::scoped("fetching");
     html! {
         Base {
-            article !init="@post('/subscriptions')" {
+            article !init("@post('/subscriptions')") {
                 @async {
-                    @let resp = async { "Hey" };
+                    @let stocks = async { ctx.stocks.lock().expect("lock") }.await;
                     button
-                        !on:click="@post('/')"
-                        !indicator="fetching"
-                        !style="{display: $fetching && 'none'}"
-                    { (resp.await) }
-                    @for (id, name) in &ctx.stocks.lock().expect("lock").clone() {
-                        Stock id name;
+                        !on:click("@post('/')")
+                        !indicator(fetching)
+                        !style(
+                            "display": {(fetching) " && 'none'"}
+                        )
+                    { "Do stuff" }
+                    h1 { "Sum" }
+                    p !text({
+                        0 @for (id, _) in stocks.iter() { "+" (Stock::price_cents_signal(&Signal::root(), id)) }
+                    }) {}
+                    @for (id, (name, price_cents)) in stocks.iter() {
+                        Stock id name price_cents=(*price_cents);
                     }
                 } @else {
                     p { "Wait..." }
@@ -84,18 +107,26 @@ async fn home_page(ctx: State<Ctx>) -> AsyncLazy<Lazy<impl Fn(&mut Buffer)>> {
 async fn update_stock(ctx: State<Ctx>) -> PatchElements {
     tokio::time::sleep(Duration::from_millis(500)).await;
 
-    let id = "Wow".to_owned();
-    let name = "Major".to_owned();
+    let id = "Wow";
     let mut stocks = ctx.stocks.lock().expect("lock");
-    stocks.insert(id.clone(), name.clone());
-    if let Err(e) = ctx.stocks_tx.send((id.clone(), name.clone())) {
+    let (name, price_cents) = stocks.get_mut(id).expect(
+        "hardcoded Wow
+stock",
+    );
+    *price_cents = *price_cents + 1;
+    if let Err(e) = ctx
+        .stocks_tx
+        .send((id.to_owned(), name.clone(), *price_cents))
+    {
         eprintln!("error sending stock update: {e}");
     };
 
-    PatchElements::new().component(Stock {
+    let stock = Stock {
         id: &id,
         name: &name,
-    })
+        price_cents: *price_cents,
+    };
+    PatchElements::new().element(stock.component(&Signal::root()))
 }
 
 async fn create_subscription(ctx: State<Ctx>) -> impl IntoResponse {
@@ -103,11 +134,17 @@ async fn create_subscription(ctx: State<Ctx>) -> impl IntoResponse {
     let (tx, rx) = events();
     tokio::spawn(async move {
         let mut stocks_rx = ctx.stocks_tx.subscribe();
-        while let Ok((id, name)) = stocks_rx.recv().await {
-            if let Err(e) = tx.send(PatchElements::new().id(Stock::id(&id)).component(Stock {
+        while let Ok((id, name, price_cents)) = stocks_rx.recv().await {
+            let stock = Stock {
                 id: &id,
                 name: &name,
-            })) {
+                price_cents,
+            };
+            if let Err(e) = tx.send(
+                PatchElements::new()
+                    .id(Stock::id(&id))
+                    .element(stock.component(&Signal::root())),
+            ) {
                 eprintln!("error forwarding update to subscription: {e}");
                 break;
             } else {
@@ -132,7 +169,7 @@ async fn main() {
                 stocks_tx: tokio::sync::broadcast::channel(16).0,
                 stocks: Box::leak(Box::new(Mutex::new(BTreeMap::from([(
                     "Wow".to_owned(),
-                    "Hotsteel".to_owned(),
+                    ("Hotsteel".to_owned(), 42),
                 )])))),
             })
             .serve_cheers_application()

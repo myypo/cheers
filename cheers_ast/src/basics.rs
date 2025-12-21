@@ -9,6 +9,12 @@ use syn::{
 #[derive(Clone)]
 pub struct UnquotedName(pub Ident);
 
+impl PartialEq<&str> for UnquotedName {
+    fn eq(&self, other: &&str) -> bool {
+        self.0.to_string() == *other
+    }
+}
+
 impl UnquotedName {
     pub fn lit(&self) -> LitStr {
         LitStr::new(&self.0.to_string(), self.0.span())

@@ -121,7 +121,7 @@ mod patch_elements {
             self
         }
 
-        pub fn component<R: Render>(mut self, component: R) -> Self {
+        pub fn element<R: Render>(mut self, component: R) -> Self {
             if let Some(mut components) = self.components {
                 components.dangerously_get_string().push('\n');
                 component.render_to(&mut components);
@@ -296,14 +296,14 @@ data: selector #foo\n\n"
             }
 
             impl<'a> Render for Content<'a> {
-                fn render_to(&self, buffer: &mut Buffer<crate::context::Node>) {
+                fn render_to(&self, buffer: &mut Buffer<crate::context::Element>) {
                     buffer.dangerously_get_string().push_str(self.content);
                 }
             }
 
             let content = "me";
             let patch = PatchElements::new()
-                .component(Content { content })
+                .element(Content { content })
                 .mode(PatchElementsMode::Append)
                 .use_view_transition();
 
@@ -333,7 +333,7 @@ data: elements {content}\n\n"
             struct Home;
 
             impl<'a> Render for Home {
-                fn render_to(&self, buffer: &mut Buffer<crate::context::Node>) {
+                fn render_to(&self, buffer: &mut Buffer<crate::context::Element>) {
                     buffer
                         .dangerously_get_string()
                         .push_str("Home of me\n\nHere we go");
@@ -341,7 +341,7 @@ data: elements {content}\n\n"
             }
 
             let patch = PatchElements::new()
-                .component(Home)
+                .element(Home)
                 .mode(PatchElementsMode::Inner);
 
             let (tx, rx) = events();

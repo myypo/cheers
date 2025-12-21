@@ -20,9 +20,9 @@ pub trait Context: sealed::Sealed {}
 /// rendering string-like types, the value/implementation must escape `&` to
 /// `&amp;`, `<` to `&lt;`, and `>` to `&gt;`.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash)]
-pub struct Node;
+pub struct Element;
 
-impl Context for Node {}
+impl Context for Element {}
 
 /// A marker type to represent an attribute value.
 ///
@@ -35,9 +35,9 @@ pub struct AttributeValue;
 impl Context for AttributeValue {}
 
 mod sealed {
-    use super::{AttributeValue, Node};
+    use super::{AttributeValue, Element};
 
     pub trait Sealed {}
-    impl Sealed for Node {}
+    impl Sealed for Element {}
     impl Sealed for AttributeValue {}
 }

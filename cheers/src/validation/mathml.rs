@@ -7,14 +7,12 @@ use crate::validation::{Attribute, Element};
 pub trait MathMlGlobalAttributes: Element {
     const autofocus: Attribute = Attribute;
 
-    #[doc(alias = ".", hidden)]
     const class: Attribute = Attribute;
 
     const dir: Attribute = Attribute;
 
     const displaystyle: Attribute = Attribute;
 
-    #[doc(alias = "#", hidden)]
     const id: Attribute = Attribute;
 
     const mathbackground: Attribute = Attribute;

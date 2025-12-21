@@ -26,7 +26,7 @@ serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1" }
 axum = { version = "0.8" }
 tower = { version = "0.5" }
-syn = { version = "2", features = ["full"] }
+syn = { version = "2", features = ["full", "visit"] }
 quote = { version = "1", default-features = false }
 proc-macro2 = { version = "1", default-features = false }
 tokio = { version = "1", features = [

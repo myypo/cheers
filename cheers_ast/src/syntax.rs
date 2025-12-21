@@ -1,6 +1,7 @@
 use syn::{
     Ident, LitBool, LitChar, LitFloat, LitInt, LitStr, Token, braced,
     ext::IdentExt,
+    parenthesized,
     parse::{Parse, ParseStream},
     token::{Brace, Paren},
 };
@@ -87,6 +88,15 @@ impl Parse for Component {
     fn parse(input: ParseStream) -> syn::Result<Self> {
         Ok(Self {
             name: input.parse()?,
+            path: {
+                if input.peek(Paren) {
+                    let content;
+                    parenthesized!(content in input);
+                    Some(content.parse()?)
+                } else {
+                    None
+                }
+            },
             attrs: {
                 let mut attrs = Vec::new();
 

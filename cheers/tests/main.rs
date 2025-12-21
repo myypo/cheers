@@ -8,9 +8,9 @@ use std::{
 
 use axum::response::IntoResponse;
 use cheers::{
-    Buffer, Raw, Rendered,
+    Buffer,
     components::{Debugged, Displayed, Doctype, Scripts},
-    macros::{html_borrow, html_static},
+    macros::html_borrow,
     prelude::*,
 };
 use futures::StreamExt;
@@ -51,22 +51,6 @@ fn correct_attr_escape() {
         result.as_inner(),
         r#"<div data-code="&quot;alert('XSS')"></div>"#
     );
-}
-
-#[test]
-fn statics() {
-    const HTML_RAW_RESULT: Raw<&str> = html_static! {
-        div id="profile" title="Profile" {
-            h1 { "Hello, world!" }
-        }
-    };
-
-    const HTML_RENDERED_RESULT: Rendered<&str> = HTML_RAW_RESULT.rendered();
-
-    const EXPECTED: &str = r#"<div id="profile" title="Profile"><h1>Hello, world!</h1></div>"#;
-
-    assert_eq!(HTML_RAW_RESULT.into_inner(), EXPECTED);
-    assert_eq!(HTML_RENDERED_RESULT.into_inner(), EXPECTED);
 }
 
 #[test]
@@ -130,7 +114,9 @@ fn component_fns() {
 #[test]
 fn borrow() {
     let s = "Hello, world!".to_owned();
-    let result = html_borrow! { span { (s) } };
+    let result = html_borrow! {
+        span { (s) }
+    };
     // still able to use `s` after the borrow, as we use `html_borrow!`
     let expected = format!("<span>{s}</span>");
 
@@ -161,12 +147,11 @@ fn component() {
         children: R,
     }
 
-    impl<R: Render> Render for Repeater<R> {
-        fn render_to(&self, buffer: &mut Buffer) {
+    impl<R: Render> Component for Repeater<R> {
+        fn component(&self, _: &Signal<Self>) -> Lazy<impl Fn(&mut Buffer)> {
             html! {
                 @for _ in 0..self.count { (self.children) }
             }
-            .render_to(buffer);
         }
     }
 
@@ -290,8 +275,8 @@ struct Base<T> {
     children: T,
 }
 
-impl<T: Render> Render for Base<T> {
-    fn render_to(&self, buffer: &mut Buffer<cheers::context::Node>) {
+impl<T: Render> Component for Base<T> {
+    fn component(&self, _: &Signal<Self>) -> Lazy<impl Fn(&mut Buffer)> {
         html! {
             Doctype;
             html {
@@ -303,7 +288,6 @@ impl<T: Render> Render for Base<T> {
                 }
             }
         }
-        .render_to(buffer);
     }
 }
 
@@ -381,15 +365,16 @@ async fn page_async_block_is_streamed() {
 
 #[test]
 fn data_attributes() {
+    let hello = Signal::<i32>::scoped("hello");
     let result = html! {
-        div !on:interval="@get('/')" {}
-        p !bind="$hello" {}
+        div !on:interval("@get('/')") {}
+        p !bind(hello) {}
     }
     .render();
 
     assert_eq!(
         result.as_inner(),
-        r#"<div data-on:interval="@get('/')"></div><p data-bind="$hello"></p>"#
+        r#"<div data-on:interval="@get('/')"></div><p data-bind="hello"></p>"#
     );
 }
 
@@ -488,15 +473,14 @@ fn component_dotdot_default() {
         text: &'a str,
     }
 
-    impl<'a> Render for Feedback<'a> {
-        fn render_to(&self, buffer: &mut Buffer<cheers::context::Node>) {
+    impl<'a> Component for Feedback<'a> {
+        fn component(&self, _: &Signal<Self>) -> Lazy<impl Fn(&mut Buffer)> {
             html! {
                 @if let Some(name) = self.name {
                     h3 { (name) }
                 } @else {}
                 p { (self.text) }
             }
-            .render_to(buffer);
         }
     }
 
@@ -528,32 +512,226 @@ fn id() {
 }
 
 #[test]
-fn nested_signal() {
-    #[expect(dead_code)]
+fn nested_signal_polymorphic_paths() {
     #[derive(Component)]
-    struct Room<'a> {
+    struct Display {
         #[signal(id)]
-        number: u32,
+        value: i32,
+    }
+
+    impl Component for Display {
+        fn component(&self, signals: &Signal<Self>) -> Lazy<impl Fn(&mut Buffer)> {
+            let value = Self::value_signal(signals, self.value);
+            html! {
+                span !bind(value) { (self.value) }
+            }
+        }
+    }
+
+    #[derive(Component)]
+    struct Counter {
+        #[signal(nested)]
+        content: Display,
+    }
+
+    impl Component for Counter {
+        fn component(&self, signal: &Signal<Self>) -> Lazy<impl Fn(&mut Buffer)> {
+            html! {
+                div {
+                    Display (Self::content_signal(signal)) value=(self.content.value);
+                }
+            }
+        }
+    }
+
+    #[derive(Component)]
+    struct Temperature {
+        #[signal(nested = Display)]
+        measurements: Vec<Display>,
+    }
+
+    impl Component for Temperature {
+        fn component(&self, signal: &Signal<Self>) -> Lazy<impl Fn(&mut Buffer)> {
+            html! {
+                div {
+                    @for m in &self.measurements {
+                        Display (Self::measurements_signal(signal)) value=(m.value);
+                    }
+                }
+            }
+        }
+    }
+
+    let counter_signal = Signal::scoped("counter");
+    let counter_result = Counter {
+        content: Display { value: 42 },
+    }
+    .component(&counter_signal);
+    assert_eq!(
+        counter_result.render().as_inner(),
+        r#"<div><span data-bind="counter.content.42.value">42</span></div>"#
+    );
+    let temperature_result = Temperature {
+        measurements: vec![Display { value: 38 }, Display { value: -14 }],
+    };
+    assert_eq!(
+        temperature_result
+            .component(&Signal::scoped("temp"))
+            .render()
+            .as_inner(),
+        r#"<div><span data-bind="temp.measurements.38.value">38</span><span data-bind="temp.measurements.-14.value">-14</span></div>"#
+    );
+}
+
+#[test]
+fn data_indicator() {
+    #[derive(Component)]
+    struct Something {
         #[signal]
-        name: &'a str,
+        fetching: bool,
     }
 
-    #[expect(dead_code)]
+    let fetching = Something::fetching_signal(&Signal::root());
+    let result = html! {
+        button !indicator(fetching) !json_signals {}
+        div !show({ "!" (fetching) " || true" }) { "Loaded!" }
+    }
+    .render();
+
+    assert_eq!(
+        result.as_inner(),
+        r#"<button data-indicator="fetching" data-json-signals></button><div data-show="!$fetching || true">Loaded!</div>"#
+    );
+}
+
+#[test]
+fn data_signals() {
     #[derive(Component)]
-    struct House<'a> {
-        #[signal(id)]
-        number: u32,
-        #[signal(nested)]
-        rooms: Vec<Room<'a>>,
+    struct Counter {
+        #[signal]
+        count: i32,
     }
 
-    #[expect(dead_code)]
     #[derive(Component)]
-    struct Street<'a> {
+    struct Container {
         #[signal(nested)]
-        houses: Vec<House<'a>>,
+        counter: Counter,
     }
 
-    let room_signal = StreetSignals::houses(HouseSignals::rooms(9, RoomSignals::name(42)));
-    assert_eq!(room_signal.path(), "houses.9.rooms.42.name");
+    #[derive(Component)]
+    struct InnerMost {
+        #[signal]
+        value: i32,
+    }
+
+    #[derive(Component)]
+    struct Middle {
+        #[signal(nested)]
+        inner: InnerMost,
+    }
+
+    #[derive(Component)]
+    struct Outer {
+        #[signal(nested)]
+        middle: Middle,
+    }
+
+    let outer_signal = Signal::scoped("outer");
+    let middle_signal = Outer::middle_signal(&outer_signal);
+    let inner_signal = Middle::inner_signal(&middle_signal);
+
+    let container_signal = Signal::scoped("container");
+    let counter_signal = Container::counter_signal(&container_signal);
+    let count_signal_new = Counter::count_signal(&counter_signal);
+    let value_signal_new = InnerMost::value_signal(&inner_signal);
+
+    let multiple_nested = html! {
+        div !signals(count_signal_new: 5, value_signal_new: 100) {}
+    }
+    .render();
+
+    assert_eq!(
+        multiple_nested.as_inner(),
+        r#"<div data-signals="{container:{counter:{count:5}},outer:{middle:{inner:{value:100}}}}"></div>"#
+    );
+}
+
+#[test]
+fn data_style() {
+    #[derive(Component)]
+    struct Options {
+        #[signal]
+        hiding: bool,
+    }
+
+    let hiding = Options::hiding_signal(&Signal::root());
+    let name = "color";
+    let result = html! {
+            pre !style("display": {(hiding) " ? 'none' : 'flex'"}, name: "'red'") {}
+    }
+    .render();
+
+    assert_eq!(
+        result.as_inner(),
+        r#"<pre data-style="{display:$hiding ? 'none' : 'flex',color:'red'}"></pre>"#
+    )
+}
+
+#[test]
+fn signal_computed() {
+    #[derive(Component)]
+    struct Input {
+        #[signal]
+        a: i32,
+        #[signal]
+        b: i32,
+        #[signal]
+        c: i32,
+        #[signal]
+        d: i32,
+    }
+
+    impl Component for Input {
+        fn component(&self, signal: &Signal<Self>) -> Lazy<impl Fn(&mut Buffer)> {
+            let a = Input::a_signal(signal);
+            let b = Input::b_signal(signal);
+            let c = Input::c_signal(signal);
+            html! {
+                p !computed(c: {(a) "+" (b)}) {}
+            }
+        }
+    }
+
+    #[derive(Component)]
+    struct Calculator {
+        #[signal(nested)]
+        input: Input,
+    }
+
+    impl Component for Calculator {
+        fn component(&self, signal: &Signal<Self>) -> Lazy<impl Fn(&mut Buffer)> {
+            let Input { a, b, c, d } = self.input;
+            html! {
+                div {
+                    Input (Self::input_signal(signal)) a b c d;
+                }
+            }
+        }
+    }
+
+    let signal = Signal::root();
+    let result = Calculator {
+        input: Input {
+            a: 1,
+            b: 2,
+            c: 3,
+            d: 4,
+        },
+    }
+    .component(&signal);
+
+    assert_eq!(
+        result.render().as_inner(),
+        r#"<div><p data-computed="{input:{c:()=>$input.a+$input.b}}"></p></div>"#
+    )
 }

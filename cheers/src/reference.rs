@@ -1,8 +1,12 @@
-use std::fmt::Display;
+use std::{
+    borrow::Cow,
+    fmt::{Display, Write},
+    marker::PhantomData,
+};
 
 use crate::{
     context::AttributeValue,
-    render::{Buffer, Render},
+    render::{Buffer, Lazy, Render},
 };
 
 #[derive(Debug, PartialEq, Eq)]
@@ -54,15 +58,160 @@ impl Render<AttributeValue> for ElementId {
 }
 
 #[derive(Debug)]
-pub struct Signal(String);
+pub struct Signal<T> {
+    path: Path,
+    ty: PhantomData<T>,
+}
 
-impl Signal {
+impl<T> Signal<T> {
     #[doc(hidden)]
     pub fn __string(s: String) -> Self {
-        Self(s)
+        Signal {
+            path: Path(s),
+            ty: PhantomData::<T>,
+        }
     }
 
-    pub fn path(&self) -> &str {
-        &self.0
+    #[doc(hidden)]
+    pub fn __path(&self) -> &str {
+        &self.path.0
+    }
+
+    pub fn root() -> Self {
+        Self {
+            path: Path::__empty(),
+            ty: PhantomData::<T>,
+        }
+    }
+
+    pub fn scoped(s: impl Display) -> Self {
+        Self {
+            path: Path(s.to_string()),
+            ty: PhantomData::<T>,
+        }
+    }
+
+    #[doc(hidden)]
+    pub fn __computed_open(&self, buffer: &mut Buffer<AttributeValue>) -> usize {
+        let segments: Vec<&str> = self.path.0.split('.').collect();
+
+        if segments.is_empty() {
+            return 0;
+        }
+
+        let buf = buffer.dangerously_get_string();
+        for (i, segment) in segments.iter().enumerate() {
+            if i == 0 {
+                buf.push_str(segment);
+            } else {
+                buf.push_str(":{");
+                buf.push_str(segment);
+            }
+        }
+        buf.push_str(":()=>");
+
+        segments.len() - 1
+    }
+}
+
+impl Signal<()> {
+    #[doc(hidden)]
+    pub fn __computed_close(count: usize, buffer: &mut Buffer<AttributeValue>) {
+        let buf = buffer.dangerously_get_string();
+        for _ in 0..count {
+            buf.push('}');
+        }
+    }
+}
+
+impl<T: Render<AttributeValue>> Signal<T> {
+    #[doc(hidden)]
+    pub fn __assign(&self, buffer: &mut Buffer<AttributeValue>, v: T) {
+        let segments: Vec<&str> = self.path.0.split('.').collect();
+
+        if segments.is_empty() {
+            return;
+        }
+
+        {
+            let s = buffer.dangerously_get_string();
+            let mut first = true;
+            for seg in segments.iter() {
+                if first {
+                    first = false;
+                    s.push_str(seg);
+                } else {
+                    s.push(':');
+                    s.push('{');
+                    s.push_str(seg);
+                }
+            }
+            s.push(':');
+        }
+
+        v.render_to(buffer);
+
+        let s = buffer.dangerously_get_string();
+        for _ in 0..segments.len() - 1 {
+            s.push('}');
+        }
+    }
+}
+
+impl<T> AsRef<Path> for Signal<T> {
+    fn as_ref(&self) -> &Path {
+        &self.path
+    }
+}
+
+impl<T> Render<AttributeValue> for Signal<T> {
+    fn render_to(&self, buffer: &mut Buffer<AttributeValue>) {
+        buffer.dangerously_get_string().push('$');
+        // FIXME: can I make this safe?
+        buffer.dangerously_get_string().push_str(&self.path.0);
+    }
+}
+
+// TODO: better name?
+#[derive(Debug)]
+pub struct Path(String);
+
+impl Path {
+    #[doc(hidden)]
+    pub fn __string(&self) -> String {
+        // TODO: use Cow?
+        self.0.clone()
+    }
+
+    #[doc(hidden)]
+    pub fn __empty() -> Self {
+        Self(String::new())
+    }
+}
+
+pub trait Component {
+    fn component(&self, signal: &Signal<Self>) -> Lazy<impl Fn(&mut Buffer)>
+    where
+        Self: Sized;
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn signal_object_string_value() {
+        let signal = Signal::<&str>::__string("user.name".to_string());
+        let mut buffer = Buffer::new();
+        signal.__assign(&mut buffer, "'Nick'");
+        assert_eq!(buffer.dangerously_get_string(), r#"user:{name:'Nick'}"#);
+    }
+
+    #[test]
+    fn signal_object_number_value() {
+        let signal = Signal::<f64>::__string("user.age".to_string());
+        let mut buffer = Buffer::new();
+        signal.__assign(&mut buffer, -42.0);
+        assert_eq!(buffer.dangerously_get_string(), r#"user:{age:-42.0}"#);
     }
 }

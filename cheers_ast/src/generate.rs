@@ -239,7 +239,7 @@ impl Generator {
     pub fn push_escaped_literal(&mut self, context: Context, lit: &LitStr) {
         let value = lit.value();
         let escaped_value = match context {
-            Context::Node => html_escape::encode_text(&value),
+            Context::Element => html_escape::encode_text(&value),
             Context::AttributeValue => html_escape::encode_double_quoted_attribute(&value),
         };
 
@@ -260,13 +260,14 @@ impl Generator {
     pub fn push_expr(&mut self, paren_token: Paren, context: Context, expr: impl ToTokens) {
         let buffer_ident = Self::buffer_ident();
         let buffer_expr = match (self.context, context) {
-            (Context::Node, Context::Node) | (Context::AttributeValue, Context::AttributeValue) => {
+            (Context::Element, Context::Element)
+            | (Context::AttributeValue, Context::AttributeValue) => {
                 quote!(#buffer_ident)
             }
-            (Context::Node, Context::AttributeValue) => {
+            (Context::Element, Context::AttributeValue) => {
                 quote!(#buffer_ident.as_attribute_buffer())
             }
-            (Context::AttributeValue, Context::Node) => unreachable!(),
+            (Context::AttributeValue, Context::Element) => unreachable!(),
         };
 
         let mut paren_expr = TokenStream::new();
@@ -317,14 +318,14 @@ enum Part {
 
 #[derive(Debug, Clone, Copy)]
 pub enum Context {
-    Node,
+    Element,
     AttributeValue,
 }
 
 impl Context {
     pub fn marker_type(self) -> TokenStream {
         let ident = match self {
-            Self::Node => Ident::new("Node", Span::mixed_site()),
+            Self::Element => Ident::new("Element", Span::mixed_site()),
             Self::AttributeValue => Ident::new("AttributeValue", Span::mixed_site()),
         };
 
@@ -404,7 +405,7 @@ pub struct ElementCheck {
     ident: UnquotedName,
     kind: ElementKind,
     closing_spans: Vec<Span>,
-    attributes: Vec<AttributeCheck>,
+    attributes: Vec<AttributeNameCheck>,
 }
 
 impl ElementCheck {
@@ -421,7 +422,7 @@ impl ElementCheck {
         self.closing_spans = spans;
     }
 
-    pub fn push_attribute(&mut self, attr: AttributeCheck) {
+    pub fn push_attribute(&mut self, attr: AttributeNameCheck) {
         self.attributes.push(attr);
     }
 }
@@ -466,20 +467,20 @@ impl ToTokens for ElementKind {
     }
 }
 
-pub struct AttributeCheck {
-    kind: AttributeCheckKind,
+pub struct AttributeNameCheck {
+    kind: AttributeNameCheckKind,
     ident: UnquotedName,
     data: bool,
 }
 
-impl AttributeCheck {
-    pub const fn new(kind: AttributeCheckKind, ident: UnquotedName, data: bool) -> Self {
+impl AttributeNameCheck {
+    pub const fn new(kind: AttributeNameCheckKind, ident: UnquotedName, data: bool) -> Self {
         Self { kind, ident, data }
     }
 
     fn to_token_stream_with_el(&self, el: &UnquotedName) -> TokenStream {
         match &self.kind {
-            AttributeCheckKind::Namespace(namespace) => {
+            AttributeNameCheckKind::Namespace(namespace) => {
                 let ident = &self.ident;
 
                 if self.data {
@@ -494,7 +495,7 @@ impl AttributeCheck {
                     }
                 }
             }
-            AttributeCheckKind::Normal => {
+            AttributeNameCheckKind::Normal => {
                 let ident = &self.ident;
                 if self.data {
                     quote! {
@@ -510,7 +511,7 @@ impl AttributeCheck {
     }
 }
 
-pub enum AttributeCheckKind {
+pub enum AttributeNameCheckKind {
     Normal,
     Namespace(UnquotedName),
 }

@@ -7,13 +7,15 @@ mod syntax;
 use std::marker::PhantomData;
 
 pub use basics::UnquotedName;
-use proc_macro2::{Span, TokenStream};
-use quote::{ToTokens, quote};
+use proc_macro2::{Span, TokenStream, TokenTree, token_stream};
+use quote::{ToTokens, TokenStreamExt, quote};
 use syn::{
-    Error, Expr, Ident, LitBool, LitChar, LitFloat, LitInt, LitStr, Token, braced, bracketed,
+    Error, Expr, FieldValue, Ident, Lit, LitBool, LitChar, LitFloat, LitInt, LitStr, Token, braced,
+    bracketed,
     ext::IdentExt,
     parenthesized,
     parse::{Parse, ParseStream},
+    punctuated::Punctuated,
     token::{Brace, Bracket, Paren},
 };
 
@@ -22,7 +24,7 @@ use self::{
     component::Component,
     control::Control,
     generate::{
-        AnyBlock, AttributeCheck, AttributeCheckKind, ElementCheck, ElementKind, Generate,
+        AnyBlock, AttributeNameCheck, AttributeNameCheckKind, ElementCheck, ElementKind, Generate,
         Generator,
     },
 };
@@ -53,7 +55,7 @@ impl Node for ElementNode {
 }
 
 impl Generate for ElementNode {
-    const CONTEXT: Context = Context::Node;
+    const CONTEXT: Context = Context::Element;
 
     fn generate(&mut self, g: &mut Generator) {
         match self {
@@ -168,7 +170,7 @@ pub struct Element {
 }
 
 impl Generate for Element {
-    const CONTEXT: Context = Context::Node;
+    const CONTEXT: Context = Context::Element;
 
     fn generate(&mut self, g: &mut Generator) {
         let mut el_checks = ElementCheck::new(&self.name, self.body.kind());
@@ -178,7 +180,7 @@ impl Generate for Element {
 
         for attr in &mut self.attrs {
             g.push(&mut *attr);
-            if let Some(check) = attr.name.check() {
+            if let Some(check) = attr.check() {
                 el_checks.push_attribute(check);
             }
         }
@@ -216,18 +218,43 @@ impl ElementBody {
     }
 }
 
-pub struct Attribute {
-    pub name: AttributeName,
-    pub kind: AttributeKind,
+pub enum Attribute {
+    Regular {
+        name: AttributeName,
+        kind: AttributeKind,
+    },
+    Data(Data),
+}
+
+impl Attribute {
+    fn check(&self) -> Option<AttributeNameCheck> {
+        match &self {
+            Attribute::Regular { name, .. } => name.check(false),
+            Attribute::Data(data) => match &data.namespace {
+                Some(namespace) => Some(AttributeNameCheck::new(
+                    AttributeNameCheckKind::Namespace(namespace.clone()),
+                    data.name.clone(),
+                    true,
+                )),
+                None => Some(AttributeNameCheck::new(
+                    AttributeNameCheckKind::Normal,
+                    data.name.clone(),
+                    true,
+                )),
+            },
+        }
+    }
 }
 
 impl Parse for Attribute {
     fn parse(input: ParseStream) -> syn::Result<Self> {
-        Ok(Self {
-            name: input.parse()?,
-            kind: if input.peek(Token![=]) {
+        let data = input.parse::<Token![!]>().is_ok();
+        if data {
+            Ok(Self::Data(input.parse()?))
+        } else {
+            let name = input.parse::<AttributeName>()?;
+            let kind = if input.peek(Token![=]) {
                 input.parse::<Token![=]>()?;
-
                 if let Some(toggle) = input.call(Toggle::parse_optional)? {
                     AttributeKind::Option(toggle)
                 } else {
@@ -238,8 +265,10 @@ impl Parse for Attribute {
                 }
             } else {
                 AttributeKind::Empty(input.call(Toggle::parse_optional)?)
-            },
-        })
+            };
+
+            Ok(Self::Regular { name, kind })
+        }
     }
 }
 
@@ -247,53 +276,53 @@ impl Generate for Attribute {
     const CONTEXT: Context = Context::AttributeValue;
 
     fn generate(&mut self, g: &mut Generator) {
-        let data = matches!(self.name, AttributeName::Normal { data, .. } | AttributeName::Namespace{data, ..} if data);
-        let name_prefix = if data { " data-" } else { " " };
-
-        match &mut self.kind {
-            AttributeKind::Value { value, toggle, .. } => {
-                if let Some(toggle) = toggle {
-                    g.push_conditional(toggle.parenthesized(), |g| {
-                        g.push_str(name_prefix);
-                        g.push_literals(self.name.literals());
+        match self {
+            Attribute::Regular { name, kind } => match kind {
+                AttributeKind::Value { value, toggle, .. } => {
+                    if let Some(toggle) = toggle {
+                        g.push_conditional(toggle.parenthesized(), |g| {
+                            g.push_str(" ");
+                            g.push_literals(name.literals());
+                            g.push_str("=\"");
+                            g.push(value);
+                            g.push_str("\"");
+                        });
+                    } else {
+                        g.push_str(" ");
+                        g.push_literals(name.literals());
                         g.push_str("=\"");
                         g.push(value);
                         g.push_str("\"");
-                    });
-                } else {
-                    g.push_str(name_prefix);
-                    g.push_literals(self.name.literals());
-                    g.push_str("=\"");
-                    g.push(value);
-                    g.push_str("\"");
+                    }
                 }
-            }
-            AttributeKind::Option(option) => {
-                let option_expr = &option.expr;
+                AttributeKind::Option(option) => {
+                    let option_expr = &option.expr;
 
-                let value = Ident::new("value", Span::mixed_site());
+                    let value = Ident::new("value", Span::mixed_site());
 
-                g.push_conditional(
-                    quote!(let ::core::option::Option::Some(#value) = (#option_expr)),
-                    |g| {
-                        g.push_str(name_prefix);
-                        g.push_literals(self.name.literals());
-                        g.push_str("=\"");
-                        g.push_expr(Paren::default(), Self::CONTEXT, &value);
-                        g.push_str("\"");
-                    },
-                );
-            }
-            AttributeKind::Empty(Some(toggle)) => {
-                g.push_conditional(toggle.parenthesized(), |g| {
-                    g.push_str(name_prefix);
-                    g.push_literals(self.name.literals());
-                });
-            }
-            AttributeKind::Empty(None) => {
-                g.push_str(name_prefix);
-                g.push_literals(self.name.literals());
-            }
+                    g.push_conditional(
+                        quote!(let ::core::option::Option::Some(#value) = (#option_expr)),
+                        |g| {
+                            g.push_str(" ");
+                            g.push_literals(name.literals());
+                            g.push_str("=\"");
+                            g.push_expr(Paren::default(), Self::CONTEXT, &value);
+                            g.push_str("\"");
+                        },
+                    );
+                }
+                AttributeKind::Empty(Some(toggle)) => {
+                    g.push_conditional(toggle.parenthesized(), |g| {
+                        g.push_str(" ");
+                        g.push_literals(name.literals());
+                    });
+                }
+                AttributeKind::Empty(None) => {
+                    g.push_str(" ");
+                    g.push_literals(name.literals());
+                }
+            },
+            Attribute::Data(data) => g.push(data),
         }
     }
 }
@@ -301,50 +330,37 @@ impl Generate for Attribute {
 #[derive(Clone)]
 pub enum AttributeName {
     Namespace {
-        data: bool,
         namespace: UnquotedName,
         rest: UnquotedName,
     },
     Normal {
-        data: bool,
         name: UnquotedName,
     },
     Unchecked(LitStr),
 }
 
 impl AttributeName {
-    fn check(&self) -> Option<AttributeCheck> {
+    fn check(&self, data: bool) -> Option<AttributeNameCheck> {
         match self {
             Self::Unchecked(_) => None,
-            Self::Namespace {
-                data,
-                namespace,
-                rest,
-            } => Some(AttributeCheck::new(
-                AttributeCheckKind::Namespace(namespace.clone()),
+            Self::Namespace { namespace, rest } => Some(AttributeNameCheck::new(
+                AttributeNameCheckKind::Namespace(namespace.clone()),
                 rest.clone(),
-                *data,
+                data,
             )),
-            Self::Normal { data, name } => Some(AttributeCheck::new(
-                AttributeCheckKind::Normal,
+            Self::Normal { name } => Some(AttributeNameCheck::new(
+                AttributeNameCheckKind::Normal,
                 name.clone(),
-                *data,
+                data,
             )),
         }
     }
 
     fn literals(&self) -> Vec<LitStr> {
         match self {
-            Self::Namespace {
-                data,
-                namespace,
-                rest,
-            } => {
+            Self::Namespace { namespace, rest } => {
                 let mut literals = vec![namespace.lit()];
-                literals.push(LitStr::new(
-                    if *data { ":" } else { "-" },
-                    Span::mixed_site(),
-                ));
+                literals.push(LitStr::new("-", namespace.span()));
                 literals.push(rest.lit());
                 literals
             }
@@ -358,18 +374,16 @@ impl Parse for AttributeName {
     fn parse(input: ParseStream) -> syn::Result<Self> {
         let lookahead = input.lookahead1();
 
-        if lookahead.peek(Ident::peek_any) || lookahead.peek(LitInt) || lookahead.peek(Token![!]) {
-            let data = input.parse::<Token![!]>().is_ok();
+        if lookahead.peek(Ident::peek_any) || lookahead.peek(LitInt) {
             let name = input.parse()?;
             if input.peek(Token![:]) {
                 input.parse::<Token![:]>()?;
                 Ok(Self::Namespace {
-                    data,
                     namespace: name,
                     rest: input.parse()?,
                 })
             } else {
-                Ok(Self::Normal { data, name })
+                Ok(Self::Normal { name })
             }
         } else if lookahead.peek(LitStr) {
             let s = input.parse::<LitStr>()?;
@@ -512,5 +526,246 @@ impl Parse for Toggle {
             bracket_token: bracketed!(content in input),
             expr: content.parse()?,
         })
+    }
+}
+
+pub struct DataExprValue<V: Parse> {
+    pub ident: Expr,
+    colon_token: Token![:],
+    pub value: V,
+}
+
+impl<V: Parse> Parse for DataExprValue<V> {
+    fn parse(input: ParseStream) -> syn::Result<Self> {
+        Ok(Self {
+            ident: input.parse()?,
+            colon_token: input.parse()?,
+            value: input.parse()?,
+        })
+    }
+}
+
+pub enum DataContent {
+    Node(AttributeValueNode),
+    Signals(Punctuated<DataExprValue<Expr>, Token![,]>),
+    Kv(Punctuated<DataExprValue<AttributeValueNode>, Token![,]>),
+    Computed(DataExprValue<AttributeValueNode>),
+    Bind(Expr),
+    Empty,
+}
+
+pub struct Data {
+    pub namespace: Option<UnquotedName>,
+    pub name: UnquotedName,
+    paren_token: Paren,
+    pub content: DataContent,
+}
+
+impl Parse for Data {
+    // TODO: get rid of string literals here
+    // should rather use some kind of enums
+    fn parse(input: ParseStream) -> syn::Result<Self> {
+        let mut namespace = None::<UnquotedName>;
+        let name;
+
+        if input.peek2(Token![:]) {
+            namespace = Some(input.parse()?);
+            input.parse::<Token![:]>()?;
+        }
+        name = input.parse()?;
+
+        // HACK: this is to improve the completion
+        // without allowing these attributes to have no value
+        if !input.peek(Paren)
+            && name != "attr"
+            && name != "bind"
+            && name != "class"
+            && name != "computed"
+            && name != "effect"
+            && name != "indicator"
+            && name != "init"
+            && name != "preserve_attr"
+            && name != "ref"
+            && name != "show"
+            && name != "signals"
+            && name != "style"
+            && name != "text"
+        {
+            return Ok(Data {
+                name,
+                namespace,
+                paren_token: Paren::default(),
+                content: DataContent::Empty,
+            });
+        }
+
+        let data;
+        let paren_token = parenthesized!(data in input);
+
+        if namespace.is_none() {
+            if name == "signals" {
+                return Ok(Self {
+                    namespace,
+                    name,
+                    paren_token,
+                    content: DataContent::Signals(
+                        Punctuated::<DataExprValue<Expr>, Token![,]>::parse_terminated(&data)?,
+                    ),
+                });
+            }
+            if name == "style" || name == "attr" {
+                return Ok(Self {
+                    namespace,
+                    name,
+                    paren_token,
+                    content: DataContent::Kv(Punctuated::<
+                        DataExprValue<AttributeValueNode>,
+                        Token![,],
+                    >::parse_terminated(&data)?),
+                });
+            }
+            if name == "computed" {
+                return Ok(Self {
+                    namespace,
+                    name,
+                    paren_token,
+                    content: DataContent::Computed(data.parse()?),
+                });
+            }
+            if name == "indicator" || name == "bind" {
+                return Ok(Self {
+                    namespace,
+                    name,
+                    paren_token,
+                    content: DataContent::Bind(data.parse()?),
+                });
+            }
+        }
+
+        Ok(Self {
+            namespace,
+            name,
+            paren_token,
+            content: DataContent::Node(data.parse()?),
+        })
+    }
+}
+
+impl Data {
+    fn name_literals(&self) -> Vec<LitStr> {
+        let name = self.name.lit();
+        let name_str = name.value();
+        // TODO: I think, we should update the to use snake_case
+        let name = LitStr::new(&name_str.replace('_', "-"), name.span());
+
+        if let Some(namespace) = &self.namespace {
+            vec![namespace.lit(), LitStr::new(":", namespace.span()), name]
+        } else {
+            vec![name]
+        }
+    }
+}
+
+impl Generate for Data {
+    const CONTEXT: Context = Context::AttributeValue;
+
+    fn generate(&mut self, g: &mut Generator) {
+        let name_literals = self.name_literals();
+
+        match &mut self.content {
+            DataContent::Signals(signals) => {
+                g.push_str(" data-");
+                g.push_literals(name_literals);
+                g.push_str("=\"");
+                g.push_str("{");
+                let mut first = true;
+                for d in signals {
+                    if !first {
+                        g.push_str(",");
+                    } else {
+                        first = false;
+                    }
+
+                    let buffer_ident = Generator::buffer_ident();
+                    let buffer_expr = quote!(#buffer_ident.as_attribute_buffer());
+
+                    let ident = &d.ident;
+                    let expr = &d.value;
+                    g.push_stmt(quote! {
+                        ::cheers::prelude::Signal::__assign(
+                            &#ident,
+                            #buffer_expr,
+                            #expr,
+                        );
+                    });
+                }
+                g.push_str("}");
+                g.push_str("\"");
+            }
+            DataContent::Kv(styles) => {
+                g.push_str(" data-");
+                g.push_literals(name_literals);
+                g.push_str("=\"");
+                g.push_str("{");
+                let mut first = true;
+                for d in styles {
+                    if !first {
+                        g.push_str(",");
+                    } else {
+                        first = false;
+                    }
+
+                    g.push_expr(self.paren_token, Self::CONTEXT, &d.ident);
+                    g.push_str(":");
+                    g.push(&mut d.value);
+                }
+                g.push_str("}");
+                g.push_str("\"");
+            }
+            DataContent::Computed(d) => {
+                g.push_str(" data-");
+                g.push_literals(name_literals);
+                g.push_str("=\"");
+                g.push_str("{");
+
+                let buffer_ident = Generator::buffer_ident();
+                let buffer_expr = quote!(#buffer_ident.as_attribute_buffer());
+                let ident_expr = &d.ident;
+                g.push_stmt(quote! {
+                    let count = ::cheers::prelude::Signal::__computed_open(
+                        &#ident_expr,
+                        #buffer_expr
+                    );
+                });
+                g.push(&mut d.value);
+                g.push_stmt(quote! {
+                    ::cheers::prelude::Signal::__computed_close(count, #buffer_expr);
+                });
+                g.push_str("}");
+                g.push_str("\"");
+            }
+            DataContent::Node(attribute_value_node) => {
+                g.push_str(" data-");
+                g.push_literals(name_literals);
+                g.push_str("=\"");
+                g.push(attribute_value_node);
+                g.push_str("\"");
+            }
+            DataContent::Bind(expr) => {
+                g.push_str(" data-");
+                g.push_literals(name_literals);
+                g.push_str("=\"");
+                g.push_expr(
+                    self.paren_token,
+                    Context::AttributeValue,
+                    quote! { ::cheers::prelude::Signal::__path(&#expr) },
+                );
+                g.push_str("\"");
+            }
+            DataContent::Empty => {
+                g.push_str(" data-");
+                g.push_literals(self.name_literals());
+            }
+        }
     }
 }
