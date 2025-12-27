@@ -1,3 +1,4 @@
+mod action;
 pub mod components;
 pub mod context;
 mod events;
@@ -20,9 +21,10 @@ pub mod macros {
     };
 }
 pub mod prelude {
-    pub use cheers_macros::{Component, html};
+    pub use cheers_macros::{Component, action, html};
 
     pub use crate::{
+        action::Action,
         events::{
             Event, EventReceiver, EventSender, JsScript, PatchElements, PatchElementsMode, events,
         },

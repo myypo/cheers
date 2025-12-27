@@ -1,15 +1,10 @@
 use std::{collections::BTreeMap, sync::Mutex, time::Duration};
 
-use axum::{
-    Router,
-    extract::State,
-    response::IntoResponse,
-    routing::{get, post},
-};
+use axum::{Router, extract::State, response::IntoResponse, routing::get};
 use cheers::{
     components::{Css, Doctype, Scripts},
     prelude::*,
-    router::CheersRouterExt,
+    router::{App, CheersRouterExt},
 };
 
 #[derive(Clone)]
@@ -68,9 +63,11 @@ impl<'a> Component for Stock<'a> {
 
 async fn home_page(ctx: State<Ctx>) -> AsyncLazy<impl Render> {
     let fetching = Signal::<bool>::scoped("fetching");
+    let create_subscription = CreateSubscription::action();
+
     html! {
         Base {
-            article !init("@post('/subscriptions')") {
+            article !init(create_subscription) {
                 @async {
                     @let stocks = async { ctx.stocks.lock().expect("lock") }.await;
                     button
@@ -79,13 +76,13 @@ async fn home_page(ctx: State<Ctx>) -> AsyncLazy<impl Render> {
                         !style("display": { (fetching) " && 'none'" })
                     { "Do stuff" }
                     h1 { "Sum" }
+                    @for (id, (name, price_cents)) in stocks.iter() {
+                        Stock id name price_cents=(*price_cents);
+                    }
                     p   !text({
                             0
                             @for (id, _) in stocks.iter() { "+" (Stock::price_cents_signal(id)) }
                         }) {}
-                    @for (id, (name, price_cents)) in stocks.iter() {
-                        Stock id name price_cents=(*price_cents);
-                    }
                 } @else {
                     p { "Wait..." }
                 }
@@ -94,6 +91,7 @@ async fn home_page(ctx: State<Ctx>) -> AsyncLazy<impl Render> {
     }
 }
 
+#[action(PATCH)]
 async fn update_stock(ctx: State<Ctx>) -> PatchElements {
     tokio::time::sleep(Duration::from_millis(500)).await;
 
@@ -119,6 +117,7 @@ stock",
     PatchElements::new().element(stock.component())
 }
 
+#[action(POST)]
 async fn create_subscription(ctx: State<Ctx>) -> impl IntoResponse {
     println!("creating new subscription");
     let (tx, rx) = events();
@@ -151,19 +150,21 @@ async fn main() {
     tokio::spawn(async {
         include_css!("./main.css");
 
+        let app = App::new()
+            .unwrap()
+            .with_action(CreateSubscription)
+            .with_action(UpdateStock);
+
         let router = Router::new()
             .route("/", get(home_page))
-            .route("/", post(update_stock))
-            .route("/subscriptions", post(create_subscription))
+            .serve_cheers_application(app)
             .with_state(Ctx {
                 stocks_tx: tokio::sync::broadcast::channel(16).0,
                 stocks: Box::leak(Box::new(Mutex::new(BTreeMap::from([(
                     "Wow".to_owned(),
                     ("Hotsteel".to_owned(), 42),
                 )])))),
-            })
-            .serve_cheers_application()
-            .unwrap();
+            });
 
         let listener = tokio::net::TcpListener::bind("127.0.0.1:8080")
             .await

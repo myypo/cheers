@@ -1,10 +1,13 @@
 #![expect(missing_docs)]
 #![cfg_attr(docsrs, feature(doc_auto_cfg))]
 
+mod action;
 mod component;
 
 use cheers_ast::{AttributeValueNode, Document, Nodes};
-use syn::{ItemStruct, parse_macro_input};
+use syn::{ItemFn, ItemStruct, parse_macro_input};
+
+use crate::action::ActionArgs;
 
 #[proc_macro_derive(Component, attributes(id, signal))]
 pub fn component_derive(item: proc_macro::TokenStream) -> proc_macro::TokenStream {
@@ -53,6 +56,18 @@ pub fn attribute_borrow(tokens: proc_macro::TokenStream) -> proc_macro::TokenStr
 #[proc_macro]
 pub fn attribute_static(tokens: proc_macro::TokenStream) -> proc_macro::TokenStream {
     cheers_ast::generate::literal::<Nodes<AttributeValueNode>>(tokens.into())
+        .unwrap_or_else(|err| err.to_compile_error())
+        .into()
+}
+
+#[proc_macro_attribute]
+pub fn action(
+    args: proc_macro::TokenStream,
+    item: proc_macro::TokenStream,
+) -> proc_macro::TokenStream {
+    let args = parse_macro_input!(args as ActionArgs);
+    let mut item = parse_macro_input!(item as ItemFn);
+    action::generate(args, &mut item)
         .unwrap_or_else(|err| err.to_compile_error())
         .into()
 }

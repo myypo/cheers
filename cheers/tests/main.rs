@@ -670,3 +670,29 @@ fn signal_without_field() {
         r#"<p data-bind="keepsake-El" data-on:close="$keepsake-El + 'noooo'">El</p>"#
     )
 }
+
+#[test]
+fn action_with_tuple_path() {
+    #[action(POST)]
+    async fn do_stuff(#[path(name, age)] _: axum::extract::Path<(String, i32)>) {}
+
+    let result = DoStuff::action("Bob".to_owned(), 42).render();
+    assert_eq!(DoStuff::PATH, "/cheers/actions/do_stuff/{name}/{age}");
+    assert_eq!(
+        result.as_inner(),
+        "@post('/cheers/actions/do_stuff/Bob/42')"
+    );
+}
+
+#[test]
+fn action_form() {
+    #[action(PUT)]
+    async fn form_stuff(#[form("#myform")] _: axum::extract::Form<()>) {}
+
+    let result = FormStuff::action().render();
+    assert_eq!(FormStuff::PATH, "/cheers/actions/form_stuff");
+    assert_eq!(
+        result.as_inner(),
+        "@put('/cheers/actions/form_stuff',{contentType:'form',selector:'#myform'})"
+    );
+}

@@ -8,7 +8,7 @@ use std::fmt::Display;
 
 use axum::Router;
 
-use crate::router::assets::assets_router;
+use crate::{action::Action, router::assets::assets_router};
 
 #[derive(Debug)]
 pub enum Error {
@@ -31,14 +31,24 @@ pub trait CheersRouterExt<S>
 where
     Self: Sized,
 {
-    fn serve_cheers_application(self) -> Result<Router<S>, Error>;
+    fn serve_cheers_application(self, app: App<S>) -> Router<S>;
 }
 
 impl<S> CheersRouterExt<S> for Router<S>
 where
     S: Clone + Send + Sync + 'static,
 {
-    fn serve_cheers_application(self) -> Result<Router<S>, Error> {
+    fn serve_cheers_application(self, app: App<S>) -> Router<S> {
+        self.merge(app.router)
+    }
+}
+
+pub struct App<S> {
+    router: Router<S>,
+}
+
+impl<S: Clone + Send + Sync + 'static> App<S> {
+    pub fn new() -> Result<Self, Error> {
         let router = assets_router()?;
 
         // TODO: currently just avoid compressing suspense streaming
@@ -52,7 +62,13 @@ where
         ));
 
         let router = router.merge(live_reload::router());
+        let router = Router::new().nest("/cheers", router);
 
-        Ok(self.nest("/cheers", router))
+        Ok(Self { router })
+    }
+
+    pub fn with_action<A: Action<S>>(self, action: A) -> Self {
+        let router = self.router.merge(action.router());
+        Self { router }
     }
 }

@@ -9,7 +9,7 @@ use syn::{
     visit::{Visit, visit_path},
 };
 
-pub struct IdArgs {
+struct IdArgs {
     namespace: Option<LitStr>,
     fields: Vec<Ident>,
 }
