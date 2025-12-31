@@ -19,7 +19,7 @@ impl<'a, 'b> Printer<'a, 'b> {
             ElementNode::Literal(literal) => self.print_tokens(literal),
             ElementNode::Control(control) => self.print_control(control, indent_level),
             ElementNode::Expr(expr) => {
-                self.print_paren_expr(expr, indent_level, preserve_blank_lines);
+                self.print_paren_expr(expr, indent_level);
             }
             ElementNode::Group(group) => {
                 let indent_level = indent_level + 1;

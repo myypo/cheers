@@ -58,9 +58,7 @@ impl<'a, 'b> Printer<'a, 'b> {
             AttributeValueNode::Control(control) => {
                 self.print_control_attribute_value(control, indent_level, preserve_blank_lines)
             }
-            AttributeValueNode::Expr(paren_expr) => {
-                self.print_paren_expr(paren_expr, indent_level, preserve_blank_lines)
-            }
+            AttributeValueNode::Expr(paren_expr) => self.print_paren_expr(paren_expr, indent_level),
             AttributeValueNode::Ident(ident) => self.print_tokens(ident),
         }
     }

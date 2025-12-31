@@ -8,7 +8,7 @@ use crate::{
 };
 
 impl<'a, 'b> Printer<'a, 'b> {
-    pub fn print_expr(&mut self, expr: Expr, indent_level: usize) {
+    fn lines_from_expr(&self, expr: Expr, indent_level: usize) -> Vec<String> {
         let span = expr.span();
         let lines: Vec<String> = match std::panic::catch_unwind(|| match expr {
             Expr::Block(expr_block) => {
@@ -27,6 +27,11 @@ impl<'a, 'b> Printer<'a, 'b> {
                 vec![original_text]
             }
         };
+        lines
+    }
+
+    pub fn print_expr(&mut self, expr: Expr, indent_level: usize) {
+        let lines = self.lines_from_expr(expr, indent_level);
 
         match lines.len() {
             0 => {}
@@ -71,14 +76,27 @@ impl<'a, 'b> Printer<'a, 'b> {
         }
     }
 
-    pub fn print_paren_expr<N: Node>(
-        &mut self,
-        paren_expr: ParenExpr<N>,
-        indent_level: usize,
-        _preserve_blank_lines: bool,
-    ) {
+    pub fn print_paren_expr<N: Node>(&mut self, paren_expr: ParenExpr<N>, indent_level: usize) {
+        let is_block = matches!(paren_expr.expr, Expr::Block(_));
+        let lines = self.lines_from_expr(paren_expr.expr, indent_level);
+
         self.write("(");
-        self.print_expr(paren_expr.expr, indent_level);
+        match lines.len() {
+            0 => {}
+            1 => self.write(lines[0].trim()),
+            _ => {
+                if is_block {
+                    self.write("{\n");
+                    self.write(&lines.join("\n"));
+                    self.new_line(indent_level);
+                    self.write("}");
+                } else {
+                    self.write("\n");
+                    self.write(&lines.join("\n"));
+                    self.new_line(indent_level);
+                }
+            }
+        }
         self.write(")");
     }
 }
@@ -174,12 +192,12 @@ mod test {
         "##,
         r##"
         html! {
-            ({
+            (
                 super_long_splice
                     .with_a_super_long_method()
                     .and_an_other_super_super_long_method_to_call_after()
                     .unwarp()
-            })
+            )
         }
         "##
     );

@@ -44,7 +44,7 @@ mod test {
         r##"
         html! {
             p {
-                ({
+                (
                     PreEscaped(
                         r#"
             Multiline
@@ -52,7 +52,7 @@ mod test {
             String
             "#,
                     )
-                })
+                )
             }
         }
         "##
@@ -71,12 +71,12 @@ mod test {
         "##,
         r##"
         html! {
-            ({
+            (
                 r#"
             Multiline
             String
             "#
-            })
+            )
         }
         "##
     );

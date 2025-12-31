@@ -30,6 +30,12 @@ impl<'a, 'b> Printer<'a, 'b> {
 
         self.write(&name.to_string());
 
+        let attr_indent_level = if should_wrap {
+            indent_level + 1
+        } else {
+            indent_level
+        };
+
         for (idx, attr) in attrs.into_iter().enumerate() {
             if !should_wrap {
                 self.write(" ");
@@ -52,7 +58,7 @@ impl<'a, 'b> Printer<'a, 'b> {
                 ComponentAttributeValue::Literal(literal) => self.print_tokens(literal),
                 ComponentAttributeValue::Ident(ident) => self.write(&ident.to_string()),
                 ComponentAttributeValue::Expr(paren_expr) => {
-                    self.print_paren_expr(paren_expr, indent_level, preserve_blank_lines)
+                    self.print_paren_expr(paren_expr, attr_indent_level)
                 }
             }
         }
@@ -251,6 +257,28 @@ mod test {
             Card {
                 "This is a very long text content"
             }
+        }
+        "#
+    );
+
+    test_small_line!(
+        component_with_multi_line_reference,
+        r#"
+        html! {
+            Button id=(&id) on_click=(&DeletePersonaEntityAction { persona_id: self.persona_id }) variant=(ButtonVariant::default()) { "×" }
+        }
+        "#,
+        r#"
+        html! {
+            Button
+                id=(&id)
+                on_click=(
+                    &DeletePersonaEntityAction {
+                        persona_id: self.persona_id,
+                    }
+                )
+                variant=(ButtonVariant::default())
+            { "×" }
         }
         "#
     );
