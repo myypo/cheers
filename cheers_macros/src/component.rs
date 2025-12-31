@@ -1,13 +1,13 @@
 use proc_macro2::TokenStream;
 use quote::{TokenStreamExt, quote};
 use syn::{
-    Error, GenericParam, Generics, Ident, ItemStruct, Lifetime, LitStr, Meta, Path, Token, Type,
+    Error, Ident, ItemStruct, LitStr, Meta, Token, Type,
     parse::{Parse, ParseStream},
     parse2,
-    punctuated::Punctuated,
     spanned::Spanned,
-    visit::{Visit, visit_path},
 };
+
+use crate::shared::filter_generics;
 
 struct IdArgs {
     namespace: Option<LitStr>,
@@ -150,18 +150,18 @@ fn generate_id_impls(item: &mut ItemStruct, struct_snake_case: &str) -> Result<T
 }
 
 struct SignalArgs {
-    name: LitStr,
+    name: Ident,
     ty: Type,
     fields: Vec<Ident>,
 }
 
 impl Parse for SignalArgs {
     fn parse(input: ParseStream) -> syn::Result<Self> {
-        let name: LitStr = input.parse()?;
-        input.parse::<Token![,]>().map_err(|_| {
+        let name = input.parse()?;
+        input.parse::<Token![:]>().map_err(|_| {
             Error::new_spanned(
                 &name,
-                r#"expected comma and type after signal name, like #[signal("...", Type)]"#,
+                r#"expected a colon and type after signal name, like #[signal(name: Type)]"#,
             )
         })?;
         let ty: Type = input.parse()?;
@@ -199,55 +199,6 @@ impl Parse for SignalFieldArgs {
     }
 }
 
-fn filter_signal_generics<'a>(
-    mut generics: Generics,
-    types: impl IntoIterator<Item = &'a Type>,
-) -> Generics {
-    fn collect_signal_generics<'a>(types: impl IntoIterator<Item = &'a Type>) -> Vec<&'a Ident> {
-        struct Visitor<'a> {
-            used: Vec<&'a Ident>,
-        }
-
-        impl<'a> Visit<'a> for Visitor<'a> {
-            fn visit_path(&mut self, path: &'a Path) {
-                if let Some(ident) = path.get_ident() {
-                    self.used.push(ident);
-                }
-                visit_path(self, path);
-            }
-
-            fn visit_lifetime(&mut self, lifetime: &'a Lifetime) {
-                self.used.push(&lifetime.ident);
-            }
-        }
-
-        let mut visitor = Visitor { used: Vec::new() };
-
-        for ty in types {
-            visitor.visit_type(ty);
-        }
-
-        visitor.used
-    }
-
-    let used_names = collect_signal_generics(types);
-
-    let mut filtered = Punctuated::<GenericParam, Token![,]>::new();
-    for g in generics.params.into_iter().filter(|p| {
-        let pi = match p {
-            GenericParam::Lifetime(l) => &l.lifetime.ident,
-            GenericParam::Type(t) => &t.ident,
-            GenericParam::Const(c) => &c.ident,
-        };
-        used_names.iter().any(|i| i == &pi)
-    }) {
-        filtered.push(g);
-    }
-
-    generics.params = filtered;
-    generics
-}
-
 fn generate_signal_impl(
     mut item: ItemStruct,
     struct_snake_case: String,
@@ -271,10 +222,10 @@ fn generate_signal_impl(
             _ => Err(Error::new_spanned(a, r#"expected #[signal("...")]"#)),
         }?;
 
-        let name = &args.name;
+        let name_str = &args.name.to_string();
         let ident = Ident::new(
             &{
-                let mut s = name.value();
+                let mut s = name_str.clone();
                 s.push_str("_signal");
                 s
             },
@@ -286,7 +237,7 @@ fn generate_signal_impl(
         struct_impls.append_all(quote! {
             #vis fn #ident(#params) -> ::cheers::prelude::Signal::<#ty> {
                 let mut s = ::std::string::String::new();
-                s.push_str(#name);
+                s.push_str(#name_str);
                 #(
                     s.push('-');
                     s.push_str(&(#field_idents).to_string());
@@ -397,7 +348,7 @@ fn generate_signal_impl(
             }
         }
     };
-    item.generics = filter_signal_generics(item.generics, fields.iter().map(|f| &f.ty));
+    item.generics = filter_generics(item.generics, fields.iter().map(|f| &f.ty));
     let (_, ty_generics, where_clause) = item.generics.split_for_impl();
     Ok(quote! {
         #[expect(dead_code)]
@@ -409,14 +360,94 @@ fn generate_signal_impl(
     })
 }
 
+fn generate_form_impl(item: &mut ItemStruct) -> Result<TokenStream, Error> {
+    let mut ident_str = item.ident.to_string();
+    let vis = &item.vis;
+    let struct_ident = &item.ident;
+    let form_ident = {
+        ident_str.push_str("Form");
+        Ident::new(&ident_str, item.ident.span())
+    };
+
+    let mut fields = Vec::new();
+    for f in item.fields.iter_mut() {
+        let Some(i) = f.attrs.iter().position(|a| a.path().is_ident("form")) else {
+            continue;
+        };
+        let attr = f.attrs.swap_remove(i);
+        match attr.meta {
+            Meta::Path(_) => Ok(()),
+            _ => Err(Error::new_spanned(&attr, "expected #[form]")),
+        }?;
+        fields.push(f);
+    }
+
+    let mut struct_field_impls = Vec::new();
+    let mut form_field_decls = Vec::new();
+    for f in &fields {
+        let ident = &f.ident;
+        let ty = &f.ty;
+
+        let field_name = ident
+            .as_ref()
+            .map(|i| i.to_string())
+            .unwrap_or_else(|| String::from("value"));
+        let fn_ident = Ident::new(
+            &{
+                let mut s = field_name.clone();
+                s.push_str("_form");
+                s
+            },
+            ident.as_ref().map(|i| i.span()).unwrap_or_else(|| f.span()),
+        );
+
+        struct_field_impls.push(quote! {
+            #vis fn #fn_ident() -> &'static str {
+                #field_name
+            }
+        });
+
+        form_field_decls.push(quote! { #ident: #ty });
+    }
+
+    if fields.is_empty() {
+        return Ok(TokenStream::new());
+    }
+
+    let struct_impl = {
+        let (impl_generics, ty_generics, where_clause) = item.generics.split_for_impl();
+        quote! {
+            impl #impl_generics #struct_ident #ty_generics #where_clause {
+                #(#struct_field_impls)*
+            }
+        }
+    };
+    item.generics = filter_generics(item.generics.clone(), fields.iter().map(|f| &f.ty));
+
+    let (_, ty_generics, where_clause) = item.generics.split_for_impl();
+
+    Ok(quote! {
+        #[expect(dead_code)]
+        #[derive(::cheers::__internal::serde::Deserialize)]
+        #vis struct #form_ident #ty_generics #where_clause {
+            #(#form_field_decls,)*
+        }
+
+        #struct_impl
+    })
+}
+
 pub fn generate(mut item: ItemStruct) -> Result<TokenStream, Error> {
     let struct_snake_case = to_snake_case(&item.ident.to_string());
     let id_impl = generate_id_impls(&mut item, &struct_snake_case)?;
+    let form_impl = generate_form_impl(&mut item)?;
     let signal_impl = generate_signal_impl(item, struct_snake_case)?;
 
     Ok(quote! {
         #id_impl
 
         #signal_impl
+
+        #form_impl
     })
 }

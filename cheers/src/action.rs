@@ -4,5 +4,5 @@ pub trait Action<S> {
     const PATH: &str;
     const METHOD: Method;
 
-    fn router(&self) -> Router<S>;
+    fn router() -> Router<S>;
 }

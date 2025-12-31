@@ -63,11 +63,10 @@ impl<'a> Component for Stock<'a> {
 
 async fn home_page(ctx: State<Ctx>) -> AsyncLazy<impl Render> {
     let fetching = Signal::<bool>::scoped("fetching");
-    let create_subscription = CreateSubscription::action();
 
     html! {
         Base {
-            article !init(create_subscription) {
+            article !init(CreateSubscriptionAction) {
                 @async {
                     @let stocks = async { ctx.stocks.lock().expect("lock") }.await;
                     button
@@ -152,8 +151,8 @@ async fn main() {
 
         let app = App::new()
             .unwrap()
-            .with_action(CreateSubscription)
-            .with_action(UpdateStock);
+            .with_action::<CreateSubscriptionAction>()
+            .with_action::<UpdateStockAction>();
 
         let router = Router::new()
             .route("/", get(home_page))

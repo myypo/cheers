@@ -67,8 +67,8 @@ impl<S: Clone + Send + Sync + 'static> App<S> {
         Ok(Self { router })
     }
 
-    pub fn with_action<A: Action<S>>(self, action: A) -> Self {
-        let router = self.router.merge(action.router());
+    pub fn with_action<A: Action<S>>(self) -> Self {
+        let router = self.router.merge(A::router());
         Self { router }
     }
 }

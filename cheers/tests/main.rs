@@ -2,11 +2,16 @@
 
 use std::{
     fmt::{self, Display, Formatter},
+    marker::Sync,
     sync::Arc,
     time::Duration,
 };
 
-use axum::response::IntoResponse;
+use axum::{
+    Form,
+    extract::{FromRequest, FromRequestParts, Path},
+    response::IntoResponse,
+};
 use cheers::{
     Buffer,
     components::{Debugged, Displayed, Doctype, Scripts},
@@ -648,7 +653,7 @@ fn signal_computed() {
 #[test]
 fn signal_without_field() {
     #[derive(Component)]
-    #[signal("keepsake", String, name)]
+    #[signal(keepsake: String, name)]
     struct Ghost<'a> {
         name: &'a str,
     }
@@ -672,12 +677,31 @@ fn signal_without_field() {
 }
 
 #[test]
+fn action_with_plain_path() {
+    #[action(POST)]
+    #[expect(unused_variables)]
+    async fn do_stuff(Path(name): Path<String>) {}
+
+    let result = DoStuffAction {
+        name: "Bob".to_owned(),
+    }
+    .render();
+    assert_eq!(DoStuffAction::PATH, "/cheers/actions/do_stuff/{name}");
+    assert_eq!(result.as_inner(), "@post('/cheers/actions/do_stuff/Bob')");
+}
+
+#[test]
 fn action_with_tuple_path() {
     #[action(POST)]
-    async fn do_stuff(#[path(name, age)] _: axum::extract::Path<(String, i32)>) {}
+    #[expect(unused_variables)]
+    async fn do_stuff(Path((name, age)): Path<(String, i32)>) {}
 
-    let result = DoStuff::action("Bob".to_owned(), 42).render();
-    assert_eq!(DoStuff::PATH, "/cheers/actions/do_stuff/{name}/{age}");
+    let result = DoStuffAction {
+        name: "Bob".to_owned(),
+        age: 42,
+    }
+    .render();
+    assert_eq!(DoStuffAction::PATH, "/cheers/actions/do_stuff/{name}/{age}");
     assert_eq!(
         result.as_inner(),
         "@post('/cheers/actions/do_stuff/Bob/42')"
@@ -685,14 +709,83 @@ fn action_with_tuple_path() {
 }
 
 #[test]
-fn action_form() {
-    #[action(PUT)]
-    async fn form_stuff(#[form("#myform")] _: axum::extract::Form<()>) {}
+fn action_explicit_path() {
+    struct NotPath;
 
-    let result = FormStuff::action().render();
-    assert_eq!(FormStuff::PATH, "/cheers/actions/form_stuff");
+    impl<S: Sync> FromRequestParts<S> for NotPath {
+        type Rejection = ();
+
+        async fn from_request_parts(
+            _: &mut axum::http::request::Parts,
+            _: &S,
+        ) -> Result<Self, Self::Rejection> {
+            Ok(NotPath)
+        }
+    }
+
+    #[action(PUT)]
+    async fn my_handler(#[path] _: NotPath) {}
+
+    let result = MyHandlerAction {}.render();
+    assert_eq!(MyHandlerAction::PATH, "/cheers/actions/my_handler");
+    assert_eq!(result.as_inner(), "@put('/cheers/actions/my_handler')");
+}
+
+#[test]
+fn action_form() {
+    #[expect(dead_code)]
+    #[derive(Component)]
+    struct Stuff<S> {
+        #[form]
+        whatever: S,
+    }
+
+    impl<S> Component for Stuff<S> {
+        fn component(&self) -> impl Render {
+            html! {
+                form {
+                    input name=(Self::whatever_form());
+                }
+            }
+        }
+    }
+
+    #[action(PUT)]
+    async fn my_handler(_: Form<StuffForm<String>>) {}
+
+    let result = MyHandlerAction {}.render();
+    assert_eq!(MyHandlerAction::PATH, "/cheers/actions/my_handler");
     assert_eq!(
         result.as_inner(),
-        "@put('/cheers/actions/form_stuff',{contentType:'form',selector:'#myform'})"
+        "@put('/cheers/actions/my_handler',{contentType:'form'})"
+    );
+
+    let result = Stuff { whatever: "hello" }
+        .component()
+        .render()
+        .into_inner();
+    assert_eq!(result, r#"<form><input name="whatever"></form>"#);
+}
+
+#[test]
+fn action_explicit_form() {
+    struct NotForm;
+
+    impl<S: Sync> FromRequest<S> for NotForm {
+        type Rejection = ();
+
+        async fn from_request(_: axum::extract::Request, _: &S) -> Result<Self, Self::Rejection> {
+            Ok(NotForm)
+        }
+    }
+
+    #[action(POST)]
+    async fn my_handler(#[form] _: NotForm) {}
+
+    let result = MyHandlerAction {}.render();
+    assert_eq!(MyHandlerAction::PATH, "/cheers/actions/my_handler");
+    assert_eq!(
+        result.as_inner(),
+        "@post('/cheers/actions/my_handler',{contentType:'form'})"
     );
 }

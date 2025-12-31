@@ -13,6 +13,7 @@ pub mod validation;
 pub mod __internal {
     pub use axum;
     pub use futures;
+    pub use serde;
 }
 
 pub mod macros {

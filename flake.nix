@@ -168,7 +168,7 @@
             src = ./.;
             cargoBuildFlags = [ "-p=maudfmt" ];
 
-            cargoHash = "sha256-GSK71wlmNVTpz5BIfnLyJMjAn+5S0Sr3N7tnG5adBqo=";
+            cargoHash = "sha256-GNq71vosgJ375wV5+XvSf6tWZbk1z5KhCsaG9+Ts15s=";
 
             doCheck = false;
           };

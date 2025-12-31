@@ -3,13 +3,14 @@
 
 mod action;
 mod component;
+mod shared;
 
 use cheers_ast::{AttributeValueNode, Document, Nodes};
-use syn::{ItemFn, ItemStruct, parse_macro_input};
+use syn::{ItemStruct, parse_macro_input};
 
-use crate::action::ActionArgs;
+use crate::{action::ActionArgs, shared::MaybeItemFn};
 
-#[proc_macro_derive(Component, attributes(id, signal))]
+#[proc_macro_derive(Component, attributes(id, signal, form))]
 pub fn component_derive(item: proc_macro::TokenStream) -> proc_macro::TokenStream {
     let item = parse_macro_input!(item as ItemStruct);
 
@@ -66,7 +67,7 @@ pub fn action(
     item: proc_macro::TokenStream,
 ) -> proc_macro::TokenStream {
     let args = parse_macro_input!(args as ActionArgs);
-    let mut item = parse_macro_input!(item as ItemFn);
+    let mut item = parse_macro_input!(item as MaybeItemFn);
     action::generate(args, &mut item)
         .unwrap_or_else(|err| err.to_compile_error())
         .into()

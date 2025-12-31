@@ -416,6 +416,7 @@ dependencies = [
  "lightningcss",
  "notify",
  "ryu",
+ "serde",
  "tokio",
  "tokio-stream",
  "tower",

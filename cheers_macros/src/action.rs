@@ -1,19 +1,12 @@
 use proc_macro2::TokenStream;
 use quote::{TokenStreamExt, quote};
 use syn::{
-    Error, Expr, FnArg, GenericArgument, Ident, ItemFn, LitStr, Meta, PatType, PathArguments,
-    Signature, Token, Type, TypeTuple,
+    Error, FnArg, GenericArgument, Ident, LitStr, Pat, PatType, PathArguments, Signature, Type,
+    TypeTuple,
     parse::{Parse, ParseStream},
-    parse2,
-    punctuated::Punctuated,
 };
 
-mod kw {
-    use syn::custom_keyword;
-
-    custom_keyword!(form);
-    custom_keyword!(path);
-}
+use crate::{MaybeItemFn, shared::filter_generics};
 
 pub struct ActionArgs {
     method: Ident,
@@ -27,32 +20,8 @@ impl Parse for ActionArgs {
     }
 }
 
-struct FormFieldArgs {
-    selector: Option<Expr>,
-}
-
-impl Parse for FormFieldArgs {
-    fn parse(input: ParseStream) -> syn::Result<Self> {
-        Ok(Self {
-            selector: Some(input.parse()?),
-        })
-    }
-}
-
-struct PathFieldArgs {
-    idents: Punctuated<Ident, Token![,]>,
-}
-
-impl Parse for PathFieldArgs {
-    fn parse(input: ParseStream) -> syn::Result<Self> {
-        Ok(Self {
-            idents: Punctuated::parse_terminated(input)?,
-        })
-    }
-}
-
 struct ActionFieldArgs {
-    form: Option<FormFieldArgs>,
+    form: bool,
     path: Vec<(Ident, Type)>,
 }
 
@@ -66,55 +35,48 @@ impl ActionFieldArgs {
             }
         });
 
-        let mut form = None::<FormFieldArgs>;
+        let mut form = false;
         let mut path_args = None::<Vec<(Ident, Type)>>;
         for pt in pat_types {
-            if let Some(i) = pt.attrs.iter_mut().position(|a| a.path().is_ident("form")) {
-                if form.is_some() {
+            if extract_form(pt) {
+                if form {
+                    return Err(Error::new_spanned(
+                        &pt.ty,
+                        "only one Form parameter allowed",
+                    ));
+                } else {
+                    form = true;
+                }
+            }
+            if let Some(i) = pt.attrs.iter().position(|a| a.path().is_ident("form")) {
+                if form {
                     return Err(Error::new_spanned(
                         &pt.attrs[i],
                         "only one #[form] attribute allowed",
                     ));
                 }
-                let attr = pt.attrs.swap_remove(i);
-                let args = match attr.meta {
-                    Meta::List(meta) => parse2(meta.tokens),
-                    Meta::Path(_) => Ok(FormFieldArgs { selector: None }),
-                    _ => Err(Error::new_spanned(
-                        &attr,
-                        "expected #[form] or #[form(...)]",
-                    )),
-                }?;
-                form = Some(args);
+                pt.attrs.swap_remove(i);
+                form = true;
             }
 
-            if let Some(i) = pt.attrs.iter_mut().position(|a| a.path().is_ident("path")) {
-                if path_args.is_some() {
+            let required_path_idx = pt.attrs.iter().position(|a| a.path().is_ident("path"));
+            let path = extract_path(pt, required_path_idx.is_some())?;
+            let empty = path.is_empty();
+            if !empty {
+                if path_args.is_none() {
+                    path_args = Some(path);
+                } else {
                     return Err(Error::new_spanned(
-                        &pt.attrs[i],
-                        "only one #[path] attribute allowed",
+                        &pt.pat,
+                        "only one Path parameter allowed",
                     ));
                 }
-                let attr = pt.attrs.swap_remove(i);
-                let args: PathFieldArgs = match attr.meta {
-                    Meta::List(meta) => parse2(meta.tokens),
-                    _ => Err(Error::new_spanned(&attr, "expected #[path(...)]")),
-                }?;
-                let mut path_types = path_types(pt)?.into_iter();
-                let mut v = Vec::new();
-                if args.idents.len() > path_types.len() {
-                    return Err(Error::new_spanned(
-                        args.idents.last(),
-                        "no matching type found in Path<...>",
-                    ));
+            }
+            if let Some(required_path_idx) = required_path_idx {
+                if empty {
+                    path_args = Some(Vec::new());
                 }
-                for ident in args.idents {
-                    let ty = path_types.next().ok_or_else(|| {
-                        Error::new_spanned(&ident, "no matching type found in Path")
-                    })?;
-                    v.push((ident, ty));
-                }
-                path_args = Some(v);
+                pt.attrs.swap_remove(required_path_idx);
             }
         }
 
@@ -167,23 +129,90 @@ fn state(sig: &Signature) -> GenericArgument {
         })
 }
 
-fn path_types(pat_type: &PatType) -> Result<Vec<Type>, Error> {
-    if let Type::Path(path) = &*pat_type.ty
+fn extract_form(pt: &PatType) -> bool {
+    if let Type::Path(path) = &*pt.ty
         && let Some(last_seg) = path.path.segments.last()
-        && last_seg.ident == "Path"
+        && last_seg.ident == "Form"
         && let PathArguments::AngleBracketed(args) = &last_seg.arguments
-        && let Some(GenericArgument::Type(ty)) = args.args.first()
+        && let (Some(GenericArgument::Type(_)), None) = (args.args.first(), args.args.get(1))
+    {
+        true
+    } else {
+        false
+    }
+}
+
+fn extract_path(pt: &PatType, required: bool) -> Result<Vec<(Ident, Type)>, Error> {
+    if let Type::Path(path) = &*pt.ty
+        && let Some(last_seg) = path.path.segments.last()
+        && (required || last_seg.ident == "Path")
+        && let PathArguments::AngleBracketed(args) = &last_seg.arguments
+        && let (Some(GenericArgument::Type(ty)), None) = (args.args.first(), args.args.get(1))
     {
         if let Type::Tuple(tuple) = ty {
-            Ok(tuple.elems.iter().cloned().collect::<Vec<_>>())
+            let tuple_pat = match &*pt.pat {
+                Pat::TupleStruct(tuple_struct) => {
+                    if let Some(Pat::Tuple(inner_tuple)) = tuple_struct.elems.first() {
+                        inner_tuple
+                    } else {
+                        return Err(Error::new_spanned(
+                            &pt.pat,
+                            "expected tuple pattern inside Path(...)",
+                        ));
+                    }
+                }
+                _ => {
+                    return Err(Error::new_spanned(
+                        &pt.pat,
+                        "expected tuple pattern for Path parameter",
+                    ));
+                }
+            };
+
+            if tuple_pat.elems.iter().count() != tuple.elems.iter().count() {
+                return Err(Error::new_spanned(
+                    &pt.pat,
+                    "number of identifiers does not match number of types in Path tuple",
+                ));
+            }
+
+            let idents = tuple_pat
+                .elems
+                .iter()
+                .map(|e| {
+                    if let Pat::Ident(ident) = e {
+                        Ok(ident.ident.clone())
+                    } else {
+                        Err(Error::new_spanned(
+                            e,
+                            "expected identifier in tuple pattern",
+                        ))
+                    }
+                })
+                .collect::<Result<Vec<_>, Error>>()?;
+            Ok(idents
+                .into_iter()
+                .zip(tuple.elems.iter().cloned())
+                .collect())
+        } else if let Type::Path(_) = ty
+            && let Pat::TupleStruct(tuple) = &*pt.pat
+        {
+            let mut elems = tuple.elems.iter();
+            let (Some(Pat::Ident(ident)), None) = (elems.next(), elems.next()) else {
+                return Err(Error::new_spanned(
+                    &pt.pat,
+                    "expected single identifier in Path pattern",
+                ));
+            };
+            Ok(vec![(ident.ident.clone(), ty.clone())])
         } else {
-            Ok(Vec::new())
+            Err(Error::new_spanned(
+                &pt.pat,
+                "expected identifier or tuple pattern for Path parameter",
+            ))
         }
     } else {
-        Err(Error::new_spanned(
-            pat_type,
-            "expected Path<...> or Path<(...)>",
-        ))
+        Ok(Vec::new())
     }
 }
 
@@ -203,13 +232,8 @@ fn path_lit_str<'a>(ident: &'a Ident, args: impl IntoIterator<Item = &'a Ident>)
 }
 
 fn options(args: &ActionFieldArgs) -> Option<TokenStream> {
-    if let Some(form) = &args.form {
+    if args.form {
         let mut tokens = quote! { let mut s = ",{contentType:'form'".to_owned(); };
-        if let Some(selector) = &form.selector {
-            tokens.append_all(quote! {
-                s.push_str(&format!(",selector:'{}'", #selector));
-            });
-        }
         tokens.append_all(quote! {
             s.push('}');
             s
@@ -220,13 +244,17 @@ fn options(args: &ActionFieldArgs) -> Option<TokenStream> {
     }
 }
 
-pub fn generate(args: ActionArgs, item: &mut ItemFn) -> Result<TokenStream, Error> {
+pub fn generate(args: ActionArgs, item: &mut MaybeItemFn) -> Result<TokenStream, Error> {
     let field_args = ActionFieldArgs::new(&mut item.sig)?;
 
     let vis = &item.vis;
     let ident = &item.sig.ident;
     let name = item.sig.ident.to_string();
-    let struct_name = Ident::new(&to_pascal_case(&name), item.sig.ident.span());
+    let struct_name = {
+        let mut s = to_pascal_case(&name);
+        s.push_str("Action");
+        Ident::new(&s, item.sig.ident.span())
+    };
     let state = state(&item.sig);
 
     let path = if field_args.path.is_empty() {
@@ -236,35 +264,38 @@ pub fn generate(args: ActionArgs, item: &mut ItemFn) -> Result<TokenStream, Erro
     };
 
     let method = &args.method;
-    let action_fn_ret =
-        quote! { -> impl ::cheers::prelude::Render<::cheers::context::AttributeValue> };
-    let action_fn = {
-        let static_path = format!(
-            "@{}('{}",
-            method.to_string().to_lowercase(),
-            &static_part_path_str(ident)
-        );
-        let path_pushes = field_args.path.iter().map(|(i, _)| {
-            quote! {
-                s.push('/');
-                s.push_str(&#i.to_string());
-            }
-        });
-        let params = field_args.path.iter().map(|(i, a)| quote! { #i: #a });
-        let options = options(&field_args);
-        let options_push = if let Some(options) = options {
-            quote! { s.push_str(&{#options}); }
-        } else {
-            TokenStream::new()
-        };
+
+    let static_path = format!(
+        "@{}('{}",
+        method.to_string().to_lowercase(),
+        &static_part_path_str(ident)
+    );
+    let path_renders = field_args.path.iter().map(|(i, _)| {
         quote! {
-            fn action(#(#params),*) #action_fn_ret {
-                let mut s = ::std::string::String::from(#static_path);
-                #(#path_pushes)*
-                s.push('\'');
-                #options_push
-                s.push(')');
-                s
+            "/".render_to(buffer);
+            self.#i.render_to(buffer);
+        }
+    });
+    let options = options(&field_args);
+    let options_render = if let Some(options) = options {
+        quote! { {#options}.render_to(buffer); }
+    } else {
+        TokenStream::new()
+    };
+    let generics = filter_generics(
+        item.sig.generics.clone(),
+        field_args.path.iter().map(|(_, ty)| ty),
+    );
+    let (impl_generics, ty_generics, where_clause) = generics.split_for_impl();
+    let struct_decl = if field_args.path.is_empty() {
+        quote! {
+            #vis struct #struct_name #ty_generics #where_clause;
+        }
+    } else {
+        let fields = field_args.path.iter().map(|(i, a)| quote! { #vis #i: #a });
+        quote! {
+            #vis struct #struct_name #ty_generics #where_clause {
+                #(#fields),*
             }
         }
     };
@@ -273,19 +304,25 @@ pub fn generate(args: ActionArgs, item: &mut ItemFn) -> Result<TokenStream, Erro
     Ok(quote! {
         #item
 
-        #vis struct #struct_name;
+        #struct_decl
 
-        impl ::cheers::prelude::Action<#state> for #struct_name {
-            const PATH: &str = #path;
-            const METHOD: ::cheers::__internal::axum::http::Method = #method;
-
-            fn router(&self) -> ::cheers::__internal::axum::Router<#state> {
-                ::cheers::__internal::axum::Router::<#state>::new().route(#path, ::axum::routing::on(#method.try_into().expect("turn method to method filter for action"), #ident))
+        impl #impl_generics ::cheers::prelude::Render<::cheers::context::AttributeValue> for #struct_name #ty_generics #where_clause {
+            fn render_to(&self, buffer: &mut ::cheers::Buffer<::cheers::context::AttributeValue>) {
+                #static_path.render_to(buffer);
+                #(#path_renders)*
+                "'".render_to(buffer);
+                #options_render
+                ")".render_to(buffer);
             }
         }
 
-        impl #struct_name {
-            #action_fn
+        impl #impl_generics ::cheers::prelude::Action<#state> for #struct_name #ty_generics #where_clause {
+            const PATH: &str = #path;
+            const METHOD: ::cheers::__internal::axum::http::Method = #method;
+
+            fn router() -> ::cheers::__internal::axum::Router<#state> {
+                ::cheers::__internal::axum::Router::<#state>::new().route(#path, ::axum::routing::on(#method.try_into().expect("turn method to method filter for action"), #ident))
+            }
         }
     })
 }
