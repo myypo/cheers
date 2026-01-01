@@ -17,8 +17,8 @@ struct Base<T> {
     children: T,
 }
 
-impl<T: Render> Component for Base<T> {
-    fn component(&self) -> impl Render {
+impl<T: Render> Render for Base<T> {
+    fn render_to(&self, buffer: &mut cheers::Buffer<cheers::context::Element>) {
         html! {
             Doctype;
             html {
@@ -31,6 +31,7 @@ impl<T: Render> Component for Base<T> {
                 }
             }
         }
+        .render_to(buffer);
     }
 }
 
@@ -44,8 +45,8 @@ struct Stock<'a> {
     price_cents: u64,
 }
 
-impl<'a> Component for Stock<'a> {
-    fn component(&self) -> impl Render {
+impl<'a> Render for Stock<'a> {
+    fn render_to(&self, buffer: &mut cheers::Buffer<cheers::context::Element>) {
         let price_cents_signal = Stock::price_cents_signal(self.id);
         html! {
             section id=(Self::id(self.id)) {
@@ -58,19 +59,24 @@ impl<'a> Component for Stock<'a> {
                 p !text(price_cents_signal) { (self.price_cents) }
             }
         }
+        .render_to(buffer);
     }
 }
 
 async fn home_page(ctx: State<Ctx>) -> AsyncLazy<impl Render> {
     let fetching = Signal::<bool>::scoped("fetching");
+    let get_stocks = async move || {
+        tokio::time::sleep(Duration::from_millis(500)).await;
+        ctx.stocks.lock().expect("lock")
+    };
 
     html! {
         Base {
             article !init(CreateSubscriptionAction) {
                 @async {
-                    @let stocks = async { ctx.stocks.lock().expect("lock") }.await;
+                    @let stocks = get_stocks().await;
                     button
-                        !on:click("@post('/')")
+                        !on:click(CreateSubscriptionAction)
                         !indicator(fetching)
                         !style("display": { (fetching) " && 'none'" })
                     { "Do stuff" }
@@ -113,7 +119,7 @@ stock",
         name,
         price_cents: *price_cents,
     };
-    PatchElements::new().element(stock.component())
+    PatchElements::new().element(stock)
 }
 
 #[action(POST)]
@@ -128,11 +134,7 @@ async fn create_subscription(ctx: State<Ctx>) -> impl IntoResponse {
                 name: &name,
                 price_cents,
             };
-            if let Err(e) = tx.send(
-                PatchElements::new()
-                    .id(Stock::id(&id))
-                    .element(stock.component()),
-            ) {
+            if let Err(e) = tx.send(PatchElements::new().id(Stock::id(&id)).element(stock)) {
                 eprintln!("error forwarding update to subscription: {e}");
                 break;
             } else {

@@ -65,11 +65,11 @@ impl Generate for Component {
             .unwrap_or_default();
 
         let tokens = quote! {
-            ::cheers::prelude::Component::component(&#name {
+            #name {
                 #(#fields)*
                 #children
                 #default
-            })
+            }
         };
 
         g.push_expr(Paren::default(), Self::CONTEXT, &tokens);

@@ -30,7 +30,7 @@ pub mod prelude {
             Event, EventReceiver, EventSender, JsScript, PatchElements, PatchElementsMode, events,
         },
         include_css,
-        reference::{Component, ElementId, Path, Signal},
+        reference::{ElementId, Path, Signal},
         render::{Lazy, LazyAttribute, Render, RenderExt as _},
         response::AsyncLazy,
     };

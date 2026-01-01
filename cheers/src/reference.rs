@@ -178,10 +178,6 @@ impl Path {
     }
 }
 
-pub trait Component {
-    fn component(&self) -> impl Render;
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;

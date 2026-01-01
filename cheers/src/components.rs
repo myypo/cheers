@@ -1,35 +1,26 @@
 use std::fmt::{Debug, Display};
 
-use crate::{
-    Buffer,
-    context::Context,
-    prelude::{Component, Lazy},
-    render::Render,
-    router::css_url,
-};
+use crate::{Buffer, context::Context, render::Render, router::css_url};
 
 pub struct Doctype;
 
-impl Component for Doctype {
-    fn component(&self) -> impl Render {
-        Lazy::dangerously_create(|buffer| {
-            buffer.dangerously_get_string().push_str("<!DOCTYPE html>");
-        })
+impl Render for Doctype {
+    fn render_to(&self, buffer: &mut Buffer<crate::context::Element>) {
+        buffer.dangerously_get_string().push_str("<!DOCTYPE html>");
     }
 }
 
 pub struct Scripts;
 
-impl Component for Scripts {
-    fn component(&self) -> impl Render {
-        Lazy::dangerously_create(|buffer| {
-            buffer.dangerously_get_string().push_str("<script>function __ssrStream(key){const t=document.querySelector(`[data-ssr='${key}-t']`),s=document.querySelector(`[data-ssr='${key}']`);s.replaceWith(t.content);t.remove();document.querySelector(`[data-ssr='${key}-s']`).remove()}</script>");
-            buffer
-                .dangerously_get_string()
-                .push_str(r#"<script src="/cheers/assets/datastar.js"></script>"#);
-            if cfg!(debug_assertions) {
-                buffer.dangerously_get_string().push_str(
-                    r#"
+impl Render for Scripts {
+    fn render_to(&self, buffer: &mut Buffer<crate::context::Element>) {
+        buffer.dangerously_get_string().push_str("<script>function __ssrStream(key){const t=document.querySelector(`[data-ssr='${key}-t']`),s=document.querySelector(`[data-ssr='${key}']`);s.replaceWith(t.content);t.remove();document.querySelector(`[data-ssr='${key}-s']`).remove()}</script>");
+        buffer
+            .dangerously_get_string()
+            .push_str(r#"<script src="/cheers/assets/datastar.js"></script>"#);
+        if cfg!(debug_assertions) {
+            buffer.dangerously_get_string().push_str(
+                r#"
 <script>
 (function() {
   let attempts = 0;
@@ -68,20 +59,17 @@ impl Component for Scripts {
 })();
 </script>
                 "#,
-                );
-            }
-        })
+            );
+        }
     }
 }
 
 pub struct Css;
 
-impl Component for Css {
-    fn component(&self) -> impl Render {
-        Lazy::dangerously_create(|buffer| {
-            let link = format!(r#"<link rel="stylesheet" href="/cheers{}">"#, css_url());
-            buffer.dangerously_get_string().push_str(&link);
-        })
+impl Render for Css {
+    fn render_to(&self, buffer: &mut Buffer<crate::context::Element>) {
+        let link = format!(r#"<link rel="stylesheet" href="/cheers{}">"#, css_url());
+        buffer.dangerously_get_string().push_str(&link);
     }
 }
 

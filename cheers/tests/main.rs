@@ -152,11 +152,12 @@ fn component() {
         children: R,
     }
 
-    impl<R: Render> Component for Repeater<R> {
-        fn component(&self) -> impl Render {
+    impl<R: Render> Render for Repeater<R> {
+        fn render_to(&self, buffer: &mut Buffer<cheers::context::Element>) {
             html! {
                 @for _ in 0..self.count { (self.children) }
             }
+            .render_to(buffer);
         }
     }
 
@@ -280,8 +281,8 @@ struct Base<T> {
     children: T,
 }
 
-impl<T: Render> Component for Base<T> {
-    fn component(&self) -> impl Render {
+impl<T: Render> Render for Base<T> {
+    fn render_to(&self, buffer: &mut Buffer<cheers::context::Element>) {
         html! {
             Doctype;
             html {
@@ -293,6 +294,7 @@ impl<T: Render> Component for Base<T> {
                 }
             }
         }
+        .render_to(buffer);
     }
 }
 
@@ -478,14 +480,15 @@ fn component_dotdot_default() {
         text: &'a str,
     }
 
-    impl<'a> Component for Feedback<'a> {
-        fn component(&self) -> impl Render {
+    impl<'a> Render for Feedback<'a> {
+        fn render_to(&self, buffer: &mut Buffer<cheers::context::Element>) {
             html! {
                 @if let Some(name) = self.name {
                     h3 { (name) }
                 } @else {}
                 p { (self.text) }
             }
+            .render_to(buffer);
         }
     }
 
@@ -606,14 +609,15 @@ fn signal_computed() {
         d: i32,
     }
 
-    impl Component for Input {
-        fn component(&self) -> impl Render {
+    impl Render for Input {
+        fn render_to(&self, buffer: &mut Buffer<cheers::context::Element>) {
             let a = Input::a_signal();
             let b = Input::b_signal();
             let c = Input::c_signal();
             html! {
                 p !computed(c: { (a) "+" (b) }) {}
             }
+            .render_to(buffer);
         }
     }
 
@@ -623,14 +627,15 @@ fn signal_computed() {
         input: Input,
     }
 
-    impl Component for Calculator {
-        fn component(&self) -> impl Render {
+    impl Render for Calculator {
+        fn render_to(&self, buffer: &mut Buffer<cheers::context::Element>) {
             let Input { a, b, c, d } = self.input;
             html! {
                 div {
                     Input a b c d;
                 }
             }
+            .render_to(buffer);
         }
     }
 
@@ -642,10 +647,11 @@ fn signal_computed() {
             d: 4,
         },
     }
-    .component();
+    .render()
+    .into_inner();
 
     assert_eq!(
-        result.render().as_inner(),
+        result,
         r#"<div><p data-computed="{input:{c:()=>$input.a+$input.b}}"></p></div>"#
     )
 }
@@ -659,19 +665,20 @@ fn signal_without_field() {
     }
 
     const NAME: &str = "El";
-    impl<'a> Component for Ghost<'a> {
-        fn component(&self) -> impl Render {
+    impl<'a> Render for Ghost<'a> {
+        fn render_to(&self, buffer: &mut Buffer<cheers::context::Element>) {
             let keepsake = Self::keepsake_signal(NAME);
             html! {
                 p !bind(&keepsake) !on:close({ (keepsake) " + 'noooo'" }) { (self.name) }
             }
+            .render_to(buffer);
         }
     }
 
-    let result = Ghost { name: "El" }.component();
+    let result = Ghost { name: "El" }.render().into_inner();
 
     assert_eq!(
-        result.render().as_inner(),
+        result,
         r#"<p data-bind="keepsake-El" data-on:close="$keepsake-El + 'noooo'">El</p>"#
     )
 }
@@ -740,13 +747,14 @@ fn action_form() {
         whatever: S,
     }
 
-    impl<S> Component for Stuff<S> {
-        fn component(&self) -> impl Render {
+    impl<S> Render for Stuff<S> {
+        fn render_to(&self, buffer: &mut Buffer<cheers::context::Element>) {
             html! {
                 form {
                     input name=(Self::whatever_form());
                 }
             }
+            .render_to(buffer);
         }
     }
 
@@ -760,10 +768,7 @@ fn action_form() {
         "@put('/cheers/actions/my_handler',{contentType:'form'})"
     );
 
-    let result = Stuff { whatever: "hello" }
-        .component()
-        .render()
-        .into_inner();
+    let result = Stuff { whatever: "hello" }.render().into_inner();
     assert_eq!(result, r#"<form><input name="whatever"></form>"#);
 }
 
