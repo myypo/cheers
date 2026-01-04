@@ -1,6 +1,6 @@
 mod action;
 pub mod components;
-pub mod context;
+mod context;
 mod events;
 mod reference;
 mod render;
@@ -26,16 +26,17 @@ pub mod prelude {
 
     pub use crate::{
         action::Action,
+        context::{AttributeValue, Element},
         events::{
             Event, EventReceiver, EventSender, JsScript, PatchElements, PatchElementsMode, events,
         },
         include_css,
         reference::{ElementId, Path, Signal},
-        render::{Lazy, LazyAttribute, Render, RenderExt as _},
+        render::{Buffer, Lazy, LazyAttribute, Render, RenderExt as _},
         response::AsyncLazy,
     };
 }
-pub use render::{Buffer, Raw, RawAttribute, Rendered};
+pub use render::{Raw, RawAttribute, Rendered};
 pub use router::CheersRouterExt as _;
 
 #[cfg(test)]

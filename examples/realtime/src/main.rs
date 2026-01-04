@@ -1,6 +1,6 @@
 use std::{collections::BTreeMap, sync::Mutex, time::Duration};
 
-use axum::{Router, extract::State, response::IntoResponse, routing::get};
+use axum::{Router, extract::State, routing::get};
 use cheers::{
     components::{Css, Doctype, Scripts},
     prelude::*,
@@ -18,7 +18,7 @@ struct Base<T> {
 }
 
 impl<T: Render> Render for Base<T> {
-    fn render_to(&self, buffer: &mut cheers::Buffer<cheers::context::Element>) {
+    fn render_to(&self, buffer: &mut Buffer<Element>) {
         html! {
             Doctype;
             html {
@@ -39,14 +39,14 @@ impl<T: Render> Render for Base<T> {
 #[id(id)]
 struct Stock<'a> {
     #[signal(id)]
-    id: &'a str,
+    id: &'a String,
     name: &'a str,
     #[signal]
     price_cents: u64,
 }
 
 impl<'a> Render for Stock<'a> {
-    fn render_to(&self, buffer: &mut cheers::Buffer<cheers::context::Element>) {
+    fn render_to(&self, buffer: &mut Buffer<Element>) {
         let price_cents_signal = Stock::price_cents_signal(self.id);
         html! {
             section id=(Self::id(self.id)) {
@@ -100,9 +100,9 @@ async fn home_page(ctx: State<Ctx>) -> AsyncLazy<impl Render> {
 async fn update_stock(ctx: State<Ctx>) -> PatchElements {
     tokio::time::sleep(Duration::from_millis(500)).await;
 
-    let id = "Wow";
+    let id = "Wow".to_owned();
     let mut stocks = ctx.stocks.lock().expect("lock");
-    let (name, price_cents) = stocks.get_mut(id).expect(
+    let (name, price_cents) = stocks.get_mut(&id).expect(
         "hardcoded Wow
 stock",
     );
@@ -115,7 +115,7 @@ stock",
     };
 
     let stock = Stock {
-        id,
+        id: &id,
         name,
         price_cents: *price_cents,
     };
@@ -123,7 +123,7 @@ stock",
 }
 
 #[action(POST)]
-async fn create_subscription(ctx: State<Ctx>) -> impl IntoResponse {
+async fn create_subscription(ctx: State<Ctx>) -> EventReceiver {
     println!("creating new subscription");
     let (tx, rx) = events();
     tokio::spawn(async move {

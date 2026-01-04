@@ -1,6 +1,10 @@
 use std::fmt::{Debug, Display};
 
-use crate::{Buffer, context::Context, render::Render, router::css_url};
+use crate::{
+    context::Context,
+    render::{Buffer, Render},
+    router::css_url,
+};
 
 pub struct Doctype;
 

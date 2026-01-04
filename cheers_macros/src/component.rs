@@ -1,10 +1,11 @@
 use proc_macro2::TokenStream;
 use quote::{TokenStreamExt, quote};
 use syn::{
-    Error, Ident, ItemStruct, LitStr, Meta, Token, Type,
+    Attribute, Error, Ident, ItemStruct, LitStr, Meta, MetaList, Token, Type,
     parse::{Parse, ParseStream},
     parse2,
     spanned::Spanned,
+    token::{Bracket, Pound},
 };
 
 use crate::shared::filter_generics;
@@ -282,7 +283,11 @@ fn generate_signal_impl(
     let mut signal_field_decls = Vec::new();
     for f in &fields {
         let ident = &f.ident;
-        let ty = &f.ty;
+        let ty = if let Type::Reference(ty_ref) = &f.ty {
+            &ty_ref.elem
+        } else {
+            &f.ty
+        };
 
         let field_name = ident
             .as_ref()
@@ -348,7 +353,7 @@ fn generate_signal_impl(
             }
         }
     };
-    item.generics = filter_generics(item.generics, fields.iter().map(|f| &f.ty));
+    item.generics = filter_generics(item.generics, fields.iter().map(|f| &f.ty), true);
     let (_, ty_generics, where_clause) = item.generics.split_for_impl();
     Ok(quote! {
         #[expect(dead_code)]
@@ -358,6 +363,21 @@ fn generate_signal_impl(
 
         #struct_impl
     })
+}
+
+#[derive(Default)]
+struct FormFieldArgs {
+    serde: Option<MetaList>,
+}
+
+impl Parse for FormFieldArgs {
+    fn parse(input: ParseStream) -> syn::Result<Self> {
+        let serde = input.parse::<MetaList>()?;
+        if !serde.path.is_ident("serde") {
+            return Err(Error::new_spanned(&serde.path, "expected serde(...)"));
+        }
+        Ok(Self { serde: Some(serde) })
+    }
 }
 
 fn generate_form_impl(item: &mut ItemStruct) -> Result<TokenStream, Error> {
@@ -375,18 +395,33 @@ fn generate_form_impl(item: &mut ItemStruct) -> Result<TokenStream, Error> {
             continue;
         };
         let attr = f.attrs.swap_remove(i);
-        match attr.meta {
-            Meta::Path(_) => Ok(()),
-            _ => Err(Error::new_spanned(&attr, "expected #[form]")),
+        let args = match attr.meta {
+            Meta::List(meta_list) => parse2(meta_list.tokens),
+            Meta::Path(_) => Ok(FormFieldArgs::default()),
+            _ => Err(Error::new_spanned(
+                &attr,
+                "expected #[form] or #[form(...)]",
+            )),
         }?;
-        fields.push(f);
+        fields.push((f, args));
     }
 
     let mut struct_field_impls = Vec::new();
     let mut form_field_decls = Vec::new();
-    for f in &fields {
+    for (f, args) in &fields {
         let ident = &f.ident;
-        let ty = &f.ty;
+        let ty = if let Type::Reference(ty_ref) = &f.ty {
+            &ty_ref.elem
+        } else {
+            &f.ty
+        };
+        let attrs = args.serde.as_ref().map(|serde| Attribute {
+            pound_token: Pound::default(),
+            style: syn::AttrStyle::Outer,
+            bracket_token: Bracket::default(),
+            meta: Meta::List(serde.clone()),
+        });
+        let vis = &f.vis;
 
         let field_name = ident
             .as_ref()
@@ -407,7 +442,10 @@ fn generate_form_impl(item: &mut ItemStruct) -> Result<TokenStream, Error> {
             }
         });
 
-        form_field_decls.push(quote! { #ident: #ty });
+        form_field_decls.push(quote! {
+            #attrs
+            #vis #ident: #ty
+        });
     }
 
     if fields.is_empty() {
@@ -422,8 +460,12 @@ fn generate_form_impl(item: &mut ItemStruct) -> Result<TokenStream, Error> {
             }
         }
     };
-    item.generics = filter_generics(item.generics.clone(), fields.iter().map(|f| &f.ty));
 
+    item.generics = filter_generics(
+        item.generics.clone(),
+        fields.iter().map(|(f, _)| &f.ty),
+        true,
+    );
     let (_, ty_generics, where_clause) = item.generics.split_for_impl();
 
     Ok(quote! {

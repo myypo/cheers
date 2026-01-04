@@ -6,7 +6,10 @@ use axum::response::{
 };
 use futures::StreamExt;
 
-use crate::{Buffer, prelude::ElementId, render::Render};
+use crate::{
+    prelude::{Buffer, ElementId},
+    render::Render,
+};
 
 // TODO: write an impl that allows to construct this type from a stream
 pub struct EventReceiver(tokio::sync::mpsc::UnboundedReceiver<sse::Event>);

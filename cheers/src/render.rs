@@ -239,7 +239,7 @@ impl<C: Context> Buffer<C> {
     /// # Example
     ///
     /// ```rust
-    /// use cheers::{Buffer, prelude::*};
+    /// use cheers::prelude::*;
     ///
     /// fn get_some_html() -> String {
     ///     // get html from some source, such as a CMS
@@ -288,7 +288,7 @@ impl Debug for Buffer {
 /// # Example
 ///
 /// ```
-/// use cheers::{Buffer, prelude::*};
+/// use cheers::prelude::*;
 ///
 /// pub struct Person {
 ///     name: String,

@@ -55,6 +55,7 @@ impl ToTokens for MaybeItemFn {
 pub fn filter_generics<'a>(
     mut generics: Generics,
     types: impl IntoIterator<Item = &'a Type>,
+    remove_lifetimes: bool,
 ) -> Generics {
     fn collect_signal_generics<'a>(types: impl IntoIterator<Item = &'a Type>) -> Vec<&'a Ident> {
         struct Visitor<'a> {
@@ -88,7 +89,12 @@ pub fn filter_generics<'a>(
     let mut filtered = Punctuated::<GenericParam, Token![,]>::new();
     for g in generics.params.into_iter().filter(|p| {
         let pi = match p {
-            GenericParam::Lifetime(l) => &l.lifetime.ident,
+            GenericParam::Lifetime(l) => {
+                if remove_lifetimes {
+                    return false;
+                }
+                &l.lifetime.ident
+            }
             GenericParam::Type(t) => &t.ident,
             GenericParam::Const(c) => &c.ident,
         };

@@ -42,7 +42,7 @@ impl Generate for Component {
 
                 let lazy = quote! {
                     ::cheers::prelude::Lazy::dangerously_create(
-                        |#buffer_ident: &mut ::cheers::Buffer|
+                        |#buffer_ident: &mut ::cheers::prelude::Buffer|
                             #block
                     )
                 };

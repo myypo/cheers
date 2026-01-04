@@ -1,5 +1,5 @@
 use cheers_ast::{Node, ParenExpr};
-use syn::{Expr, spanned::Spanned as _};
+use syn::{Expr, parse2, spanned::Spanned as _};
 
 use crate::{
     format::line_column_to_byte,
@@ -77,8 +77,10 @@ impl<'a, 'b> Printer<'a, 'b> {
     }
 
     pub fn print_paren_expr<N: Node>(&mut self, paren_expr: ParenExpr<N>, indent_level: usize) {
-        let is_block = matches!(paren_expr.expr, Expr::Block(_));
-        let lines = self.lines_from_expr(paren_expr.expr, indent_level);
+        let expr: Expr =
+            parse2(paren_expr.expr.clone()).unwrap_or_else(|_| Expr::Verbatim(paren_expr.expr));
+        let is_block = matches!(expr, Expr::Block(_));
+        let lines = self.lines_from_expr(expr, indent_level);
 
         self.write("(");
         match lines.len() {

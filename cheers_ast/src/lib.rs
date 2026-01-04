@@ -29,8 +29,6 @@ use self::{
 };
 use crate::generate::Context;
 
-mod kw {}
-
 pub type Document = Nodes<ElementNode>;
 
 pub trait Node: Generate {
@@ -70,8 +68,7 @@ impl Generate for ElementNode {
 
 pub struct ParenExpr<N: Node> {
     pub paren_token: Paren,
-    // TODO: might want to revert to TokenStream for better rust-analyzer support
-    pub expr: Expr,
+    pub expr: TokenStream,
     phantom: PhantomData<N>,
 }
 
@@ -572,25 +569,19 @@ impl Parse for Data {
             namespace = Some(input.parse()?);
             input.parse::<Token![:]>()?;
         }
-        let name = input.parse()?;
+        let name = input.parse().unwrap_or_else(|_| {
+            UnquotedName(Ident::new(
+                "EMPTY",
+                namespace
+                    .as_ref()
+                    .map(|n| n.span())
+                    .unwrap_or_else(Span::mixed_site),
+            ))
+        });
 
-        // HACK: this is to improve the completion
-        // without allowing these attributes to have no value
-        if !input.peek(Paren)
-            && name != "attr"
-            && name != "bind"
-            && name != "class"
-            && name != "computed"
-            && name != "effect"
-            && name != "indicator"
-            && name != "init"
-            && name != "preserve_attr"
-            && name != "ref"
-            && name != "show"
-            && name != "signals"
-            && name != "style"
-            && name != "text"
-        {
+        // TODO: come up with a way to generate some tokens
+        // that prevent compilation when the attribute has to have a value
+        if !input.peek(Paren) {
             return Ok(Data {
                 name,
                 namespace,
@@ -602,51 +593,53 @@ impl Parse for Data {
         let data;
         let paren_token = parenthesized!(data in input);
 
-        if namespace.is_none() {
-            if name == "signals" {
-                return Ok(Self {
-                    namespace,
-                    name,
-                    paren_token,
-                    content: DataContent::Signals(
-                        Punctuated::<DataExprValue<Expr>, Token![,]>::parse_terminated(&data)?,
-                    ),
-                });
-            }
-            if name == "style" || name == "attr" {
-                return Ok(Self {
-                    namespace,
-                    name,
-                    paren_token,
-                    content: DataContent::Kv(Punctuated::<
-                        DataExprValue<AttributeValueNode>,
-                        Token![,],
-                    >::parse_terminated(&data)?),
-                });
-            }
-            if name == "computed" {
-                return Ok(Self {
-                    namespace,
-                    name,
-                    paren_token,
-                    content: DataContent::Computed(data.parse()?),
-                });
-            }
-            if name == "indicator" || name == "bind" {
-                return Ok(Self {
-                    namespace,
-                    name,
-                    paren_token,
-                    content: DataContent::Bind(data.parse()?),
-                });
-            }
+        if name == "signals" {
+            return Ok(Self {
+                namespace,
+                name,
+                paren_token,
+                content: DataContent::Signals(
+                    Punctuated::<DataExprValue<Expr>, Token![,]>::parse_terminated(&data)?,
+                ),
+            });
+        }
+        if name == "style" || name == "attr" {
+            return Ok(Self {
+                namespace,
+                name,
+                paren_token,
+                content: DataContent::Kv(
+                    Punctuated::<DataExprValue<AttributeValueNode>, Token![,]>::parse_terminated(
+                        &data,
+                    )?,
+                ),
+            });
+        }
+        if name == "computed" {
+            return Ok(Self {
+                namespace,
+                name,
+                paren_token,
+                content: DataContent::Computed(data.parse()?),
+            });
+        }
+        if name == "indicator" || name == "bind" {
+            return Ok(Self {
+                namespace,
+                name,
+                paren_token,
+                content: DataContent::Bind(data.parse()?),
+            });
         }
 
         Ok(Self {
             namespace,
             name,
             paren_token,
-            content: DataContent::Node(data.parse()?),
+            content: data
+                .parse()
+                .map(DataContent::Node)
+                .unwrap_or_else(|_| DataContent::Empty),
         })
     }
 }
@@ -655,7 +648,7 @@ impl Data {
     fn name_literals(&self) -> Vec<LitStr> {
         let name = self.name.lit();
         let name_str = name.value();
-        // TODO: I think, we should update the to use snake_case
+        // TODO: I think, we should update everything to use snake_case
         let name = LitStr::new(&name_str.replace('_', "-"), name.span());
 
         if let Some(namespace) = &self.namespace {

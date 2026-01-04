@@ -13,7 +13,6 @@ use axum::{
     response::IntoResponse,
 };
 use cheers::{
-    Buffer,
     components::{Debugged, Displayed, Doctype, Scripts},
     macros::html_borrow,
     prelude::*,
@@ -153,7 +152,7 @@ fn component() {
     }
 
     impl<R: Render> Render for Repeater<R> {
-        fn render_to(&self, buffer: &mut Buffer<cheers::context::Element>) {
+        fn render_to(&self, buffer: &mut Buffer<Element>) {
             html! {
                 @for _ in 0..self.count { (self.children) }
             }
@@ -282,7 +281,7 @@ struct Base<T> {
 }
 
 impl<T: Render> Render for Base<T> {
-    fn render_to(&self, buffer: &mut Buffer<cheers::context::Element>) {
+    fn render_to(&self, buffer: &mut Buffer<Element>) {
         html! {
             Doctype;
             html {
@@ -481,7 +480,7 @@ fn component_dotdot_default() {
     }
 
     impl<'a> Render for Feedback<'a> {
-        fn render_to(&self, buffer: &mut Buffer<cheers::context::Element>) {
+        fn render_to(&self, buffer: &mut Buffer<Element>) {
             html! {
                 @if let Some(name) = self.name {
                     h3 { (name) }
@@ -610,7 +609,7 @@ fn signal_computed() {
     }
 
     impl Render for Input {
-        fn render_to(&self, buffer: &mut Buffer<cheers::context::Element>) {
+        fn render_to(&self, buffer: &mut Buffer<Element>) {
             let a = Input::a_signal();
             let b = Input::b_signal();
             let c = Input::c_signal();
@@ -628,7 +627,7 @@ fn signal_computed() {
     }
 
     impl Render for Calculator {
-        fn render_to(&self, buffer: &mut Buffer<cheers::context::Element>) {
+        fn render_to(&self, buffer: &mut Buffer<Element>) {
             let Input { a, b, c, d } = self.input;
             html! {
                 div {
@@ -666,7 +665,7 @@ fn signal_without_field() {
 
     const NAME: &str = "El";
     impl<'a> Render for Ghost<'a> {
-        fn render_to(&self, buffer: &mut Buffer<cheers::context::Element>) {
+        fn render_to(&self, buffer: &mut Buffer<Element>) {
             let keepsake = Self::keepsake_signal(NAME);
             html! {
                 p !bind(&keepsake) !on:close({ (keepsake) " + 'noooo'" }) { (self.name) }
@@ -739,16 +738,16 @@ fn action_explicit_path() {
 }
 
 #[test]
-fn action_form() {
+fn action_form_generics() {
     #[expect(dead_code)]
     #[derive(Component)]
-    struct Stuff<S> {
+    struct Stuff<'a, S> {
         #[form]
-        whatever: S,
+        whatever: &'a S,
     }
 
-    impl<S> Render for Stuff<S> {
-        fn render_to(&self, buffer: &mut Buffer<cheers::context::Element>) {
+    impl<'a, S> Render for Stuff<'a, S> {
+        fn render_to(&self, buffer: &mut Buffer<Element>) {
             html! {
                 form {
                     input name=(Self::whatever_form());
@@ -768,7 +767,8 @@ fn action_form() {
         "@put('/cheers/actions/my_handler',{contentType:'form'})"
     );
 
-    let result = Stuff { whatever: "hello" }.render().into_inner();
+    let s = "hello".to_owned();
+    let result = Stuff { whatever: &s }.render().into_inner();
     assert_eq!(result, r#"<form><input name="whatever"></form>"#);
 }
 
@@ -793,4 +793,22 @@ fn action_explicit_form() {
         result.as_inner(),
         "@post('/cheers/actions/my_handler',{contentType:'form'})"
     );
+}
+
+#[test]
+fn action_form_serde() {
+    fn default_whatever() -> String {
+        String::from("lol")
+    }
+
+    #[expect(dead_code)]
+    #[derive(Component, PartialEq)]
+    struct Stuff {
+        #[signal]
+        #[form(serde(default = "default_whatever"))]
+        whatever: String,
+    }
+
+    let result: StuffForm = serde_json::from_str("{}").unwrap();
+    assert_eq!(result.whatever, String::from("lol"));
 }

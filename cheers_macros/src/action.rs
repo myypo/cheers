@@ -285,6 +285,7 @@ pub fn generate(args: ActionArgs, item: &mut MaybeItemFn) -> Result<TokenStream,
     let generics = filter_generics(
         item.sig.generics.clone(),
         field_args.path.iter().map(|(_, ty)| ty),
+        false,
     );
     let (impl_generics, ty_generics, where_clause) = generics.split_for_impl();
     let struct_decl = if field_args.path.is_empty() {
@@ -306,8 +307,8 @@ pub fn generate(args: ActionArgs, item: &mut MaybeItemFn) -> Result<TokenStream,
 
         #struct_decl
 
-        impl #impl_generics ::cheers::prelude::Render<::cheers::context::AttributeValue> for #struct_name #ty_generics #where_clause {
-            fn render_to(&self, buffer: &mut ::cheers::Buffer<::cheers::context::AttributeValue>) {
+        impl #impl_generics ::cheers::prelude::Render<::cheers::prelude::AttributeValue> for #struct_name #ty_generics #where_clause {
+            fn render_to(&self, buffer: &mut ::cheers::prelude::Buffer<::cheers::prelude::AttributeValue>) {
                 #static_path.render_to(buffer);
                 #(#path_renders)*
                 "'".render_to(buffer);

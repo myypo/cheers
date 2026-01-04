@@ -417,7 +417,7 @@ impl Async {
 
         quote! {
                 ::cheers::__internal::futures::stream::once(#async_token move {
-                    let mut buffer = ::cheers::Buffer::<#marker_ident>::new();
+                    let mut buffer = ::cheers::prelude::Buffer::<#marker_ident>::new();
                     buffer.dangerously_get_string().push_str(#template_start);
                     let #buffer_ident = &mut buffer;
                     #content_code

@@ -45,7 +45,7 @@ pub fn lazy<T: Parse + Generate>(tokens: TokenStream, move_: bool) -> Result<Tok
                 use ::cheers::validation::{elements, attributes::*};
 
                 ::cheers::prelude::Lazy::<_, #marker_ident>::dangerously_create(
-                    #move_token |#buffer_ident: &mut ::cheers::Buffer<#marker_ident>| {
+                    #move_token |#buffer_ident: &mut ::cheers::prelude::Buffer<#marker_ident>| {
 
                         #block
                     }
@@ -61,7 +61,7 @@ pub fn lazy<T: Parse + Generate>(tokens: TokenStream, move_: bool) -> Result<Tok
                 use ::cheers::validation::{elements, attributes::*};
 
                 let lazy = ::cheers::prelude::Lazy::<_, #marker_ident>::dangerously_create(
-                    #move_token |#buffer_ident: &mut ::cheers::Buffer<#marker_ident>| {
+                    #move_token |#buffer_ident: &mut ::cheers::prelude::Buffer<#marker_ident>| {
 
                         #block
                     }
@@ -329,7 +329,7 @@ impl Context {
             Self::AttributeValue => Ident::new("AttributeValue", Span::mixed_site()),
         };
 
-        quote!(::cheers::context::#ident)
+        quote!(::cheers::prelude::#ident)
     }
 }
 
