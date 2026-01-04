@@ -4,7 +4,7 @@ use axum::{Router, extract::State, routing::get};
 use cheers::{
     components::{Css, Doctype, Scripts},
     prelude::*,
-    router::{App, CheersRouterExt},
+    router::CheersRouterExt,
 };
 
 #[derive(Clone)]
@@ -146,19 +146,16 @@ async fn create_subscription(ctx: State<Ctx>) -> EventReceiver {
     rx
 }
 
+cheers::app!(Ctx);
+
 #[tokio::main]
 async fn main() {
     tokio::spawn(async {
         include_css!("./main.css");
 
-        let app = App::new()
-            .unwrap()
-            .with_action::<CreateSubscriptionAction>()
-            .with_action::<UpdateStockAction>();
-
         let router = Router::new()
             .route("/", get(home_page))
-            .serve_cheers_application(app)
+            .serve_cheers_application(app().expect("create app"))
             .with_state(Ctx {
                 stocks_tx: tokio::sync::broadcast::channel(16).0,
                 stocks: Box::leak(Box::new(Mutex::new(BTreeMap::from([(

@@ -52,6 +52,7 @@ pretty_assertions = "1"
 predicates = "3"
 assert_fs = "1"
 assert_cmd = "2"
+inventory = "0.3"
 
 # Bundler
 swc_common = { version = "17.0.1", features = ["tty-emitter"] }

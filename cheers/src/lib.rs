@@ -1,4 +1,3 @@
-mod action;
 pub mod components;
 mod context;
 mod events;
@@ -13,6 +12,7 @@ pub mod validation;
 pub mod __internal {
     pub use axum;
     pub use futures;
+    pub use inventory;
     pub use serde;
 }
 
@@ -25,7 +25,6 @@ pub mod prelude {
     pub use cheers_macros::{Component, action, html};
 
     pub use crate::{
-        action::Action,
         context::{AttributeValue, Element},
         events::{
             Event, EventReceiver, EventSender, JsScript, PatchElements, PatchElementsMode, events,

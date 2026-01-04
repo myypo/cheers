@@ -317,13 +317,11 @@ pub fn generate(args: ActionArgs, item: &mut MaybeItemFn) -> Result<TokenStream,
             }
         }
 
-        impl #impl_generics ::cheers::prelude::Action<#state> for #struct_name #ty_generics #where_clause {
-            const PATH: &str = #path;
-            const METHOD: ::cheers::__internal::axum::http::Method = #method;
-
-            fn router() -> ::cheers::__internal::axum::Router<#state> {
-                ::cheers::__internal::axum::Router::<#state>::new().route(#path, ::axum::routing::on(#method.try_into().expect("turn method to method filter for action"), #ident))
+        ::cheers::__internal::inventory::submit! {{
+            fn __register(r: ::cheers::__internal::axum::Router<#state>) -> ::cheers::__internal::axum::Router<#state> {
+                r.route(#path, ::axum::routing::on(#method.try_into().expect("turn method to method filter for action"), #ident))
             }
-        }
+            Action(__register)
+        }}
     })
 }

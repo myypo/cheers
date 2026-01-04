@@ -7,5 +7,6 @@ version = "0.0.0"
 
 [dependencies]
 axum = "0.8"
+inventory = "0.3"
 cheers = { path = "../../cheers" }
 tokio = { version = "1", features = ["macros", "rt-multi-thread"] }

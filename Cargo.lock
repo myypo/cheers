@@ -412,6 +412,7 @@ dependencies = [
  "cheers_macros",
  "futures",
  "html-escape",
+ "inventory",
  "itoa",
  "lightningcss",
  "notify",
@@ -1278,6 +1279,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "inventory"
+version = "0.3.21"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "bc61209c082fbeb19919bee74b176221b27223e27b65d781eb91af24eb1fb46e"
+dependencies = [
+ "rustversion",
+]
+
+[[package]]
 name = "is-macro"
 version = "0.3.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1942,6 +1952,7 @@ version = "0.0.0"
 dependencies = [
  "axum",
  "cheers",
+ "inventory",
  "tokio",
 ]
 

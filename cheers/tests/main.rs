@@ -682,6 +682,9 @@ fn signal_without_field() {
     )
 }
 
+type Ctx = ();
+cheers::app!(Ctx);
+
 #[test]
 fn action_with_plain_path() {
     #[action(POST)]
@@ -692,7 +695,6 @@ fn action_with_plain_path() {
         name: "Bob".to_owned(),
     }
     .render();
-    assert_eq!(DoStuffAction::PATH, "/cheers/actions/do_stuff/{name}");
     assert_eq!(result.as_inner(), "@post('/cheers/actions/do_stuff/Bob')");
 }
 
@@ -707,7 +709,6 @@ fn action_with_tuple_path() {
         age: 42,
     }
     .render();
-    assert_eq!(DoStuffAction::PATH, "/cheers/actions/do_stuff/{name}/{age}");
     assert_eq!(
         result.as_inner(),
         "@post('/cheers/actions/do_stuff/Bob/42')"
@@ -733,7 +734,6 @@ fn action_explicit_path() {
     async fn my_handler(#[path] _: NotPath) {}
 
     let result = MyHandlerAction {}.render();
-    assert_eq!(MyHandlerAction::PATH, "/cheers/actions/my_handler");
     assert_eq!(result.as_inner(), "@put('/cheers/actions/my_handler')");
 }
 
@@ -761,7 +761,6 @@ fn action_form_generics() {
     async fn my_handler(_: Form<StuffForm<String>>) {}
 
     let result = MyHandlerAction {}.render();
-    assert_eq!(MyHandlerAction::PATH, "/cheers/actions/my_handler");
     assert_eq!(
         result.as_inner(),
         "@put('/cheers/actions/my_handler',{contentType:'form'})"
@@ -788,7 +787,6 @@ fn action_explicit_form() {
     async fn my_handler(#[form] _: NotForm) {}
 
     let result = MyHandlerAction {}.render();
-    assert_eq!(MyHandlerAction::PATH, "/cheers/actions/my_handler");
     assert_eq!(
         result.as_inner(),
         "@post('/cheers/actions/my_handler',{contentType:'form'})"

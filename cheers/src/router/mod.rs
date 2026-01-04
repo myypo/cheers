@@ -8,7 +8,7 @@ use std::fmt::Display;
 
 use axum::Router;
 
-use crate::{action::Action, router::assets::assets_router};
+use crate::router::assets::assets_router;
 
 #[derive(Debug)]
 pub enum Error {
@@ -48,7 +48,7 @@ pub struct App<S> {
 }
 
 impl<S: Clone + Send + Sync + 'static> App<S> {
-    pub fn new() -> Result<Self, Error> {
+    pub fn new(actions: Router<S>) -> Result<Self, Error> {
         let router = assets_router()?;
 
         // TODO: currently just avoid compressing suspense streaming
@@ -62,13 +62,28 @@ impl<S: Clone + Send + Sync + 'static> App<S> {
         ));
 
         let router = router.merge(live_reload::router());
-        let router = Router::new().nest("/cheers", router);
+        let router = Router::new().nest("/cheers", router).merge(actions);
 
         Ok(Self { router })
     }
+}
 
-    pub fn with_action<A: Action<S>>(self) -> Self {
-        let router = self.router.merge(A::router());
-        Self { router }
-    }
+#[macro_export]
+macro_rules! app {
+    ($state:ident) => {
+        pub struct Action(
+            pub  fn(
+                $crate::__internal::axum::Router<$state>,
+            ) -> $crate::__internal::axum::Router<$state>,
+        );
+        $crate::__internal::inventory::collect!(Action);
+
+        pub fn app() -> ::std::result::Result<$crate::router::App<$state>, $crate::router::Error> {
+            let mut r = $crate::__internal::axum::Router::<$state>::new();
+            for a in $crate::__internal::inventory::iter::<Action> {
+                r = (a.0)(r);
+            }
+            $crate::router::App::new(r)
+        }
+    };
 }
