@@ -1,11 +1,16 @@
 use std::{collections::BTreeMap, sync::Mutex, time::Duration};
 
-use axum::{Router, extract::State, routing::get};
+use axum::{
+    Router,
+    extract::{Path, State},
+    routing::get,
+};
 use cheers::{
     components::{Css, Doctype, Scripts},
     prelude::*,
     router::CheersRouterExt,
 };
+use rand::Rng;
 
 #[derive(Clone)]
 struct Ctx {
@@ -48,15 +53,18 @@ struct Stock<'a> {
 impl<'a> Render for Stock<'a> {
     fn render_to(&self, buffer: &mut Buffer<Element>) {
         let price_cents_signal = Stock::price_cents_signal(self.id);
+        let increment_action = IncrementStockAction {
+            stock_id: self.id.clone(),
+        };
+        let dollar_price = format!("${:.2}", self.price_cents as f64 / 100.0);
         html! {
             section id=(Self::id(self.id)) {
-                h3 { "Name " (self.name) }
-                input
-                    value=(self.price_cents)
-                    type="number"
-                    !signals(price_cents_signal: self.price_cents)
-                    !bind(price_cents_signal);
-                p !text(price_cents_signal) { (self.price_cents) }
+                h3 { (self.name) }
+                button !on:click(increment_action) {
+                    "Price: "
+                    span !signals(price_cents_signal: self.price_cents) { (dollar_price) }
+                    " (+$1.00)"
+                }
             }
         }
         .render_to(buffer);
@@ -64,7 +72,6 @@ impl<'a> Render for Stock<'a> {
 }
 
 async fn home_page(ctx: State<Ctx>) -> AsyncLazy<impl Render> {
-    let fetching = Signal::<bool>::scoped("fetching");
     let get_stocks = async move || {
         tokio::time::sleep(Duration::from_millis(500)).await;
         ctx.stocks.lock().expect("lock")
@@ -75,21 +82,19 @@ async fn home_page(ctx: State<Ctx>) -> AsyncLazy<impl Render> {
             article !init(CreateSubscriptionAction) {
                 @async {
                     @let stocks = get_stocks().await;
-                    button
-                        !on:click(CreateSubscriptionAction)
-                        !indicator(fetching)
-                        !style("display": { (fetching) " && 'none'" })
-                    { "Do stuff" }
-                    h1 { "Sum" }
+                    h1 { "Dwarven Stock Exchange" }
                     @for (id, (name, price_cents)) in stocks.iter() {
                         Stock id name price_cents=(*price_cents);
                     }
+                    h2 { "Total Value" }
                     p   !text({
+                            "'$' + ("
                             0
                             @for (id, _) in stocks.iter() { "+" (Stock::price_cents_signal(id)) }
+                            ") / 100"
                         }) {}
                 } @else {
-                    p { "Wait..." }
+                    p { "Loading stocks..." }
                 }
             }
         }
@@ -97,25 +102,19 @@ async fn home_page(ctx: State<Ctx>) -> AsyncLazy<impl Render> {
 }
 
 #[action(PATCH)]
-async fn update_stock(ctx: State<Ctx>) -> PatchElements {
-    tokio::time::sleep(Duration::from_millis(500)).await;
-
-    let id = "Wow".to_owned();
+async fn increment_stock(Path(stock_id): Path<String>, ctx: State<Ctx>) -> PatchElements {
     let mut stocks = ctx.stocks.lock().expect("lock");
-    let (name, price_cents) = stocks.get_mut(&id).expect(
-        "hardcoded Wow
-stock",
-    );
-    *price_cents += 1;
+    let (name, price_cents) = stocks.get_mut(&stock_id).expect("stock exists");
+    *price_cents += 100;
     if let Err(e) = ctx
         .stocks_tx
-        .send((id.to_owned(), name.clone(), *price_cents))
+        .send((stock_id.clone(), name.clone(), *price_cents))
     {
         eprintln!("error sending stock update: {e}");
     };
 
     let stock = Stock {
-        id: &id,
+        id: &stock_id,
         name,
         price_cents: *price_cents,
     };
@@ -153,16 +152,79 @@ async fn main() {
     tokio::spawn(async {
         include_css!("./main.css");
 
+        let stocks_tx = tokio::sync::broadcast::channel(16).0;
+        let stocks = Box::leak(Box::new(Mutex::new(BTreeMap::from([
+            (
+                "IRONFIST".to_owned(),
+                ("Ironfist Mining Co.".to_owned(), 15000),
+            ),
+            (
+                "STONEBREW".to_owned(),
+                ("Stonebrew Ale & Spirits".to_owned(), 28000),
+            ),
+            (
+                "DEEPFORGE".to_owned(),
+                ("Deepforge Steel Works".to_owned(), 37500),
+            ),
+            (
+                "GEMBEARD".to_owned(),
+                ("Gembeard Jewelers".to_owned(), 25000),
+            ),
+            (
+                "MOUNTAINHEART".to_owned(),
+                ("Mountainheart Excavations".to_owned(), 17500),
+            ),
+        ]))));
+
+        let ctx = Ctx {
+            stocks_tx: stocks_tx.clone(),
+            stocks,
+        };
+
+        let update_ctx = ctx.clone();
+        tokio::spawn(async move {
+            use rand::{SeedableRng, rngs::StdRng};
+
+            let stock_ids = vec![
+                "IRONFIST",
+                "STONEBREW",
+                "DEEPFORGE",
+                "GEMBEARD",
+                "MOUNTAINHEART",
+            ];
+            let mut rng = StdRng::from_entropy();
+
+            loop {
+                tokio::time::sleep(Duration::from_millis(250)).await;
+
+                let stock_id = stock_ids[rng.gen_range(0..stock_ids.len())];
+                let change: i64 = loop {
+                    let c = rng.gen_range(-10..=10);
+                    if c != 0 {
+                        break c;
+                    }
+                };
+
+                let mut stocks = update_ctx.stocks.lock().expect("lock");
+                if let Some((name, price)) = stocks.get_mut(stock_id) {
+                    let new_price = (*price as i64 + change).max(1) as u64;
+                    *price = new_price;
+
+                    if let Err(e) =
+                        update_ctx
+                            .stocks_tx
+                            .send((stock_id.to_owned(), name.clone(), new_price))
+                    {
+                        eprintln!("error sending stock update: {e}");
+                    }
+                }
+            }
+        });
+
         let router = Router::new()
             .route("/", get(home_page))
             .serve_cheers_application(app().expect("create app"))
-            .with_state(Ctx {
-                stocks_tx: tokio::sync::broadcast::channel(16).0,
-                stocks: Box::leak(Box::new(Mutex::new(BTreeMap::from([(
-                    "Wow".to_owned(),
-                    ("Hotsteel".to_owned(), 42),
-                )])))),
-            });
+            .with_state(ctx);
 
         let listener = tokio::net::TcpListener::bind("127.0.0.1:8080")
             .await
