@@ -104,13 +104,13 @@ mod patch_elements {
         }
 
         pub fn id<I: AsRef<ElementId>>(mut self, id: I) -> Self {
-            let mut id = match &id.as_ref().0 {
+            let mut selector = String::from("#");
+            let id = match &id.as_ref().0 {
                 crate::reference::InnerElementId::Static(s) => s,
                 crate::reference::InnerElementId::Dynamic(s) => s.as_str(),
-            }
-            .to_owned();
-            id.insert(0, '#');
-            self.selector = Some(id);
+            };
+            selector.push_str(&id);
+            self.selector = Some(selector);
             self
         }
 

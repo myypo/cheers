@@ -5,13 +5,13 @@ use crate::{
     render::{Buffer, Render},
 };
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum InnerElementId {
     Static(&'static str),
     Dynamic(String),
 }
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 #[repr(transparent)]
 pub struct ElementId(pub(crate) InnerElementId);
 
@@ -38,7 +38,7 @@ impl ElementId {
 
     #[doc(hidden)]
     pub fn __dynamic(s: String) -> Self {
-        Self(InnerElementId::Dynamic(s))
+        Self(InnerElementId::Dynamic(s.into()))
     }
 }
 

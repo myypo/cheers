@@ -353,8 +353,8 @@ fn generate_signal_impl(
             }
         }
     };
-    item.generics = filter_generics(item.generics, fields.iter().map(|f| &f.ty), true);
-    let (_, ty_generics, where_clause) = item.generics.split_for_impl();
+    let filtered_generics = filter_generics(item.generics, fields.iter().map(|f| &f.ty), true);
+    let (_, ty_generics, where_clause) = filtered_generics.split_for_impl();
     Ok(quote! {
         #[expect(dead_code)]
         #vis struct #signal_ident #ty_generics #where_clause {
@@ -363,6 +363,35 @@ fn generate_signal_impl(
 
         #struct_impl
     })
+}
+
+struct FormArgs {
+    name: Ident,
+    ty: Type,
+    field_args: FormFieldArgs,
+}
+
+impl Parse for FormArgs {
+    fn parse(input: ParseStream) -> syn::Result<Self> {
+        let name = input.parse()?;
+        input.parse::<Token![:]>().map_err(|_| {
+            Error::new_spanned(
+                &name,
+                r#"expected a colon and type after form field name, like #[form(name: Type)]"#,
+            )
+        })?;
+
+        Ok(Self {
+            name,
+            ty: input.parse()?,
+            field_args: if input.peek(Token![,]) {
+                input.parse::<Token![,]>()?;
+                input.parse()?
+            } else {
+                FormFieldArgs::default()
+            },
+        })
+    }
 }
 
 #[derive(Default)]
@@ -389,6 +418,50 @@ fn generate_form_impl(item: &mut ItemStruct) -> Result<TokenStream, Error> {
         Ident::new(&ident_str, item.ident.span())
     };
 
+    let (form_attrs, remaining) = std::mem::take(&mut item.attrs)
+        .into_iter()
+        .partition(|a| a.path().is_ident("form"));
+    item.attrs = remaining;
+
+    let mut struct_impls = TokenStream::new();
+    let mut form_field_decls = Vec::new();
+    for a in form_attrs {
+        let args: FormArgs = match a.meta {
+            Meta::List(meta_list) => parse2(meta_list.tokens),
+            _ => Err(Error::new_spanned(a, r#"expected #[form(...)]"#)),
+        }?;
+
+        let ident = &args.name;
+        let ty = &args.ty;
+        let name_str = &args.name.to_string();
+        let fn_ident = Ident::new(
+            &{
+                let mut s = name_str.clone();
+                s.push_str("_form");
+                s
+            },
+            args.name.span(),
+        );
+        let field_name = LitStr::new(&name_str, args.name.span());
+
+        struct_impls.append_all(quote! {
+            #vis fn #fn_ident() -> &'static str {
+                #field_name
+            }
+        });
+
+        let attrs = args.field_args.serde.as_ref().map(|serde| Attribute {
+            pound_token: Pound::default(),
+            style: syn::AttrStyle::Outer,
+            bracket_token: Bracket::default(),
+            meta: Meta::List(serde.clone()),
+        });
+        form_field_decls.push(quote! {
+            #attrs
+            #vis #ident: #ty
+        });
+    }
+
     let mut fields = Vec::new();
     for f in item.fields.iter_mut() {
         let Some(i) = f.attrs.iter().position(|a| a.path().is_ident("form")) else {
@@ -407,7 +480,6 @@ fn generate_form_impl(item: &mut ItemStruct) -> Result<TokenStream, Error> {
     }
 
     let mut struct_field_impls = Vec::new();
-    let mut form_field_decls = Vec::new();
     for (f, args) in &fields {
         let ident = &f.ident;
         let ty = if let Type::Reference(ty_ref) = &f.ty {
@@ -448,7 +520,7 @@ fn generate_form_impl(item: &mut ItemStruct) -> Result<TokenStream, Error> {
         });
     }
 
-    if fields.is_empty() {
+    if fields.is_empty() && struct_impls.is_empty() {
         return Ok(TokenStream::new());
     }
 
@@ -457,23 +529,30 @@ fn generate_form_impl(item: &mut ItemStruct) -> Result<TokenStream, Error> {
         quote! {
             impl #impl_generics #struct_ident #ty_generics #where_clause {
                 #(#struct_field_impls)*
+                #struct_impls
             }
         }
     };
 
-    item.generics = filter_generics(
-        item.generics.clone(),
-        fields.iter().map(|(f, _)| &f.ty),
-        true,
-    );
-    let (_, ty_generics, where_clause) = item.generics.split_for_impl();
+    let form_struct = {
+        let filtered_generics = filter_generics(
+            item.generics.clone(),
+            fields.iter().map(|(f, _)| &f.ty),
+            true,
+        );
+        let (_, ty_generics, where_clause) = filtered_generics.split_for_impl();
+
+        quote! {
+            #[expect(dead_code)]
+            #[derive(::cheers::__internal::serde::Deserialize)]
+            #vis struct #form_ident #ty_generics #where_clause {
+                #(#form_field_decls,)*
+            }
+        }
+    };
 
     Ok(quote! {
-        #[expect(dead_code)]
-        #[derive(::cheers::__internal::serde::Deserialize)]
-        #vis struct #form_ident #ty_generics #where_clause {
-            #(#form_field_decls,)*
-        }
+        #form_struct
 
         #struct_impl
     })

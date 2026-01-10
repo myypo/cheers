@@ -810,3 +810,19 @@ fn action_form_serde() {
     let result: StuffForm = serde_json::from_str("{}").unwrap();
     assert_eq!(result.whatever, String::from("lol"));
 }
+
+#[test]
+fn form_without_field() {
+    #[expect(dead_code)]
+    #[derive(Component)]
+    #[form(keepsake: String, serde(default))]
+    struct Ghost<'a> {
+        name: &'a str,
+    }
+
+    let result = Ghost::keepsake_form();
+    assert_eq!(result, "keepsake");
+
+    let result: GhostForm = serde_json::from_str("{}").unwrap();
+    assert_eq!(result.keepsake, String::from(""));
+}
