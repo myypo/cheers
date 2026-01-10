@@ -185,7 +185,7 @@ async fn main() {
         tokio::spawn(async move {
             use rand::{SeedableRng, rngs::StdRng};
 
-            let stock_ids = vec![
+            let stock_ids = [
                 "IRONFIST",
                 "STONEBREW",
                 "DEEPFORGE",

@@ -442,7 +442,7 @@ fn generate_form_impl(item: &mut ItemStruct) -> Result<TokenStream, Error> {
             },
             args.name.span(),
         );
-        let field_name = LitStr::new(&name_str, args.name.span());
+        let field_name = LitStr::new(name_str, args.name.span());
 
         struct_impls.append_all(quote! {
             #vis fn #fn_ident() -> &'static str {

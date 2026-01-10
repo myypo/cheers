@@ -109,7 +109,7 @@ mod patch_elements {
                 crate::reference::InnerElementId::Static(s) => s,
                 crate::reference::InnerElementId::Dynamic(s) => s.as_str(),
             };
-            selector.push_str(&id);
+            selector.push_str(id);
             self.selector = Some(selector);
             self
         }

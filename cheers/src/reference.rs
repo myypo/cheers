@@ -38,7 +38,7 @@ impl ElementId {
 
     #[doc(hidden)]
     pub fn __dynamic(s: String) -> Self {
-        Self(InnerElementId::Dynamic(s.into()))
+        Self(InnerElementId::Dynamic(s))
     }
 }
 
