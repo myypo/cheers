@@ -613,8 +613,9 @@ fn signal_computed() {
             let a = Input::a_signal();
             let b = Input::b_signal();
             let c = Input::c_signal();
+            let d = Input::d_signal();
             html! {
-                p !computed(c: { (a) "+" (b) }) {}
+                p !computed(c: { (a) "+" (b) }, d: { (c) "- 1" }) {}
             }
             .render_to(buffer);
         }
@@ -651,7 +652,7 @@ fn signal_computed() {
 
     assert_eq!(
         result,
-        r#"<div><p data-computed="{input:{c:()=>$input.a+$input.b}}"></p></div>"#
+        r#"<div><p data-computed="{input:{c:()=>$input.a+$input.b}}" data-computed="{input:{d:()=>$input.c- 1}}"></p></div>"#
     )
 }
 

@@ -113,31 +113,47 @@ impl<'a, 'b> Printer<'a, 'b> {
                             self.print_data_decl_attr_value(decls, attr_indent_level);
                             self.write(")");
                         }
-                        DataContent::Computed(decl) => {
+                        DataContent::Computed(decls) => {
                             self.write("(");
 
-                            let should_wrap_decl = {
-                                let decl_len = data_decl_len_attr_value(&decl);
-                                if let Some(decl_len) = decl_len {
+                            let should_wrap_decls = {
+                                let decls_len: Option<usize> = decls
+                                    .iter()
+                                    .map(data_decl_len_attr_value)
+                                    .reduce(|sum, l| l.map(|l| l + sum.unwrap_or_default()))
+                                    .flatten();
+                                if let Some(decl_len) = decls_len {
                                     (self.line_len() + decl_len) > self.options.line_length
                                 } else {
                                     true
                                 }
                             };
 
-                            if should_wrap_decl {
-                                self.new_line(attr_indent_level + 1);
+                            let decls_empty = decls.is_empty();
+                            let mut first = true;
+                            for d in decls.into_iter() {
+                                if !first {
+                                    self.write(",");
+                                }
+
+                                if should_wrap_decls {
+                                    self.new_line(attr_indent_level + 1);
+                                } else if !first {
+                                    self.write(" ");
+                                }
+
+                                self.print_expr(d.ident, attr_indent_level);
+                                self.write(": ");
+                                self.print_attribute_value_node(
+                                    d.value,
+                                    attr_indent_level + 1,
+                                    preserve_blank_lines,
+                                );
+
+                                first = false;
                             }
 
-                            self.print_expr(decl.ident, attr_indent_level);
-                            self.write(": ");
-                            self.print_attribute_value_node(
-                                decl.value,
-                                attr_indent_level + 1,
-                                preserve_blank_lines,
-                            );
-
-                            if should_wrap_decl {
+                            if should_wrap_decls && !decls_empty {
                                 self.write(",");
                                 self.new_line(attr_indent_level);
                             }
@@ -1012,7 +1028,7 @@ mod test {
         data_attributes_computed_long,
         r#"
         html! {
-            div !computed(computed_property:{(some_long_condition)"this is a long string value"}) { "content" }
+            div !computed(computed_property:{(some_long_condition)"this is a long string value"}, another: "hi, mom") { "content" }
         }
         "#,
         r#"
@@ -1022,6 +1038,7 @@ mod test {
                         (some_long_condition)
                         "this is a long string value"
                     },
+                    another: "hi, mom",
                 )
             { "content" }
         }

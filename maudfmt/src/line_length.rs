@@ -87,11 +87,8 @@ pub fn element_len(ident: &Ident, attrs: &[Attribute], body: &ElementBody) -> Op
                     DataContent::Kv(decls) => {
                         element_len += data_decl_len_attr_values(decls)?;
                     }
-                    DataContent::Computed(decl) => {
-                        element_len += span_len(&decl.ident)?;
-                        // `: `
-                        element_len += 2;
-                        element_len += attribute_value_len(&decl.value)?;
+                    DataContent::Computed(decls) => {
+                        element_len += data_decl_len_attr_values(decls)?;
                     }
                     DataContent::Empty => {}
                 }

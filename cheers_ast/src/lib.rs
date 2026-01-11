@@ -214,6 +214,7 @@ impl ElementBody {
     }
 }
 
+#[allow(clippy::large_enum_variant)]
 pub enum Attribute {
     Regular {
         name: AttributeName,
@@ -547,7 +548,7 @@ pub enum DataContent {
     Node(AttributeValueNode),
     Signals(Punctuated<DataExprValue<Expr>, Token![,]>),
     Kv(Punctuated<DataExprValue<AttributeValueNode>, Token![,]>),
-    Computed(DataExprValue<AttributeValueNode>),
+    Computed(Punctuated<DataExprValue<AttributeValueNode>, Token![,]>),
     Bind(Expr),
     Empty,
 }
@@ -620,7 +621,10 @@ impl Parse for Data {
                 namespace,
                 name,
                 paren_token,
-                content: DataContent::Computed(data.parse()?),
+                content: DataContent::Computed(Punctuated::<
+                    DataExprValue<AttributeValueNode>,
+                    Token![,],
+                >::parse_terminated(&data)?),
             });
         }
         if name == "indicator" || name == "bind" {
@@ -716,26 +720,28 @@ impl Generate for Data {
                 g.push_str("\"");
             }
             DataContent::Computed(d) => {
-                g.push_str(" data-");
-                g.push_literals(name_literals);
-                g.push_str("=\"");
-                g.push_str("{");
+                for d in d {
+                    g.push_str(" data-");
+                    g.push_literals(name_literals.clone());
+                    g.push_str("=\"");
+                    g.push_str("{");
 
-                let buffer_ident = Generator::buffer_ident();
-                let buffer_expr = quote!(#buffer_ident.as_attribute_buffer());
-                let ident_expr = &d.ident;
-                g.push_stmt(quote! {
-                    let count = ::cheers::prelude::Signal::__computed_open(
-                        &#ident_expr,
-                        #buffer_expr
-                    );
-                });
-                g.push(&mut d.value);
-                g.push_stmt(quote! {
-                    ::cheers::prelude::Signal::__computed_close(count, #buffer_expr);
-                });
-                g.push_str("}");
-                g.push_str("\"");
+                    let buffer_ident = Generator::buffer_ident();
+                    let buffer_expr = quote!(#buffer_ident.as_attribute_buffer());
+                    let ident_expr = &d.ident;
+                    g.push_stmt(quote! {
+                        let count = ::cheers::prelude::Signal::__computed_open(
+                            &#ident_expr,
+                            #buffer_expr
+                        );
+                    });
+                    g.push(&mut d.value);
+                    g.push_stmt(quote! {
+                        ::cheers::prelude::Signal::__computed_close(count, #buffer_expr);
+                    });
+                    g.push_str("}");
+                    g.push_str("\"");
+                }
             }
             DataContent::Node(attribute_value_node) => {
                 g.push_str(" data-");
