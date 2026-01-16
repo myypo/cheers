@@ -79,3 +79,4 @@ cheers_macros = { path = "./cheers_macros" }
 [workspace.lints.clippy]
 unwrap_used = "deny"
 panic_in_result_fn = "deny"
+undocumented_unsafe_blocks = "deny"

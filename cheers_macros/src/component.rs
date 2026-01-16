@@ -445,8 +445,8 @@ fn generate_form_impl(item: &mut ItemStruct) -> Result<TokenStream, Error> {
         let field_name = LitStr::new(name_str, args.name.span());
 
         struct_impls.append_all(quote! {
-            #vis fn #fn_ident() -> &'static str {
-                #field_name
+            #vis fn #fn_ident() -> ::cheers::FormName {
+                ::cheers::FormName::__static(#field_name)
             }
         });
 
@@ -509,8 +509,8 @@ fn generate_form_impl(item: &mut ItemStruct) -> Result<TokenStream, Error> {
         );
 
         struct_field_impls.push(quote! {
-            #vis fn #fn_ident() -> &'static str {
-                #field_name
+            #vis fn #fn_ident() -> ::cheers::FormName {
+                ::cheers::FormName::__static(#field_name)
             }
         });
 

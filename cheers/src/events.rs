@@ -126,6 +126,7 @@ mod patch_elements {
 
         pub fn element<R: Render>(mut self, element: R) -> Self {
             if let Some(mut components) = self.components {
+                // XSS SAFETY: static newline
                 components.dangerously_get_string().push('\n');
                 element.render_to(&mut components);
                 Self {
@@ -300,7 +301,7 @@ data: selector #foo\n\n"
 
             impl<'a> Render for Content<'a> {
                 fn render_to(&self, buffer: &mut Buffer<crate::context::Element>) {
-                    buffer.dangerously_get_string().push_str(self.content);
+                    self.content.render_to(buffer);
                 }
             }
 
@@ -337,9 +338,7 @@ data: elements {content}\n\n"
 
             impl<'a> Render for Home {
                 fn render_to(&self, buffer: &mut Buffer<crate::context::Element>) {
-                    buffer
-                        .dangerously_get_string()
-                        .push_str("Home of me\n\nHere we go");
+                    "Home of me\n\nHere we go".render_to(buffer);
                 }
             }
 

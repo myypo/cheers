@@ -154,6 +154,7 @@ impl Generator {
                                 size_estimate += static_part.value().len();
                             });
 
+                        // XSS SAFETY: static parts are literal strings pushed by us
                         stmts.extend(quote! {
                             #buffer_ident.dangerously_get_string().push_str(::core::concat!(#(#static_parts),*));
                         });
@@ -165,6 +166,7 @@ impl Generator {
                 }
             }
 
+            // XSS SAFETY: prealoc does not add any content
             quote! {
                 #buffer_ident.dangerously_get_string().reserve(#size_estimate);
                 #stmts

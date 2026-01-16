@@ -1,7 +1,7 @@
 #![expect(missing_docs, reason = "Test binary")]
 
 use std::{
-    fmt::{self, Display, Formatter},
+    fmt::{self, Debug, Display, Formatter},
     marker::Sync,
     sync::Arc,
     time::Duration,
@@ -822,7 +822,7 @@ fn form_without_field() {
     }
 
     let result = Ghost::keepsake_form();
-    assert_eq!(result, "keepsake");
+    assert_eq!(result.render().into_inner(), "keepsake");
 
     let result: GhostForm = serde_json::from_str("{}").unwrap();
     assert_eq!(result.keepsake, String::from(""));

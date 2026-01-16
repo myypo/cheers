@@ -49,7 +49,7 @@ impl Render<AttributeValue> for ElementId {
             InnerElementId::Dynamic(s) => s.as_str(),
         };
 
-        html_escape::encode_double_quoted_attribute_to_string(s, buffer.dangerously_get_string());
+        s.render_to(buffer);
     }
 }
 
@@ -88,16 +88,17 @@ impl<T> Signal<T> {
             return 0;
         }
 
-        let buf = buffer.dangerously_get_string();
         for (i, segment) in segments.iter().enumerate() {
             if i == 0 {
-                buf.push_str(segment);
+                segment.render_to(buffer);
             } else {
-                buf.push_str(":{");
-                buf.push_str(segment);
+                // XSS SAFETY: statically opening the JS object
+                buffer.dangerously_get_string().push_str(":{");
+                segment.render_to(buffer);
             }
         }
-        buf.push_str(":()=>");
+        // XSS SAFETY: statically assigning a JS function - the execution is intentional
+        buffer.dangerously_get_string().push_str(":()=>");
 
         segments.len() - 1
     }
@@ -106,6 +107,7 @@ impl<T> Signal<T> {
 impl Signal<()> {
     #[doc(hidden)]
     pub fn __computed_close(count: usize, buffer: &mut Buffer<AttributeValue>) {
+        // XSS SAFETY: statically closing the JS object
         let buf = buffer.dangerously_get_string();
         for _ in 0..count {
             buf.push('}');
@@ -123,23 +125,24 @@ impl<T: Render<AttributeValue>> Signal<T> {
         }
 
         {
-            let s = buffer.dangerously_get_string();
             let mut first = true;
             for seg in segments.iter() {
                 if first {
                     first = false;
-                    s.push_str(seg);
+                    seg.render_to(buffer);
                 } else {
-                    s.push(':');
-                    s.push('{');
-                    s.push_str(seg);
+                    // XSS SAFETY: statically opening the JS object
+                    buffer.dangerously_get_string().push_str(":{");
+                    seg.render_to(buffer);
                 }
             }
-            s.push(':');
+            // XSS SAFETY: static assignment
+            buffer.dangerously_get_string().push(':');
         }
 
         v.render_to(buffer);
 
+        // XSS SAFETY: statically closing the JS object
         let s = buffer.dangerously_get_string();
         for _ in 0..segments.len() - 1 {
             s.push('}');
@@ -155,9 +158,8 @@ impl<T> AsRef<Path> for Signal<T> {
 
 impl<T> Render<AttributeValue> for Signal<T> {
     fn render_to(&self, buffer: &mut Buffer<AttributeValue>) {
-        buffer.dangerously_get_string().push('$');
-        // FIXME: can I make this safe?
-        buffer.dangerously_get_string().push_str(&self.path.0);
+        '$'.render_to(buffer);
+        self.path.0.render_to(buffer);
     }
 }
 
@@ -178,6 +180,22 @@ impl Path {
     }
 }
 
+#[derive(Debug)]
+pub struct FormName(&'static str);
+
+impl FormName {
+    #[doc(hidden)]
+    pub fn __static(s: &'static str) -> Self {
+        Self(s)
+    }
+}
+
+impl Render<AttributeValue> for FormName {
+    fn render_to(&self, buffer: &mut Buffer<AttributeValue>) {
+        self.0.render_to(buffer);
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -187,7 +205,7 @@ mod tests {
         let signal = Signal::<&str>::__string("user.name".to_string());
         let mut buffer = Buffer::new();
         signal.__assign(&mut buffer, "'Nick'");
-        assert_eq!(buffer.dangerously_get_string(), r#"user:{name:'Nick'}"#);
+        assert_eq!(buffer.rendered().into_inner(), r#"user:{name:'Nick'}"#);
     }
 
     #[test]
@@ -195,6 +213,6 @@ mod tests {
         let signal = Signal::<f64>::__string("user.age".to_string());
         let mut buffer = Buffer::new();
         signal.__assign(&mut buffer, -42.0);
-        assert_eq!(buffer.dangerously_get_string(), r#"user:{age:-42.0}"#);
+        assert_eq!(buffer.rendered().into_inner(), r#"user:{age:-42.0}"#);
     }
 }

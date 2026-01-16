@@ -474,6 +474,7 @@ impl Render<AttributeValue> for fmt::Arguments<'_> {
 impl Render for char {
     #[inline]
     fn render_to(&self, buffer: &mut Buffer) {
+        // XSS SAFETY: manual escaping
         let s = buffer.dangerously_get_string();
         match *self {
             '&' => s.push_str("&amp;"),
