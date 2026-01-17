@@ -371,7 +371,7 @@ async fn page_async_block_is_streamed() {
 
 #[test]
 fn data_attributes() {
-    let hello: Signal<bool> = Signal::scoped("hello");
+    let hello: Signal<bool> = scoped_signal!("hello");
     let result = html! {
         div !on:interval("@get('/')") {}
         p !bind(hello) {}
@@ -380,7 +380,7 @@ fn data_attributes() {
 
     assert_eq!(
         result.as_inner(),
-        r#"<div data-on:interval="@get('/')"></div><p data-bind="hello"></p>"#
+        r#"<div data-on:interval="@get('/')"></div><p data-bind="hello1911938546"></p>"#
     );
 }
 

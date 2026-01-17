@@ -30,9 +30,10 @@ pub mod prelude {
             Event, EventReceiver, EventSender, JsScript, PatchElements, PatchElementsMode, events,
         },
         include_css,
-        reference::{ElementId, Path, Signal},
+        reference::{ElementId, Signal},
         render::{Buffer, Lazy, LazyAttribute, Render, RenderExt as _},
         response::AsyncLazy,
+        scoped_signal,
     };
 }
 pub use reference::FormName;

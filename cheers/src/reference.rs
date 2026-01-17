@@ -55,34 +55,46 @@ impl Render<AttributeValue> for ElementId {
 
 #[derive(Debug)]
 pub struct Signal<T> {
-    path: Path,
+    path: String,
     ty: PhantomData<T>,
+}
+
+#[macro_export]
+macro_rules! scoped_signal {
+    ($name:literal) => {
+        ::cheers::prelude::Signal::__scoped($name, ::std::file!(), ::std::line!(), ::std::column!())
+    };
 }
 
 impl<T> Signal<T> {
     #[doc(hidden)]
-    pub fn __string(s: String) -> Self {
+    pub fn __scoped(name: &'static str, file: &'static str, line: u32, column: u32) -> Self {
+        let hash = hash_location(file, line, column);
+        // TODO: there should be a way to avoid the alloc
+        let path = format!("{name}{hash}");
+        Self {
+            path,
+            ty: PhantomData::<T>,
+        }
+    }
+
+    #[doc(hidden)]
+    pub fn __string(path: String) -> Self {
         Signal {
-            path: Path(s),
+            path,
             ty: PhantomData::<T>,
         }
     }
 
     #[doc(hidden)]
     pub fn __path(&self) -> &str {
-        &self.path.0
-    }
-
-    pub fn scoped(s: &'static str) -> Self {
-        Self {
-            path: Path(s.to_owned()),
-            ty: PhantomData::<T>,
-        }
+        &self.path
     }
 
     #[doc(hidden)]
     pub fn __computed_open(&self, buffer: &mut Buffer<AttributeValue>) -> usize {
-        let segments: Vec<&str> = self.path.0.split('.').collect();
+        let path = self.__path();
+        let segments: Vec<&str> = path.split('.').collect();
 
         if segments.is_empty() {
             return 0;
@@ -118,7 +130,8 @@ impl Signal<()> {
 impl<T: Render<AttributeValue>> Signal<T> {
     #[doc(hidden)]
     pub fn __assign(&self, buffer: &mut Buffer<AttributeValue>, v: T) {
-        let segments: Vec<&str> = self.path.0.split('.').collect();
+        let path = self.__path();
+        let segments: Vec<&str> = path.split('.').collect();
 
         if segments.is_empty() {
             return;
@@ -150,33 +163,10 @@ impl<T: Render<AttributeValue>> Signal<T> {
     }
 }
 
-impl<T> AsRef<Path> for Signal<T> {
-    fn as_ref(&self) -> &Path {
-        &self.path
-    }
-}
-
 impl<T> Render<AttributeValue> for Signal<T> {
     fn render_to(&self, buffer: &mut Buffer<AttributeValue>) {
         '$'.render_to(buffer);
-        self.path.0.render_to(buffer);
-    }
-}
-
-// TODO: better name?
-#[derive(Debug)]
-pub struct Path(String);
-
-impl Path {
-    #[doc(hidden)]
-    pub fn __string(&self) -> String {
-        // TODO: use Cow?
-        self.0.clone()
-    }
-
-    #[doc(hidden)]
-    pub fn __empty() -> Self {
-        Self(String::new())
+        self.__path().render_to(buffer);
     }
 }
 
@@ -194,6 +184,40 @@ impl Render<AttributeValue> for FormName {
     fn render_to(&self, buffer: &mut Buffer<AttributeValue>) {
         self.0.render_to(buffer);
     }
+}
+
+/// Computes 32-bit FNV1a hash from a location
+pub(crate) const fn hash_location(file: &'static str, line: u32, column: u32) -> u32 {
+    const FNV_OFFSET_BASIS_32: u32 = 0x811c9dc5;
+    const FNV_PRIME_32: u32 = 0x01000193;
+
+    let bytes = file.as_bytes();
+    let mut hash = FNV_OFFSET_BASIS_32;
+    let mut i = 0;
+
+    while i < bytes.len() {
+        hash ^= bytes[i] as u32;
+        hash = hash.wrapping_mul(FNV_PRIME_32);
+        i += 1;
+    }
+
+    let line_bytes = line.to_ne_bytes();
+    i = 0;
+    while i < 4 {
+        hash ^= line_bytes[i] as u32;
+        hash = hash.wrapping_mul(FNV_PRIME_32);
+        i += 1;
+    }
+
+    let column_bytes = column.to_ne_bytes();
+    i = 0;
+    while i < 4 {
+        hash ^= column_bytes[i] as u32;
+        hash = hash.wrapping_mul(FNV_PRIME_32);
+        i += 1;
+    }
+
+    hash
 }
 
 #[cfg(test)]
@@ -214,5 +238,21 @@ mod tests {
         let mut buffer = Buffer::new();
         signal.__assign(&mut buffer, -42.0);
         assert_eq!(buffer.rendered().into_inner(), r#"user:{age:-42.0}"#);
+    }
+
+    #[test]
+    fn hash_different_locations() {
+        const HASH1: u32 = hash_location("src/main.rs", 10, 5);
+        const HASH2: u32 = hash_location("src/main.rs", 10, 6);
+
+        assert_ne!(HASH1, HASH2);
+    }
+
+    #[test]
+    fn hash_same_locations() {
+        const HASH1: u32 = hash_location("src/main.rs", 42, 13);
+        const HASH2: u32 = hash_location("src/main.rs", 42, 13);
+
+        assert_eq!(HASH1, HASH2);
     }
 }
