@@ -496,6 +496,34 @@ dependencies = [
 ]
 
 [[package]]
+name = "cheers_cli"
+version = "0.0.0"
+dependencies = [
+ "anyhow",
+ "assert_cmd",
+ "assert_fs",
+ "cheers_fmt",
+ "clap",
+ "glob",
+ "predicates",
+ "pretty_assertions",
+]
+
+[[package]]
+name = "cheers_fmt"
+version = "0.0.0"
+dependencies = [
+ "anyhow",
+ "cheers_ast",
+ "crop",
+ "pretty_assertions",
+ "prettyplease",
+ "proc-macro2",
+ "quote",
+ "syn 2.0.110",
+]
+
+[[package]]
 name = "cheers_macros"
 version = "0.0.0"
 dependencies = [
@@ -1558,25 +1586,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "47e1ffaa40ddd1f3ed91f717a33c8c0ee23fff369e3aa8772b9605cc1d22f4c3"
 
 [[package]]
-name = "maudfmt"
-version = "0.0.0"
-dependencies = [
- "anyhow",
- "assert_cmd",
- "assert_fs",
- "cheers_ast",
- "clap",
- "crop",
- "glob",
- "predicates",
- "pretty_assertions",
- "prettyplease",
- "proc-macro2",
- "quote",
- "syn 2.0.110",
-]
-
-[[package]]
 name = "memchr"
 version = "2.7.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2099,7 +2108,6 @@ version = "0.0.0"
 dependencies = [
  "axum",
  "cheers",
- "inventory",
  "rand",
  "tokio",
 ]

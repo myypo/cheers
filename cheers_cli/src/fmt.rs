@@ -6,14 +6,13 @@ use std::{
 };
 
 use anyhow::{Context, Result, bail};
-use clap::Parser;
+use cheers_fmt::{FormatOptions, try_fmt_file};
+use clap::Args;
 use glob::glob;
-use maudfmt::{FormatOptions, try_fmt_file};
 
-#[derive(Parser)]
-#[command(version, about, long_about = None, arg_required_else_help=true)]
-struct Cli {
-    /// A space separated list of file, directory or glob
+#[derive(Args)]
+pub struct FmtArgs {
+    /// A space separated list of files, directories or globs
     #[arg(value_name = "FILE", required_unless_present = "stdin")]
     files: Option<Vec<String>>,
 
@@ -25,7 +24,7 @@ struct Cli {
     #[arg(short, long, value_delimiter = ',', default_value = None)]
     macro_names: Option<Vec<String>>,
 
-    /// Run rustfmt after maudfmt
+    /// Run rustfmt after cheers fmt
     #[arg(long, default_value = "false")]
     rustfmt: bool,
 
@@ -36,57 +35,6 @@ struct Cli {
     /// Maximum line length
     #[arg(long)]
     line_length: Option<usize>,
-}
-
-fn main() -> Result<()> {
-    let cli = Cli::parse();
-
-    let mut format_options = FormatOptions::default();
-    if let Some(macro_names) = cli.macro_names {
-        format_options.macro_names = macro_names;
-    }
-    if let Some(line_length) = cli.line_length {
-        format_options.line_length = line_length;
-    }
-
-    if cli.stdin {
-        let buf = {
-            let mut buf = String::new();
-            let mut stdin = io::stdin();
-            stdin
-                .read_to_string(&mut buf)
-                .context("Failed to read from stdin")?;
-            buf
-        };
-
-        let mut formatted_buf = try_fmt_file(&buf, &format_options).unwrap_or(buf);
-
-        if cli.rustfmt {
-            formatted_buf = run_rustfmt(&formatted_buf, &cli.rustfmt_args).unwrap_or(formatted_buf);
-        }
-
-        print!("{formatted_buf}");
-    } else {
-        match cli.files {
-            None => bail!("No files provided while not using stdin mode"),
-            Some(files) => {
-                for file in get_file_paths(files)? {
-                    let source = std::fs::read_to_string(&file)?;
-                    let mut formatted_source =
-                        try_fmt_file(&source, &format_options).unwrap_or(source);
-
-                    if cli.rustfmt {
-                        formatted_source = run_rustfmt(&formatted_source, &cli.rustfmt_args)
-                            .unwrap_or(formatted_source);
-                    }
-
-                    fs::write(file, &formatted_source)?;
-                }
-            }
-        }
-    }
-
-    Ok(())
 }
 
 fn get_file_paths(input_patterns: Vec<String>) -> Result<Vec<PathBuf>> {
@@ -137,5 +85,65 @@ fn run_rustfmt(source: &str, args: &[String]) -> Option<String> {
         Some(String::from_utf8(output.stdout).expect("stdout is not valid utf8"))
     } else {
         None
+    }
+}
+
+pub fn run(
+    FmtArgs {
+        files,
+        stdin,
+        macro_names,
+        rustfmt,
+        rustfmt_args,
+        line_length,
+    }: FmtArgs,
+) -> Result<()> {
+    let mut format_options = FormatOptions::default();
+    if let Some(macro_names) = macro_names {
+        format_options.macro_names = macro_names;
+    }
+    if let Some(line_length) = line_length {
+        format_options.line_length = line_length;
+    }
+
+    if stdin {
+        let buf = {
+            let mut buf = String::new();
+            let mut stdin = io::stdin();
+            stdin
+                .read_to_string(&mut buf)
+                .context("Failed to read from stdin")?;
+            buf
+        };
+
+        let mut formatted_buf = try_fmt_file(&buf, &format_options).unwrap_or(buf);
+
+        if rustfmt {
+            formatted_buf = run_rustfmt(&formatted_buf, &rustfmt_args).unwrap_or(formatted_buf);
+        }
+
+        print!("{formatted_buf}");
+
+        Ok(())
+    } else {
+        match files {
+            None => bail!("No files provided while not using stdin mode"),
+            Some(files) => {
+                for file in get_file_paths(files)? {
+                    let source = std::fs::read_to_string(&file)?;
+                    let mut formatted_source =
+                        try_fmt_file(&source, &format_options).unwrap_or(source);
+
+                    if rustfmt {
+                        formatted_source = run_rustfmt(&formatted_source, &rustfmt_args)
+                            .unwrap_or(formatted_source);
+                    }
+
+                    fs::write(file, &formatted_source)?;
+                }
+            }
+        }
+
+        Ok(())
     }
 }

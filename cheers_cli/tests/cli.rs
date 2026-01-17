@@ -65,8 +65,8 @@ fn format_file_from_argument() -> Result<()> {
     file.write_str(IN_FILE)?;
 
     // When
-    let mut cmd = cargo::cargo_bin_cmd!();
-    cmd.arg(file.path());
+    let mut cmd = cargo::cargo_bin_cmd!("cheers");
+    cmd.arg("fmt").arg(file.path());
 
     // Then
     cmd.assert().success();
@@ -84,8 +84,8 @@ fn format_multiple_files_from_argument() -> Result<()> {
     file_2.write_str(IN_FILE)?;
 
     // When
-    let mut cmd = cargo::cargo_bin_cmd!();
-    cmd.arg(file_1.path()).arg(file_2.path());
+    let mut cmd = cargo::cargo_bin_cmd!("cheers");
+    cmd.arg("fmt").arg(file_1.path()).arg(file_2.path());
 
     // Then
     cmd.assert().success();
@@ -105,8 +105,8 @@ fn format_dir_from_argument() -> Result<()> {
     file_2.write_str(IN_FILE)?;
 
     // When
-    let mut cmd = cargo::cargo_bin_cmd!();
-    cmd.arg(directory.path());
+    let mut cmd = cargo::cargo_bin_cmd!("cheers");
+    cmd.arg("fmt").arg(directory.path());
 
     // Then
     cmd.assert().success();
@@ -123,8 +123,8 @@ fn format_file_from_stdin() -> Result<()> {
     file.write_str(IN_FILE)?;
 
     // When
-    let mut cmd = cargo::cargo_bin_cmd!();
-    cmd.arg("-s").pipe_stdin(file)?;
+    let mut cmd = cargo::cargo_bin_cmd!("cheers");
+    cmd.arg("fmt").arg("-s").pipe_stdin(file)?;
 
     // Then
     cmd.assert()
@@ -193,8 +193,9 @@ fn format_file_with_custom_macro_names() -> Result<()> {
     let file = assert_fs::NamedTempFile::new("sample.rs")?;
     file.write_str(CUSTOM_MACRO_IN_FILE)?;
 
-    let mut cmd = cargo::cargo_bin_cmd!();
-    cmd.arg("--macro-names")
+    let mut cmd = cargo::cargo_bin_cmd!("cheers");
+    cmd.arg("fmt")
+        .arg("--macro-names")
         .arg("custom,module::custom")
         .arg(file.path());
 
@@ -209,8 +210,9 @@ fn format_stdin_with_custom_macro_names() -> Result<()> {
     let file = assert_fs::NamedTempFile::new("stdin")?;
     file.write_str(CUSTOM_MACRO_IN_FILE)?;
 
-    let mut cmd = cargo::cargo_bin_cmd!();
-    cmd.arg("-s")
+    let mut cmd = cargo::cargo_bin_cmd!("cheers");
+    cmd.arg("fmt")
+        .arg("-s")
         .arg("--macro-names")
         .arg("custom,module::custom")
         .pipe_stdin(file)?;
@@ -227,8 +229,11 @@ fn format_file_with_custom_macro_names_short_arg() -> Result<()> {
     let file = assert_fs::NamedTempFile::new("sample.rs")?;
     file.write_str(CUSTOM_MACRO_IN_FILE)?;
 
-    let mut cmd = cargo::cargo_bin_cmd!();
-    cmd.arg("-m").arg("custom,module::custom").arg(file.path());
+    let mut cmd = cargo::cargo_bin_cmd!("cheers");
+    cmd.arg("fmt")
+        .arg("-m")
+        .arg("custom,module::custom")
+        .arg(file.path());
 
     cmd.assert().success();
     assert_eq!(std::fs::read_to_string(&file)?, CUSTOM_MACRO_OUT_FILE);
@@ -275,8 +280,11 @@ fn format_file_with_short_line_length() -> Result<()> {
     let file = assert_fs::NamedTempFile::new("sample.rs")?;
     file.write_str(LONG_LINE_IN_FILE)?;
 
-    let mut cmd = cargo::cargo_bin_cmd!();
-    cmd.arg("--line-length").arg("50").arg(file.path());
+    let mut cmd = cargo::cargo_bin_cmd!("cheers");
+    cmd.arg("fmt")
+        .arg("--line-length")
+        .arg("50")
+        .arg(file.path());
 
     cmd.assert().success();
     assert_eq!(
@@ -292,8 +300,11 @@ fn format_file_with_long_line_length() -> Result<()> {
     let file = assert_fs::NamedTempFile::new("sample.rs")?;
     file.write_str(LONG_LINE_IN_FILE)?;
 
-    let mut cmd = cargo::cargo_bin_cmd!();
-    cmd.arg("--line-length").arg("200").arg(file.path());
+    let mut cmd = cargo::cargo_bin_cmd!("cheers");
+    cmd.arg("fmt")
+        .arg("--line-length")
+        .arg("200")
+        .arg(file.path());
 
     cmd.assert().success();
     assert_eq!(
@@ -309,8 +320,9 @@ fn format_stdin_with_line_length() -> Result<()> {
     let file = assert_fs::NamedTempFile::new("stdin")?;
     file.write_str(LONG_LINE_IN_FILE)?;
 
-    let mut cmd = cargo::cargo_bin_cmd!();
-    cmd.arg("-s")
+    let mut cmd = cargo::cargo_bin_cmd!("cheers");
+    cmd.arg("fmt")
+        .arg("-s")
         .arg("--line-length")
         .arg("50")
         .pipe_stdin(file)?;

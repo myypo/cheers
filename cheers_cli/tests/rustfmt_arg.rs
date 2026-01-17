@@ -58,8 +58,8 @@ fn execute_rustfmt_on_files() -> Result<()> {
     file.write_str(IN_FILE)?;
 
     // When
-    let mut cmd = cargo::cargo_bin_cmd!();
-    cmd.arg("--rustfmt").arg(file.path());
+    let mut cmd = cargo::cargo_bin_cmd!("cheers");
+    cmd.arg("fmt").arg("--rustfmt").arg(file.path());
 
     // Then
     cmd.assert().success();
@@ -75,8 +75,8 @@ fn execute_rustfmt_on_stdin() -> Result<()> {
     file.write_str(IN_FILE)?;
 
     // When
-    let mut cmd = cargo::cargo_bin_cmd!();
-    cmd.arg("--rustfmt").arg("-s").pipe_stdin(file)?;
+    let mut cmd = cargo::cargo_bin_cmd!("cheers");
+    cmd.arg("fmt").arg("--rustfmt").arg("-s").pipe_stdin(file)?;
 
     // Then
     cmd.assert()

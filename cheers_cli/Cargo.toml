@@ -1,0 +1,31 @@
+[package]
+name = "cheers_cli"
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
+description.workspace = true
+readme.workspace = true
+homepage.workspace = true
+repository.workspace = true
+license.workspace = true
+keywords.workspace = true
+categories.workspace = true
+
+[[bin]]
+name = "cheers"
+path = "./src/main.rs"
+
+[dependencies]
+cheers_fmt.workspace = true
+anyhow.workspace = true
+clap.workspace = true
+glob.workspace = true
+
+[dev-dependencies]
+pretty_assertions.workspace = true
+predicates.workspace = true
+assert_fs.workspace = true
+assert_cmd.workspace = true
+
+[lints]
+workspace = true

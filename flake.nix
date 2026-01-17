@@ -164,11 +164,11 @@
         { pkgs, ... }:
         {
           default = pkgs.rustPlatform.buildRustPackage {
-            name = "maudfmt";
+            name = "cheers";
             src = ./.;
-            cargoBuildFlags = [ "-p=maudfmt" ];
+            cargoBuildFlags = [ "-p=cheers_cli" ];
 
-            cargoHash = "sha256-+nVRzbduVcjNrBvDp1R+PJoZJ8On2hi2X6FNnt4vPp8=";
+            cargoHash = "sha256-T+HiOAcghDVsvcOADKslOOb86QUKdAlZSfwP81sWNB4=";
 
             doCheck = false;
           };

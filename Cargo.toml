@@ -4,7 +4,8 @@ members = [
   "cheers",
   "cheers_ast",
   "cheers_macros",
-  "maudfmt",
+  "cheers_fmt",
+  "cheers_cli",
   "examples/realtime",
 ]
 resolver = "3"
@@ -77,12 +78,12 @@ anyhow = "1"
 walkdir = "2"
 
 # Workspace crates
-crabstar = { path = "./crabstar" }
-crabstar_macros = { path = "./crabstar_macros" }
 bundlestar = { path = "./bundlestar" }
 cheers = { path = "./cheers" }
 cheers_ast = { path = "./cheers_ast" }
 cheers_macros = { path = "./cheers_macros" }
+cheers_fmt = { path = "./cheers_fmt" }
+cheers_cli = { path = "./cheers_cli" }
 
 [workspace.lints.clippy]
 unwrap_used = "deny"
