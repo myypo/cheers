@@ -34,18 +34,7 @@
                 import inputs.nixpkgs { inherit overlays system; };
               pre-commit-hooks = inputs.pre-commit-hooks.lib.${system}.run;
               pre-commit-check = inputs.self.checks.${system}.pre-commit-check;
-              rust-toolchain = (
-                with inputs;
-                with fenix;
-                with complete;
-                combine [
-                  cargo
-                  clippy
-                  rust-src
-                  rustc
-                  rustfmt
-                ]
-              );
+              rust-toolchain = inputs.fenix;
             }
           )
         );
@@ -75,17 +64,6 @@
               cargo-machete
 
               rust-analyzer-nightly
-              (
-                with fenix;
-                with complete;
-                combine [
-                  cargo
-                  clippy
-                  rust-src
-                  rustc
-                  rustfmt
-                ]
-              )
 
               inputs.self.packages.${pkgs.stdenv.hostPlatform.system}.default
             ];
@@ -106,7 +84,7 @@
                 value = {
                   enable = true;
                   name = "Unit and integration tests (${flags})";
-                  entry = "cargo test --workspace ${flags}";
+                  entry = "${pkgs.cargo}/bin/cargo test --workspace ${flags}";
                   pass_filenames = false;
                 };
               })
@@ -133,23 +111,15 @@
                   enable = true;
                   stages = default_stages ++ [ "commit-msg" ];
                 };
-                taplo = {
-                  enable = true;
-                };
+                taplo.enable = true;
                 actionlint.enable = true;
-
                 clippy = {
                   enable = true;
-                  packageOverrides.cargo = pkgs.fenix.complete.cargo;
-                  packageOverrides.clippy = pkgs.fenix.complete.clippy;
                   settings.allFeatures = true;
                   settings.denyWarnings = true;
                   settings.extraArgs = "--keep-going";
                 };
-                rustfmt = {
-                  enable = true;
-                  package = pkgs.fenix.complete.rustfmt;
-                };
+                rustfmt.enable = true;
               };
               settings = {
                 rust.check.cargoDeps = pkgs.rustPlatform.importCargoLock {
@@ -168,7 +138,7 @@
             src = ./.;
             cargoBuildFlags = [ "-p=cheers_cli" ];
 
-            cargoHash = "sha256-T+HiOAcghDVsvcOADKslOOb86QUKdAlZSfwP81sWNB4=";
+            cargoHash = "sha256-UoiCdeQ6sveUnKhL9JnLBqO7ysaeuXw9h58V2pSF5Og=";
 
             doCheck = false;
           };
