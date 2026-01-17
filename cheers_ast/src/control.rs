@@ -7,7 +7,6 @@ use rustc_hash::FxHasher;
 use syn::{
     Expr, LitStr, Local, Pat, Stmt, Token, braced,
     parse::{Parse, ParseStream},
-    spanned::Spanned,
     token::Brace,
 };
 
@@ -434,7 +433,7 @@ impl Async {
 
     fn add_data_ssr_key(&mut self) -> String {
         let key = {
-            let span = self.async_token.span().span();
+            let span = self.async_token.span;
             let file = span.file();
             let line = span.start().line;
             let column = span.start().column;

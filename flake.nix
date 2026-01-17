@@ -59,6 +59,7 @@
               rustc
               cargo-deny
               cargo-machete
+              rust-analyzer
 
               inputs.self.packages.${pkgs.stdenv.hostPlatform.system}.default
             ];
