@@ -36,7 +36,7 @@ tokio = { version = "1", features = [
   "io-util",
 ], default-features = false }
 itoa = { version = "1" }
-ryu = { version = "1" }
+zmij = { version = "1" }
 tokio-stream = { version = "0.1", features = ["sync"] }
 futures = { version = "0.3" }
 notify = { version = "8" }

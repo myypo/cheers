@@ -60,6 +60,8 @@
 
               act
 
+              cargo
+              rustc
               cargo-deny
               cargo-machete
 
@@ -138,7 +140,7 @@
             src = ./.;
             cargoBuildFlags = [ "-p=cheers_cli" ];
 
-            cargoHash = "sha256-UoiCdeQ6sveUnKhL9JnLBqO7ysaeuXw9h58V2pSF5Og=";
+            cargoHash = "sha256-jXe+HrYxVx4dN65ESx4sGSe1ABus4MYI1qvo5VZAIcc=";
 
             doCheck = false;
           };

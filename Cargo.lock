@@ -473,7 +473,6 @@ dependencies = [
  "itoa",
  "lightningcss",
  "notify",
- "ryu",
  "serde",
  "serde_json",
  "tokio",
@@ -481,6 +480,7 @@ dependencies = [
  "tokio-util",
  "tower",
  "tracing",
+ "zmij",
 ]
 
 [[package]]

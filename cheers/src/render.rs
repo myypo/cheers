@@ -593,26 +593,26 @@ render_via_itoa! {
     u8 u16 u32 u64 u128 usize
 }
 
-macro_rules! render_via_ryu {
+macro_rules! render_via_zmij {
     ($($Ty:ty)*) => {
         $(
             impl<C: Context> Render<C> for $Ty {
                 #[inline]
                 fn render_to(&self, buffer: &mut Buffer<C>) {
                     // XSS SAFETY: floats are safe
-                    buffer.dangerously_get_string().push_str(ryu::Buffer::new().format(*self));
+                    buffer.dangerously_get_string().push_str(zmij::Buffer::new().format(*self));
                 }
 
                 #[inline]
                 fn render(&self) -> Rendered<String> {
-                    Rendered(ryu::Buffer::new().format(*self).into())
+                    Rendered(zmij::Buffer::new().format(*self).into())
                 }
             }
         )*
     };
 }
 
-render_via_ryu! {
+render_via_zmij! {
     f32 f64
 }
 
