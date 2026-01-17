@@ -61,19 +61,24 @@ pub struct Signal<T> {
 
 #[macro_export]
 macro_rules! scoped_signal {
-    ($name:literal) => {
-        ::cheers::prelude::Signal::__scoped($name, ::std::file!(), ::std::line!(), ::std::column!())
-    };
+    ($name:literal $(, $id:expr)*) => {{
+        let mut name = ::std::string::String::from($name);
+        $(
+            name.push('.');
+            name.push_str(&$id.to_string());
+        )*
+        ::cheers::prelude::Signal::__scoped(name, ::std::file!(), ::std::line!(), ::std::column!())
+    }};
 }
 
 impl<T> Signal<T> {
     #[doc(hidden)]
-    pub fn __scoped(name: &'static str, file: &'static str, line: u32, column: u32) -> Self {
+    pub fn __scoped(mut name: String, file: &'static str, line: u32, column: u32) -> Self {
         let hash = hash_location(file, line, column);
-        // TODO: there should be a way to avoid the alloc
-        let path = format!("{name}{hash}");
+        name.push_str(&hash.to_string());
+
         Self {
-            path,
+            path: name,
             ty: PhantomData::<T>,
         }
     }

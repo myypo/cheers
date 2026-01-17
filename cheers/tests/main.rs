@@ -370,17 +370,18 @@ async fn page_async_block_is_streamed() {
 }
 
 #[test]
-fn data_attributes() {
-    let hello: Signal<bool> = scoped_signal!("hello");
+fn scoped_signal_hash() {
+    let toggle: Signal<bool> = scoped_signal!("toggle");
+    let nested: Signal<&'static str> = scoped_signal!("nested", "go42", "bye");
     let result = html! {
         div !on:interval("@get('/')") {}
-        p !bind(hello) {}
+        p !signals(toggle: true, nested: "'impressive'") {}
     }
     .render();
 
     assert_eq!(
         result.as_inner(),
-        r#"<div data-on:interval="@get('/')"></div><p data-bind="hello1911938546"></p>"#
+        r#"<div data-on:interval="@get('/')"></div><p data-signals="{toggle3869279421:true,nested:{go42:{bye1509241184:'impressive'}}}"></p>"#
     );
 }
 
