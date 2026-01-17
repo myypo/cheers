@@ -8,7 +8,6 @@ use axum::{
 use cheers::{
     components::{Css, Doctype, Scripts},
     prelude::*,
-    router::CheersRouterExt,
 };
 use rand::Rng;
 
@@ -221,15 +220,14 @@ async fn main() {
             }
         });
 
-        let router = Router::new()
-            .route("/", get(home_page))
-            .serve_cheers_application(app().expect("create app"))
+        let app = app(Router::new().route("/", get(home_page)))
+            .expect("create app")
             .with_state(ctx);
 
         let listener = tokio::net::TcpListener::bind("127.0.0.1:8080")
             .await
             .unwrap();
-        axum::serve(listener, router).await.unwrap();
+        axum::serve(listener, app).await.unwrap();
     })
     .await
     .unwrap();

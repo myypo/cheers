@@ -4,7 +4,6 @@ version.workspace = true
 authors.workspace = true
 edition.workspace = true
 description.workspace = true
-documentation = "https://docs.rs/maudfmt"
 readme.workspace = true
 homepage.workspace = true
 repository.workspace = true
@@ -21,7 +20,7 @@ crop.workspace = true
 proc-macro2.workspace = true
 prettyplease.workspace = true
 quote.workspace = true
-syn = { workspace = true, features = ["visit", "full", "extra-traits"] }
+syn.workspace = true
 
 [dev-dependencies]
 pretty_assertions.workspace = true

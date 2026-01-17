@@ -1,6 +1,7 @@
 mod assets;
 pub use assets::CSS_BUNDLER;
 pub(crate) use assets::css_url;
+mod compression;
 mod live_reload;
 mod redirect_trailing_slash;
 
@@ -27,45 +28,24 @@ impl Display for Error {
 
 impl std::error::Error for Error {}
 
-pub trait CheersRouterExt<S>
-where
-    Self: Sized,
-{
-    fn serve_cheers_application(self, app: App<S>) -> Router<S>;
-}
+pub fn new<S: Clone + Send + Sync + 'static>(
+    actions_and_pages: Router<S>,
+) -> Result<Router<S>, Error> {
+    let router = assets_router()?;
 
-impl<S> CheersRouterExt<S> for Router<S>
-where
-    S: Clone + Send + Sync + 'static,
-{
-    fn serve_cheers_application(self, app: App<S>) -> Router<S> {
-        self.merge(app.router)
-    }
-}
+    let router = router.merge(live_reload::router());
+    let router = Router::new()
+        .nest("/cheers", router)
+        .merge(actions_and_pages);
 
-pub struct App<S> {
-    router: Router<S>,
-}
+    let router = router.layer(axum::middleware::from_fn(
+        redirect_trailing_slash::redirect_trailing_slash,
+    ));
+    let router = router.layer(axum::middleware::from_fn(
+        compression::compression_middleware,
+    ));
 
-impl<S: Clone + Send + Sync + 'static> App<S> {
-    pub fn new(actions: Router<S>) -> Result<Self, Error> {
-        let router = assets_router()?;
-
-        // TODO: currently just avoid compressing suspense streaming
-        // later make it work with async-compression
-        // FIXME: it fucks up SSE
-        // let router =
-        // router.layer(CompressionLayer::new().compress_when(CompressionPredicate));
-
-        let router = router.layer(axum::middleware::from_fn(
-            redirect_trailing_slash::redirect_trailing_slash,
-        ));
-
-        let router = router.merge(live_reload::router());
-        let router = Router::new().nest("/cheers", router).merge(actions);
-
-        Ok(Self { router })
-    }
+    Ok(router)
 }
 
 #[macro_export]
@@ -78,12 +58,14 @@ macro_rules! app {
         );
         $crate::__internal::inventory::collect!(Action);
 
-        pub fn app() -> ::std::result::Result<$crate::router::App<$state>, $crate::router::Error> {
-            let mut r = $crate::__internal::axum::Router::<$state>::new();
+        pub fn app(
+            mut router: $crate::__internal::axum::Router<$state>,
+        ) -> ::std::result::Result<$crate::__internal::axum::Router<$state>, $crate::router::Error>
+        {
             for a in $crate::__internal::inventory::iter::<Action> {
-                r = (a.0)(r);
+                router = (a.0)(router);
             }
-            $crate::router::App::new(r)
+            $crate::router::new(router)
         }
     };
 }

@@ -38,7 +38,6 @@ pub mod prelude {
 }
 pub use reference::FormName;
 pub use render::{Raw, RawAttribute, Rendered};
-pub use router::CheersRouterExt as _;
 
 #[cfg(test)]
 mod test_utils;

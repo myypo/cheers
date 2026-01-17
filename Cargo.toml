@@ -26,12 +26,13 @@ serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1" }
 axum = { version = "0.8" }
 tower = { version = "0.5" }
-syn = { version = "2", features = ["full", "visit"] }
+syn = { version = "2", features = ["full", "visit", "extra-traits"] }
 quote = { version = "1", default-features = false }
 proc-macro2 = { version = "1", default-features = false }
 tokio = { version = "1", features = [
   "macros",
   "rt-multi-thread",
+  "io-util",
 ], default-features = false }
 itoa = { version = "1" }
 ryu = { version = "1" }
@@ -53,6 +54,13 @@ predicates = "3"
 assert_fs = "1"
 assert_cmd = "2"
 inventory = "0.3"
+async-compression = { version = "0.4", features = [
+  "tokio",
+  "gzip",
+  "zstd",
+  "brotli",
+] }
+tokio-util = { version = "0.7", features = ["io"] }
 
 # Bundler
 swc_common = { version = "17.0.1", features = ["tty-emitter"] }
