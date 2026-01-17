@@ -58,7 +58,12 @@ impl Encoding {
 
         match &self {
             Self::Br => {
-                tokio::spawn(with_encoder(body, BrotliEncoder::new(writer)));
+                tokio::spawn(with_encoder(
+                    body,
+                    // The default compression level in async_compression is 11 which is too much
+                    // everyone e.g. Cloudflare uses 4 by default
+                    BrotliEncoder::with_quality(writer, async_compression::Level::Precise(4)),
+                ));
             }
             Self::Zstd => {
                 tokio::spawn(with_encoder(body, ZstdEncoder::new(writer)));
