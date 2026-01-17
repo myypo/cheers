@@ -5,9 +5,6 @@
 
     nixpkgs.url = "nixpkgs/nixos-unstable";
 
-    fenix.url = "github:nix-community/fenix";
-    fenix.inputs.nixpkgs.follows = "nixpkgs";
-
     pre-commit-hooks.url = "github:myypo/git-hooks.nix";
     pre-commit-hooks.inputs.nixpkgs.follows = "nixpkgs";
   };
@@ -29,12 +26,11 @@
               self = inputs.self;
               pkgs =
                 let
-                  overlays = [ inputs.fenix.overlays.default ];
+                  overlays = [ ];
                 in
                 import inputs.nixpkgs { inherit overlays system; };
               pre-commit-hooks = inputs.pre-commit-hooks.lib.${system}.run;
               pre-commit-check = inputs.self.checks.${system}.pre-commit-check;
-              rust-toolchain = inputs.fenix;
             }
           )
         );
@@ -44,7 +40,6 @@
         {
           self,
           pkgs,
-          rust-toolchain,
           pre-commit-check,
           ...
         }:
@@ -64,8 +59,6 @@
               rustc
               cargo-deny
               cargo-machete
-
-              rust-analyzer-nightly
 
               inputs.self.packages.${pkgs.stdenv.hostPlatform.system}.default
             ];
