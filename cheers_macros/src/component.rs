@@ -1,11 +1,10 @@
 use proc_macro2::TokenStream;
 use quote::{TokenStreamExt, quote};
 use syn::{
-    Attribute, Error, Ident, ItemStruct, LitStr, Meta, MetaList, Token, Type,
+    Error, Ident, ItemStruct, LitStr, Meta, Token, Type,
     parse::{Parse, ParseStream},
     parse2,
     spanned::Spanned,
-    token::{Bracket, Pound},
 };
 
 use crate::shared::filter_generics;
@@ -368,7 +367,7 @@ fn generate_signal_impl(
 struct FormArgs {
     name: Ident,
     ty: Type,
-    field_args: FormFieldArgs,
+    attrs: Option<TokenStream>,
 }
 
 impl Parse for FormArgs {
@@ -384,28 +383,13 @@ impl Parse for FormArgs {
         Ok(Self {
             name,
             ty: input.parse()?,
-            field_args: if input.peek(Token![,]) {
+            attrs: if input.peek(Token![,]) {
                 input.parse::<Token![,]>()?;
-                input.parse()?
+                Some(input.parse()?)
             } else {
-                FormFieldArgs::default()
+                None
             },
         })
-    }
-}
-
-#[derive(Default)]
-struct FormFieldArgs {
-    serde: Option<MetaList>,
-}
-
-impl Parse for FormFieldArgs {
-    fn parse(input: ParseStream) -> syn::Result<Self> {
-        let serde = input.parse::<MetaList>()?;
-        if !serde.path.is_ident("serde") {
-            return Err(Error::new_spanned(&serde.path, "expected serde(...)"));
-        }
-        Ok(Self { serde: Some(serde) })
     }
 }
 
@@ -445,17 +429,13 @@ fn generate_form_impl(item: &mut ItemStruct) -> Result<TokenStream, Error> {
         let field_name = LitStr::new(name_str, args.name.span());
 
         struct_impls.append_all(quote! {
-            #vis fn #fn_ident() -> ::cheers::FormName {
-                ::cheers::FormName::__static(#field_name)
+            #vis fn #fn_ident() -> ::cheers::prelude::FormName {
+                ::cheers::prelude::FormName::__static(#field_name)
             }
         });
 
-        let attrs = args.field_args.serde.as_ref().map(|serde| Attribute {
-            pound_token: Pound::default(),
-            style: syn::AttrStyle::Outer,
-            bracket_token: Bracket::default(),
-            meta: Meta::List(serde.clone()),
-        });
+        let attrs = &args.attrs.map(|a| quote! { #[#a] });
+
         form_field_decls.push(quote! {
             #attrs
             #vis #ident: #ty
@@ -469,8 +449,11 @@ fn generate_form_impl(item: &mut ItemStruct) -> Result<TokenStream, Error> {
         };
         let attr = f.attrs.swap_remove(i);
         let args = match attr.meta {
-            Meta::List(meta_list) => parse2(meta_list.tokens),
-            Meta::Path(_) => Ok(FormFieldArgs::default()),
+            Meta::List(meta_list) => Ok(Some({
+                let t = meta_list.tokens;
+                quote! { #[#t] }
+            })),
+            Meta::Path(_) => Ok(None),
             _ => Err(Error::new_spanned(
                 &attr,
                 "expected #[form] or #[form(...)]",
@@ -480,19 +463,13 @@ fn generate_form_impl(item: &mut ItemStruct) -> Result<TokenStream, Error> {
     }
 
     let mut struct_field_impls = Vec::new();
-    for (f, args) in &fields {
+    for (f, attrs) in &fields {
         let ident = &f.ident;
         let ty = if let Type::Reference(ty_ref) = &f.ty {
             &ty_ref.elem
         } else {
             &f.ty
         };
-        let attrs = args.serde.as_ref().map(|serde| Attribute {
-            pound_token: Pound::default(),
-            style: syn::AttrStyle::Outer,
-            bracket_token: Bracket::default(),
-            meta: Meta::List(serde.clone()),
-        });
         let vis = &f.vis;
 
         let field_name = ident
@@ -509,8 +486,8 @@ fn generate_form_impl(item: &mut ItemStruct) -> Result<TokenStream, Error> {
         );
 
         struct_field_impls.push(quote! {
-            #vis fn #fn_ident() -> ::cheers::FormName {
-                ::cheers::FormName::__static(#field_name)
+            #vis fn #fn_ident() -> ::cheers::prelude::FormName {
+                ::cheers::prelude::FormName::__static(#field_name)
             }
         });
 

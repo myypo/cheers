@@ -30,13 +30,12 @@ pub mod prelude {
             Event, EventReceiver, EventSender, JsScript, PatchElements, PatchElementsMode, events,
         },
         include_css,
-        reference::{ElementId, Signal},
+        reference::{ElementId, FormName, Signal},
         render::{Buffer, Lazy, LazyAttribute, Render, RenderExt as _},
         response::AsyncLazy,
         scoped_signal,
     };
 }
-pub use reference::FormName;
 pub use render::{Raw, RawAttribute, Rendered};
 
 #[cfg(test)]
