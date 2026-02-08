@@ -407,6 +407,21 @@ fn generate_form_impl(item: &mut ItemStruct) -> Result<TokenStream, Error> {
         .partition(|a| a.path().is_ident("form"));
     item.attrs = remaining;
 
+    let (form_derive_attr, remaining) = std::mem::take(&mut item.attrs)
+        .into_iter()
+        .partition(|a| a.path().is_ident("form_derive"));
+    item.attrs = remaining;
+    let form_derive_attr = form_derive_attr.into_iter().next();
+    let form_derives = form_derive_attr
+        .map(|a| {
+            if let Meta::List(ml) = a.meta {
+                Ok(ml.tokens)
+            } else {
+                Err(Error::new_spanned(a, "expected #[form_derive(...)]"))
+            }
+        })
+        .transpose()?;
+
     let mut struct_impls = TokenStream::new();
     let mut form_field_decls = Vec::new();
     for a in form_attrs {
@@ -497,7 +512,7 @@ fn generate_form_impl(item: &mut ItemStruct) -> Result<TokenStream, Error> {
         });
     }
 
-    if fields.is_empty() && struct_impls.is_empty() {
+    if fields.is_empty() && struct_impls.is_empty() && form_derives.is_none() {
         return Ok(TokenStream::new());
     }
 
@@ -521,7 +536,7 @@ fn generate_form_impl(item: &mut ItemStruct) -> Result<TokenStream, Error> {
 
         quote! {
             #[expect(dead_code)]
-            #[derive(::cheers::__internal::serde::Deserialize)]
+            #[derive(::cheers::__internal::serde::Deserialize, #form_derives)]
             #vis struct #form_ident #ty_generics #where_clause {
                 #(#form_field_decls,)*
             }

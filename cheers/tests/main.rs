@@ -828,3 +828,21 @@ fn form_without_field() {
     let result: GhostForm = serde_json::from_str("{}").unwrap();
     assert_eq!(result.keepsake, String::from(""));
 }
+
+#[test]
+fn form_with_derive() {
+    #[expect(dead_code)]
+    #[derive(Component)]
+    #[form_derive(Debug, Default, PartialEq)]
+    struct Simple {
+        #[form]
+        name: String,
+    }
+
+    assert_eq!(
+        SimpleForm::default(),
+        SimpleForm {
+            name: String::new()
+        }
+    );
+}

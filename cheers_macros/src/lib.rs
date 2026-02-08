@@ -10,7 +10,7 @@ use syn::{ItemStruct, parse_macro_input};
 
 use crate::{action::ActionArgs, shared::MaybeItemFn};
 
-#[proc_macro_derive(Component, attributes(id, signal, form))]
+#[proc_macro_derive(Component, attributes(id, signal, form, form_derive))]
 pub fn component_derive(item: proc_macro::TokenStream) -> proc_macro::TokenStream {
     let item = parse_macro_input!(item as ItemStruct);
 
