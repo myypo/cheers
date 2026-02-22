@@ -37,6 +37,13 @@ impl Parse for FormArgs {
     }
 }
 
+fn new_form_names_field_ident(ident: &Ident) -> Ident {
+    let mut s = String::from("form_");
+    s.push_str(&ident.to_string());
+
+    Ident::new(&s, ident.span())
+}
+
 fn filter_form_outer_attrs(item: &mut ItemStruct) -> Vec<Attribute> {
     let (form_attrs, remaining) = std::mem::take(&mut item.attrs)
         .into_iter()
@@ -78,19 +85,17 @@ fn process_form_outer_attrs(
             _ => Err(Error::new_spanned(a, r#"expected #[form(...)]"#)),
         }?;
 
-        let ident = &args.name;
         let ty = &args.ty;
-        let name_str = args.name.to_string();
-        let field_name = LitStr::new(&name_str, args.name.span());
-
-        form_name_entries.push((ident.clone(), field_name));
-
         let attrs = &args.attrs.map(|a| quote! { #[#a] });
-
+        let ident = &args.name;
         form_field_decls.push(quote! {
             #attrs
             #vis #ident: #ty
         });
+
+        let field_name = LitStr::new(&ident.to_string(), ident.span());
+        let ident = new_form_names_field_ident(&args.name);
+        form_name_entries.push((ident, field_name));
     }
 
     Ok(())
@@ -128,32 +133,28 @@ fn process_form_inner_fields(
     form_name_entries: &mut Vec<(Ident, LitStr)>,
 ) {
     for (f, attrs) in form_inner_fields {
-        let ident = &f.ident;
         let ty = if let Type::Reference(ty_ref) = &f.ty {
             &ty_ref.elem
         } else {
             &f.ty
         };
         let vis = &f.vis;
-
-        let field_name_str = ident
-            .as_ref()
-            .map(|i| i.to_string())
-            .unwrap_or_else(|| String::from("value"));
-        let field_name_lit = LitStr::new(
-            &field_name_str,
-            ident.as_ref().map(|i| i.span()).unwrap_or_else(|| f.span()),
-        );
-
-        let entry_ident = ident
+        let ident = f
+            .ident
             .clone()
             .unwrap_or_else(|| Ident::new("value", f.span()));
-        form_name_entries.push((entry_ident, field_name_lit));
-
         form_field_decls.push(quote! {
             #attrs
             #vis #ident: #ty
         });
+
+        let field_name_lit = LitStr::new(&ident.to_string(), ident.span());
+        let ident = f
+            .ident
+            .as_ref()
+            .map(new_form_names_field_ident)
+            .unwrap_or_else(|| Ident::new("form_value", f.span()));
+        form_name_entries.push((ident, field_name_lit));
     }
 }
 
