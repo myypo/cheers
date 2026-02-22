@@ -750,9 +750,10 @@ fn action_form_generics() {
 
     impl<'a, S> Render for Stuff<'a, S> {
         fn render_to(&self, buffer: &mut Buffer<Element>) {
+            let form = Self::form();
             html! {
                 form {
-                    input name=(Self::whatever_form());
+                    input name=(form.whatever);
                 }
             }
             .render_to(buffer);
@@ -822,8 +823,8 @@ fn form_without_field() {
         name: &'a str,
     }
 
-    let result = Ghost::keepsake_form();
-    assert_eq!(result.render().into_inner(), "keepsake");
+    let result = Ghost::form();
+    assert_eq!(result.keepsake.render().into_inner(), "keepsake");
 
     let result: GhostForm = serde_json::from_str("{}").unwrap();
     assert_eq!(result.keepsake, String::from(""));
