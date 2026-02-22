@@ -32,7 +32,7 @@ impl AsRef<ElementId> for ElementId {
 
 impl ElementId {
     #[doc(hidden)]
-    pub fn __static(s: &'static str) -> Self {
+    pub const fn __static(s: &'static str) -> Self {
         Self(InnerElementId::Static(s))
     }
 
@@ -180,7 +180,7 @@ pub struct FormName(&'static str);
 
 impl FormName {
     #[doc(hidden)]
-    pub fn __static(s: &'static str) -> Self {
+    pub const fn __static(s: &'static str) -> Self {
         Self(s)
     }
 }

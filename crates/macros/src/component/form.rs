@@ -204,7 +204,7 @@ pub(crate) fn generate_form_impl(item: &mut ItemStruct) -> Result<TokenStream, E
         let (impl_generics, ty_generics, where_clause) = item.generics.split_for_impl();
         quote! {
             impl #impl_generics #struct_ident #ty_generics #where_clause {
-                #vis fn form() -> #form_names_ident {
+                #vis const fn form() -> #form_names_ident {
                     #form_names_ident {
                         #( #entry_idents: ::cheers::prelude::FormName::__static(#entry_literals), )*
                     }
