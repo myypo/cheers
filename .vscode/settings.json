@@ -1,7 +1,13 @@
 {
-	"rust-analyzer": {
-		"rustfmt": {
-			"overrideCommand": ["cheers", "fmt", "--stdin", "--rustfmt"]
-		}
-	}
+    "rust-analyzer": {
+        "rustfmt": {
+            "overrideCommand": [
+                "cargo",
+                "cheers",
+                "fmt",
+                "--stdin",
+                "--rustfmt"
+            ]
+        }
+    }
 }

@@ -1,3 +1,3 @@
-[submodule "bundlestar/vendor/datastar"]
-	path = bundlestar/vendor/datastar
-	url = https://github.com/myypo/datastar.git
+[submodule "vendor/datastar"]
+	path = vendor/datastar
+	url = https://github.com/starfederation/datastar

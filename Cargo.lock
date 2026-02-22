@@ -170,6 +170,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "ast"
+version = "0.0.0"
+dependencies = [
+ "base64",
+ "html-escape",
+ "proc-macro2",
+ "quote",
+ "rustc-hash",
+ "syn 2.0.114",
+]
+
+[[package]]
 name = "ast_node"
 version = "5.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -376,7 +388,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "bundlestar"
+name = "bundle"
 version = "0.0.0"
 dependencies = [
  "anyhow",
@@ -432,6 +444,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "cargo-cheers"
+version = "0.0.0"
+dependencies = [
+ "anyhow",
+ "assert_cmd",
+ "assert_fs",
+ "clap",
+ "fmt",
+ "glob",
+ "predicates",
+ "pretty_assertions",
+]
+
+[[package]]
 name = "castaway"
 version = "0.2.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -465,13 +491,13 @@ dependencies = [
  "async-compression",
  "axum",
  "base64",
- "bundlestar",
- "cheers_macros",
+ "bundle",
  "futures",
  "html-escape",
  "inventory",
  "itoa",
  "lightningcss",
+ "macros",
  "notify",
  "serde",
  "serde_json",
@@ -481,56 +507,6 @@ dependencies = [
  "tower",
  "tracing",
  "zmij",
-]
-
-[[package]]
-name = "cheers_ast"
-version = "0.0.0"
-dependencies = [
- "base64",
- "html-escape",
- "proc-macro2",
- "quote",
- "rustc-hash",
- "syn 2.0.114",
-]
-
-[[package]]
-name = "cheers_cli"
-version = "0.0.0"
-dependencies = [
- "anyhow",
- "assert_cmd",
- "assert_fs",
- "cheers_fmt",
- "clap",
- "glob",
- "predicates",
- "pretty_assertions",
-]
-
-[[package]]
-name = "cheers_fmt"
-version = "0.0.0"
-dependencies = [
- "anyhow",
- "cheers_ast",
- "crop",
- "pretty_assertions",
- "prettyplease",
- "proc-macro2",
- "quote",
- "syn 2.0.114",
-]
-
-[[package]]
-name = "cheers_macros"
-version = "0.0.0"
-dependencies = [
- "cheers_ast",
- "proc-macro2",
- "quote",
- "syn 2.0.114",
 ]
 
 [[package]]
@@ -899,6 +875,20 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b09cf3155332e944990140d967ff5eceb70df778b34f77d8075db46e4704e6d8"
 dependencies = [
  "num-traits",
+]
+
+[[package]]
+name = "fmt"
+version = "0.0.0"
+dependencies = [
+ "anyhow",
+ "ast",
+ "crop",
+ "pretty_assertions",
+ "prettyplease",
+ "proc-macro2",
+ "quote",
+ "syn 2.0.114",
 ]
 
 [[package]]
@@ -1564,6 +1554,16 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a1dc47f592c06f33f8e3aea9591776ec7c9f9e4124778ff8a3c3b87159f7e593"
 dependencies = [
  "hashbrown 0.16.1",
+]
+
+[[package]]
+name = "macros"
+version = "0.0.0"
+dependencies = [
+ "ast",
+ "proc-macro2",
+ "quote",
+ "syn 2.0.114",
 ]
 
 [[package]]

@@ -6,7 +6,7 @@ publish = false
 version = "0.0.0"
 
 [dependencies]
+cheers.workspace = true
 axum = "0.8"
-cheers = { path = "../../cheers" }
 tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
 rand = "0.8"

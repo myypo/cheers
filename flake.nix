@@ -130,11 +130,11 @@
         { pkgs, ... }:
         {
           default = pkgs.rustPlatform.buildRustPackage {
-            name = "cheers";
+            name = "cargo-cheers";
             src = ./.;
-            cargoBuildFlags = [ "-p=cheers_cli" ];
+            cargoBuildFlags = [ "-p=cargo-cheers" ];
 
-            cargoHash = "sha256-jXe+HrYxVx4dN65ESx4sGSe1ABus4MYI1qvo5VZAIcc=";
+            cargoHash = "sha256-CuCi0Ma/C7m1PWr951UkJRfwDQju6IKoRBcj7Notsbs=";
 
             doCheck = false;
           };
