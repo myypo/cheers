@@ -6,7 +6,7 @@ use syn::{
     parse2,
 };
 
-use crate::component::field_fn_params;
+use crate::component::{field_fn_params, filter_outer_attrs};
 
 struct IdArgs {
     namespace: Option<LitStr>,
@@ -43,11 +43,9 @@ pub(crate) fn generate_id_impls(
     item: &mut ItemStruct,
     struct_snake_case: &str,
 ) -> Result<TokenStream, Error> {
+    let id_attrs = filter_outer_attrs(item, "id");
+
     let vis = &item.vis;
-    let (id_attrs, remaining) = std::mem::take(&mut item.attrs)
-        .into_iter()
-        .partition(|a| a.path().is_ident("id"));
-    item.attrs = remaining;
 
     let mut impls = Vec::new();
     for a in id_attrs {

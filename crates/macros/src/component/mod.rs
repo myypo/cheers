@@ -7,7 +7,7 @@ use crate::component::{
 };
 use proc_macro2::TokenStream;
 use quote::quote;
-use syn::{Error, Ident, ItemStruct, Type};
+use syn::{Attribute, Error, Ident, ItemStruct, Type};
 
 fn to_snake_case(s: &str) -> String {
     let mut result = String::new();
@@ -38,6 +38,14 @@ fn field_fn_params(item: &ItemStruct, arg_field_names: &[Ident]) -> Result<Token
         .collect::<Result<Vec<&Type>, Error>>()?;
     let field_names = &arg_field_names;
     Ok(quote! { #(#field_names: #field_types),* })
+}
+
+fn filter_outer_attrs(item: &mut ItemStruct, name: &'static str) -> Vec<Attribute> {
+    let (attrs, remaining) = std::mem::take(&mut item.attrs)
+        .into_iter()
+        .partition(|a| a.path().is_ident(name));
+    item.attrs = remaining;
+    attrs
 }
 
 pub fn generate(mut item: ItemStruct) -> Result<TokenStream, Error> {

@@ -624,7 +624,7 @@ fn signal_computed() {
 
     #[derive(Component)]
     struct Calculator {
-        #[signal]
+        #[signal(nested)]
         input: Input,
     }
 
@@ -661,14 +661,13 @@ fn signal_computed() {
 fn signal_without_field() {
     #[derive(Component)]
     #[signal(keepsake: String, name)]
-    struct Ghost<'a> {
-        name: &'a str,
+    struct Ghost {
+        name: String,
     }
 
-    const NAME: &str = "El";
-    impl<'a> Render for Ghost<'a> {
+    impl Render for Ghost {
         fn render_to(&self, buffer: &mut Buffer<Element>) {
-            let keepsake = Self::keepsake_signal(NAME);
+            let keepsake = Self::keepsake_signal("El".to_owned());
             html! {
                 p !bind(&keepsake) !on:close({ (keepsake) " + 'noooo'" }) { (self.name) }
             }
@@ -676,12 +675,35 @@ fn signal_without_field() {
         }
     }
 
-    let result = Ghost { name: "El" }.render().into_inner();
+    let result = Ghost {
+        name: "El".to_owned(),
+    }
+    .render()
+    .into_inner();
 
     assert_eq!(
         result,
         r#"<p data-bind="keepsake-El" data-on:close="$keepsake-El + 'noooo'">El</p>"#
     )
+}
+
+#[test]
+fn signal_deserialized() {
+    #[derive(Component)]
+    #[signal(surname: String, id, other_id)]
+    #[expect(dead_code)]
+    struct Employee {
+        id: i32,
+        other_id: String,
+        #[signal]
+        name: String,
+    }
+
+    let got: EmployeeSignalsJson =
+        serde_json::from_str(r#"{ "name": "John", "surname": { "1": { "person": "Smith" } } }"#)
+            .unwrap();
+    assert_eq!(got.name, "John");
+    assert_eq!(got.surname.get(&1).unwrap().get("person").unwrap(), "Smith");
 }
 
 type Ctx = ();

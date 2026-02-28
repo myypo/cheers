@@ -1,4 +1,4 @@
-use crate::shared::filter_generics;
+use crate::{component::filter_outer_attrs, shared::filter_generics};
 use proc_macro2::TokenStream;
 use quote::quote;
 use syn::{
@@ -42,14 +42,6 @@ fn new_form_names_field_ident(ident: &Ident) -> Ident {
     s.push_str(&ident.to_string());
 
     Ident::new(&s, ident.span())
-}
-
-fn filter_form_outer_attrs(item: &mut ItemStruct) -> Vec<Attribute> {
-    let (form_attrs, remaining) = std::mem::take(&mut item.attrs)
-        .into_iter()
-        .partition(|a| a.path().is_ident("form"));
-    item.attrs = remaining;
-    form_attrs
 }
 
 fn find_form_derives(item: &mut ItemStruct) -> Option<Result<TokenStream, Error>> {
@@ -159,7 +151,7 @@ fn process_form_inner_fields(
 }
 
 pub(crate) fn generate_form_impl(item: &mut ItemStruct) -> Result<TokenStream, Error> {
-    let form_outer_attrs = filter_form_outer_attrs(item);
+    let form_outer_attrs = filter_outer_attrs(item, "form");
     let form_derives = find_form_derives(item).transpose()?;
 
     let mut ident_str = item.ident.to_string();
