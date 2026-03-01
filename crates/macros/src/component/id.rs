@@ -63,8 +63,8 @@ pub(crate) fn generate_id_impls(
                 .namespace
                 .as_ref()
                 .map(|i| {
-                    let mut s = i.value();
-                    s.push_str("_id");
+                    let mut s = "id_".to_owned();
+                    s.push_str(&i.value());
                     s
                 })
                 .unwrap_or_else(|| "id".to_owned());

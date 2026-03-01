@@ -516,9 +516,9 @@ fn id() {
     let number = 42;
     let house_id = House::id(number);
     assert_eq!(house_id.to_string(), "house-42");
-    let location_id = House::location_id("Berlin", "Main St", number);
+    let location_id = House::id_location("Berlin", "Main St", number);
     assert_eq!(location_id.to_string(), "house-location-Berlin-Main St-42");
-    assert_eq!(House::hardcoded_id().to_string(), "house-hardcoded");
+    assert_eq!(House::id_hardcoded().to_string(), "house-hardcoded");
 }
 
 #[test]
