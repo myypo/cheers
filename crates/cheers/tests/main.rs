@@ -519,6 +519,18 @@ fn id() {
     let location_id = House::id_location("Berlin", "Main St", number);
     assert_eq!(location_id.to_string(), "house-location-Berlin-Main St-42");
     assert_eq!(House::id_hardcoded().to_string(), "house-hardcoded");
+
+    let HouseIds {
+        id,
+        id_location,
+        id_hardcoded,
+    } = House::ids();
+    assert_eq!(id(42).to_string(), "house-42");
+    assert_eq!(
+        id_location("Berlin", "Main St", 42).to_string(),
+        "house-location-Berlin-Main St-42"
+    );
+    assert_eq!(id_hardcoded.to_string(), "house-hardcoded");
 }
 
 #[test]

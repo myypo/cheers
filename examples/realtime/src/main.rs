@@ -52,13 +52,14 @@ struct Stock<'a> {
 impl<'a> Render for Stock<'a> {
     fn render_to(&self, buffer: &mut Buffer<Element>) {
         let StockSignals { signal_price_cents } = Stock::signals();
+        let StockIds { id } = Stock::ids();
         let signal_price_cents = signal_price_cents(self.id);
         let increment_action = IncrementStockAction {
             stock_id: self.id.clone(),
         };
         let dollar_price = format!("${:.2}", self.price_cents as f64 / 100.0);
         html! {
-            section id=(Self::id(self.id)) {
+            section id=(id(self.id)) {
                 h3 { (self.name) }
                 button !on:click(increment_action) {
                     "Price: "

@@ -1,5 +1,7 @@
 use crate::{
-    component::{field_fn_params, filter_outer_attrs},
+    component::{
+        ReferenceEntry, field_fn_params, filter_outer_attrs, generate_references_struct_and_impl,
+    },
     shared::filter_generics,
 };
 use proc_macro2::TokenStream;
@@ -41,12 +43,6 @@ impl Parse for SignalArgs {
 struct SignalFieldArgs {
     id: bool,
     nested: bool,
-}
-
-struct SignalNameEntry {
-    ident: Ident,
-    ty: TokenStream,
-    value: TokenStream,
 }
 
 impl Parse for SignalFieldArgs {
@@ -96,7 +92,7 @@ fn process_outer_signal_attrs(
     attr: syn::Attribute,
     signal_field_decls: &mut Vec<TokenStream>,
     signal_decl_tys: &mut Vec<Type>,
-    signal_name_entries: &mut Vec<SignalNameEntry>,
+    signal_name_entries: &mut Vec<ReferenceEntry>,
     signal_name_decl_tys: &mut Vec<Type>,
     struct_field_impls: &mut TokenStream,
 ) -> Result<(), Error> {
@@ -123,7 +119,7 @@ fn process_outer_signal_attrs(
 
     signal_field_decls.push(quote! { #name: #json_ty });
     signal_decl_tys.push(json_ty.clone());
-    signal_name_entries.push(SignalNameEntry {
+    signal_name_entries.push(ReferenceEntry {
         ident: fn_ident.clone(),
         ty: signal_fn_ty,
         value: quote! { Self::#fn_ident },
@@ -165,7 +161,7 @@ pub(crate) fn generate_signal_impl(
     let mut signal_name_decl_tys = Vec::new();
     let mut signal_field_decls = Vec::new();
     let mut struct_field_impls = TokenStream::new();
-    let mut signal_name_entries: Vec<SignalNameEntry> = Vec::new();
+    let mut signal_name_entries: Vec<ReferenceEntry> = Vec::new();
     for attr in signal_attrs {
         process_outer_signal_attrs(
             &item,
@@ -280,7 +276,7 @@ pub(crate) fn generate_signal_impl(
                     }
                 });
 
-                signal_name_entries.push(SignalNameEntry {
+                signal_name_entries.push(ReferenceEntry {
                     ident: fn_ident.clone(),
                     ty: quote! { fn(#id_field_ty) -> ::cheers::prelude::Signal::<#ty> },
                     value: quote! { Self::#fn_ident },
@@ -295,7 +291,7 @@ pub(crate) fn generate_signal_impl(
                     }
                 });
 
-                signal_name_entries.push(SignalNameEntry {
+                signal_name_entries.push(ReferenceEntry {
                     ident: fn_ident.clone(),
                     ty: quote! { ::cheers::prelude::Signal::<#ty> },
                     value: quote! { ::cheers::prelude::Signal::<#ty>::__static(#field_name) },
@@ -312,45 +308,23 @@ pub(crate) fn generate_signal_impl(
         return Ok(TokenStream::new());
     }
 
-    let (struct_impl, signal_names_struct) = {
-        let entry_idents = signal_name_entries
-            .iter()
-            .map(|entry| &entry.ident)
-            .collect::<Vec<_>>();
-        let entry_tys = signal_name_entries
-            .iter()
-            .map(|entry| &entry.ty)
-            .collect::<Vec<_>>();
-        let entry_values = signal_name_entries
-            .iter()
-            .map(|entry| &entry.value)
-            .collect::<Vec<_>>();
+    let references_struct_and_impl = generate_references_struct_and_impl(
+        vis,
+        &signal_names_ident,
+        struct_ident,
+        &item.generics,
+        signal_name_entries,
+        signal_name_decl_tys,
+        &Ident::new("signals", item.ident.span()),
+    );
+
+    let methods_impl = {
         let (impl_generics, ty_generics, where_clause) = item.generics.split_for_impl();
-        let signal_names_generics =
-            filter_generics(item.generics.clone(), signal_name_decl_tys.iter(), false);
-        let (_, signal_names_ty_generics, signal_names_where_clause) =
-            signal_names_generics.split_for_impl();
-
-        let signal_names_struct = quote! {
-            #[expect(dead_code)]
-            #vis struct #signal_names_ident #signal_names_ty_generics #signal_names_where_clause {
-                #( #vis #entry_idents: #entry_tys, )*
-            }
-        };
-
-        let struct_impl = quote! {
+        quote! {
             impl #impl_generics #struct_ident #ty_generics #where_clause {
                 #struct_field_impls
-
-                #vis const fn signals() -> #signal_names_ident #signal_names_ty_generics {
-                    #signal_names_ident {
-                        #( #entry_idents: #entry_values, )*
-                    }
-                }
             }
-        };
-
-        (struct_impl, signal_names_struct)
+        }
     };
 
     let filtered_generics = filter_generics(item.generics, signal_decl_tys.iter(), false);
@@ -376,7 +350,7 @@ pub(crate) fn generate_signal_impl(
     };
 
     Ok(quote! {
-        #signal_names_struct
+        #references_struct_and_impl
 
         #[expect(dead_code)]
         #deserialize_derive
@@ -384,6 +358,6 @@ pub(crate) fn generate_signal_impl(
             #(#signal_field_decls,)*
         }
 
-        #struct_impl
+        #methods_impl
     })
 }
