@@ -745,11 +745,11 @@ fn signal_id() {
 #[test]
 fn signal_deserialized() {
     #[derive(Component)]
-    #[signal(surname: String, id, other_id)]
+    #[signal(surname: &'a str, id, other_id)]
     #[expect(dead_code)]
-    struct Employee {
+    struct Employee<'a> {
         id: i32,
-        other_id: String,
+        other_id: &'a str,
         #[signal]
         name: String,
     }
@@ -817,20 +817,21 @@ fn action_explicit_path() {
 }
 
 #[test]
+#[allow(dead_code)]
 fn action_form_generics() {
-    #[expect(dead_code)]
     #[derive(Component)]
     struct Stuff<'a, S> {
         #[form]
         whatever: &'a S,
     }
 
-    impl<'a, S> Render for Stuff<'a, S> {
+    impl<'a, S: Render> Render for Stuff<'a, S> {
         fn render_to(&self, buffer: &mut Buffer<Element>) {
             let StuffFormNames { form_whatever } = Self::form();
             html! {
                 form {
                     input name=(form_whatever);
+                    p { (self.whatever) }
                 }
             }
             .render_to(buffer);
@@ -846,9 +847,14 @@ fn action_form_generics() {
         "@put('/cheers/actions/my_handler',{contentType:'form'})"
     );
 
-    let s = "hello".to_owned();
-    let result = Stuff { whatever: &s }.render().into_inner();
-    assert_eq!(result, r#"<form><input name="whatever"></form>"#);
+    let stuff = Stuff {
+        whatever: &"hello".to_owned(),
+    };
+    let result = stuff.render().into_inner();
+    assert_eq!(
+        result,
+        r#"<form><input name="whatever"><p>hello</p></form>"#
+    );
 }
 
 #[test]
@@ -893,7 +899,6 @@ fn action_form_serde() {
 
 #[test]
 fn form_without_field() {
-    #[expect(dead_code)]
     #[derive(Component)]
     #[form(keepsake: String, serde(default))]
     struct Ghost<'a> {
@@ -905,6 +910,7 @@ fn form_without_field() {
             html! {
                 form {
                     input name=(Self::form().form_keepsake);
+                    p { (self.name) }
                 }
             }
             .render_to(buffer);
@@ -918,7 +924,10 @@ fn form_without_field() {
     assert_eq!(result.keepsake, String::from(""));
 
     let result = Ghost { name: "and" }.render();
-    assert_eq!(result.as_inner(), r#"<form><input name="keepsake"></form>"#);
+    assert_eq!(
+        result.as_inner(),
+        r#"<form><input name="keepsake"><p>and</p></form>"#
+    );
 }
 
 #[test]

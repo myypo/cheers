@@ -1,5 +1,7 @@
 use crate::{
-    component::{ReferenceEntry, filter_outer_attrs, generate_references_struct_and_impl},
+    component::{
+        ReferenceEntry, filter_outer_attrs, generate_references_struct_and_impl, to_owned_type,
+    },
     shared::filter_generics,
 };
 use proc_macro2::TokenStream;
@@ -128,11 +130,7 @@ fn process_form_inner_fields(
     form_name_entries: &mut Vec<(Ident, LitStr)>,
 ) {
     for (f, attrs) in form_inner_fields {
-        let ty = if let Type::Reference(ty_ref) = &f.ty {
-            &ty_ref.elem
-        } else {
-            &f.ty
-        };
+        let ty = to_owned_type(&f.ty);
         let vis = &f.vis;
         let ident = f
             .ident
@@ -211,7 +209,6 @@ pub(crate) fn generate_form_impl(item: &mut ItemStruct) -> Result<TokenStream, E
         let (_, ty_generics, where_clause) = filtered_generics.split_for_impl();
 
         quote! {
-            #[expect(dead_code)]
             #[derive(::cheers::__internal::serde::Deserialize, #form_derives)]
             #vis struct #form_ident #ty_generics #where_clause {
                 #(#form_field_decls,)*

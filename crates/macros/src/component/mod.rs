@@ -8,6 +8,7 @@ use crate::component::{
 use crate::shared::filter_generics;
 use proc_macro2::TokenStream;
 use quote::quote;
+use syn::spanned::Spanned;
 use syn::{Attribute, Error, Ident, ItemStruct, Type, Visibility};
 
 fn to_snake_case(s: &str) -> String {
@@ -92,6 +93,23 @@ fn generate_references_struct_and_impl(
         #references_struct
 
         #struct_impl
+    }
+}
+
+fn to_owned_type(ty: &Type) -> Type {
+    if let Type::Reference(ty_ref) = ty {
+        let inner = &*ty_ref.elem;
+
+        if let Type::Path(tp) = inner
+            && tp.qself.is_none()
+            && tp.path.is_ident("str")
+        {
+            return syn::parse_quote_spanned!(ty.span() => ::std::string::String);
+        }
+
+        inner.clone()
+    } else {
+        ty.clone()
     }
 }
 

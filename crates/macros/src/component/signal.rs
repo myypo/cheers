@@ -1,13 +1,14 @@
 use crate::{
     component::{
         ReferenceEntry, field_fn_params, filter_outer_attrs, generate_references_struct_and_impl,
+        to_owned_type,
     },
     shared::filter_generics,
 };
 use proc_macro2::TokenStream;
 use quote::{TokenStreamExt, quote};
 use syn::{
-    Error, GenericParam, Ident, ItemStruct, LitStr, Meta, Token, Type,
+    Error, Ident, ItemStruct, LitStr, Meta, Token, Type,
     parse::{Parse, ParseStream},
     parse_quote, parse2,
     spanned::Spanned,
@@ -78,8 +79,9 @@ fn field_type_by_ident(item: &ItemStruct, ident: &Ident) -> Result<Type, Error> 
 }
 
 fn nested_btreemap_type(key_tys: &[Type], leaf_ty: &Type) -> Type {
-    let mut ty = leaf_ty.clone();
+    let mut ty = to_owned_type(leaf_ty).clone();
     for key_ty in key_tys.iter().rev() {
+        let key_ty = to_owned_type(key_ty);
         ty = parse_quote! {
             ::std::collections::BTreeMap<#key_ty, #ty>
         };
@@ -231,11 +233,7 @@ pub(crate) fn generate_signal_impl(
 
     for f in &fields {
         let ident = &f.ident;
-        let ty: Type = if let Type::Reference(ty_ref) = &f.ty {
-            (*ty_ref.elem).clone()
-        } else {
-            f.ty.clone()
-        };
+        let ty = to_owned_type(&f.ty);
 
         let field_name = ident
             .as_ref()
@@ -329,16 +327,6 @@ pub(crate) fn generate_signal_impl(
 
     let filtered_generics = filter_generics(item.generics, signal_decl_tys.iter(), false);
     let (_, ty_generics, where_clause) = filtered_generics.split_for_impl();
-    let has_lifetime_generics = filtered_generics
-        .params
-        .iter()
-        .any(|param| matches!(param, GenericParam::Lifetime(_)));
-    if has_lifetime_generics {
-        return Err(Error::new(
-            item.ident.span(),
-            "struct with signals cannot have lifetime generics",
-        ));
-    }
 
     let deserialize_derive = if !signal_decl_tys.is_empty() {
         quote! {
@@ -352,7 +340,6 @@ pub(crate) fn generate_signal_impl(
     Ok(quote! {
         #references_struct_and_impl
 
-        #[expect(dead_code)]
         #deserialize_derive
         #vis struct #signal_ident #ty_generics #where_clause {
             #(#signal_field_decls,)*
