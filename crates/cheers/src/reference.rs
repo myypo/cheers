@@ -54,8 +54,14 @@ impl Render<AttributeValue> for ElementId {
 }
 
 #[derive(Debug)]
+enum InnerSignalPath {
+    Static(&'static str),
+    Dynamic(String),
+}
+
+#[derive(Debug)]
 pub struct Signal<T> {
-    path: String,
+    path: InnerSignalPath,
     ty: PhantomData<T>,
 }
 
@@ -73,12 +79,20 @@ macro_rules! scoped_signal {
 
 impl<T> Signal<T> {
     #[doc(hidden)]
+    pub const fn __static(path: &'static str) -> Self {
+        Self {
+            path: InnerSignalPath::Static(path),
+            ty: PhantomData::<T>,
+        }
+    }
+
+    #[doc(hidden)]
     pub fn __scoped(mut name: String, file: &'static str, line: u32, column: u32) -> Self {
         let hash = hash_location(file, line, column);
         name.push_str(&hash.to_string());
 
         Self {
-            path: name,
+            path: InnerSignalPath::Dynamic(name),
             ty: PhantomData::<T>,
         }
     }
@@ -86,14 +100,17 @@ impl<T> Signal<T> {
     #[doc(hidden)]
     pub fn __string(path: String) -> Self {
         Signal {
-            path,
+            path: InnerSignalPath::Dynamic(path),
             ty: PhantomData::<T>,
         }
     }
 
     #[doc(hidden)]
     pub fn __path(&self) -> &str {
-        &self.path
+        match &self.path {
+            InnerSignalPath::Static(path) => path,
+            InnerSignalPath::Dynamic(path) => path.as_str(),
+        }
     }
 
     #[doc(hidden)]

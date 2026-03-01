@@ -43,6 +43,12 @@ struct SignalFieldArgs {
     nested: bool,
 }
 
+struct SignalNameEntry {
+    ident: Ident,
+    ty: TokenStream,
+    value: TokenStream,
+}
+
 impl Parse for SignalFieldArgs {
     fn parse(input: ParseStream) -> Result<Self, Error> {
         let mut this = Self {
@@ -90,6 +96,8 @@ fn process_outer_signal_attrs(
     attr: syn::Attribute,
     signal_field_decls: &mut Vec<TokenStream>,
     signal_decl_tys: &mut Vec<Type>,
+    signal_name_entries: &mut Vec<SignalNameEntry>,
+    signal_name_decl_tys: &mut Vec<Type>,
     struct_field_impls: &mut TokenStream,
 ) -> Result<(), Error> {
     let args: SignalArgs = match attr.meta {
@@ -98,7 +106,7 @@ fn process_outer_signal_attrs(
     }?;
 
     let name_str = args.name.to_string();
-    let fn_ident = Ident::new(&format!("{name_str}_signal"), args.name.span());
+    let fn_ident = Ident::new(&format!("signal_{name_str}"), args.name.span());
     let key_tys = args
         .fields
         .iter()
@@ -111,9 +119,17 @@ fn process_outer_signal_attrs(
     let params = field_fn_params(item, &fields)?;
     let leaf_ty = &args.ty;
     let json_ty = nested_btreemap_type(&key_tys, leaf_ty);
+    let signal_fn_ty = quote! { fn(#(#key_tys),*) -> ::cheers::prelude::Signal::<#leaf_ty> };
 
     signal_field_decls.push(quote! { #name: #json_ty });
     signal_decl_tys.push(json_ty.clone());
+    signal_name_entries.push(SignalNameEntry {
+        ident: fn_ident.clone(),
+        ty: signal_fn_ty,
+        value: quote! { Self::#fn_ident },
+    });
+    signal_name_decl_tys.extend(key_tys.iter().cloned());
+    signal_name_decl_tys.push(leaf_ty.clone());
 
     struct_field_impls.append_all(quote! {
         #vis fn #fn_ident(#params) -> ::cheers::prelude::Signal::<#leaf_ty> {
@@ -139,20 +155,25 @@ pub(crate) fn generate_signal_impl(
     let mut ident_str = item.ident.to_string();
     let vis = &item.vis;
     let struct_ident = &item.ident;
+    let signal_names_ident = Ident::new(&format!("{}Signals", ident_str), item.ident.span());
     let signal_ident = {
         ident_str.push_str("SignalsJson");
         Ident::new(&ident_str, item.ident.span())
     };
 
     let mut signal_decl_tys = Vec::new();
+    let mut signal_name_decl_tys = Vec::new();
     let mut signal_field_decls = Vec::new();
     let mut struct_field_impls = TokenStream::new();
+    let mut signal_name_entries: Vec<SignalNameEntry> = Vec::new();
     for attr in signal_attrs {
         process_outer_signal_attrs(
             &item,
             attr,
             &mut signal_field_decls,
             &mut signal_decl_tys,
+            &mut signal_name_entries,
+            &mut signal_name_decl_tys,
             &mut struct_field_impls,
         )?;
     }
@@ -187,6 +208,7 @@ pub(crate) fn generate_signal_impl(
                 .clone()
                 .unwrap_or_else(|| Ident::new("id", f.span()));
             id_field = Some((id_field_ident, f.ty.clone()));
+            continue;
         }
         if args.nested {
             let ty = match &mut f.ty {
@@ -241,8 +263,8 @@ pub(crate) fn generate_signal_impl(
         let fn_ident = ident
             .as_ref()
             .map(|i| {
-                let mut s = i.to_string();
-                s.push_str("_signal");
+                let mut s = "signal_".to_owned();
+                s.push_str(&i.to_string());
                 Ident::new(&s, i.span())
             })
             .unwrap_or_else(|| Ident::new("signal", f.span()));
@@ -257,6 +279,14 @@ pub(crate) fn generate_signal_impl(
                         ::cheers::prelude::Signal::__string(s)
                     }
                 });
+
+                signal_name_entries.push(SignalNameEntry {
+                    ident: fn_ident.clone(),
+                    ty: quote! { fn(#id_field_ty) -> ::cheers::prelude::Signal::<#ty> },
+                    value: quote! { Self::#fn_ident },
+                });
+                signal_name_decl_tys.push(id_field_ty.clone());
+                signal_name_decl_tys.push(ty.clone());
             }
             None => {
                 struct_field_impls.append_all(quote! {
@@ -264,6 +294,13 @@ pub(crate) fn generate_signal_impl(
                         ::cheers::prelude::Signal::__string(#field_name.to_owned())
                     }
                 });
+
+                signal_name_entries.push(SignalNameEntry {
+                    ident: fn_ident.clone(),
+                    ty: quote! { ::cheers::prelude::Signal::<#ty> },
+                    value: quote! { ::cheers::prelude::Signal::<#ty>::__static(#field_name) },
+                });
+                signal_name_decl_tys.push(ty.clone());
             }
         }
 
@@ -275,13 +312,45 @@ pub(crate) fn generate_signal_impl(
         return Ok(TokenStream::new());
     }
 
-    let struct_impl = {
+    let (struct_impl, signal_names_struct) = {
+        let entry_idents = signal_name_entries
+            .iter()
+            .map(|entry| &entry.ident)
+            .collect::<Vec<_>>();
+        let entry_tys = signal_name_entries
+            .iter()
+            .map(|entry| &entry.ty)
+            .collect::<Vec<_>>();
+        let entry_values = signal_name_entries
+            .iter()
+            .map(|entry| &entry.value)
+            .collect::<Vec<_>>();
         let (impl_generics, ty_generics, where_clause) = item.generics.split_for_impl();
-        quote! {
+        let signal_names_generics =
+            filter_generics(item.generics.clone(), signal_name_decl_tys.iter(), false);
+        let (_, signal_names_ty_generics, signal_names_where_clause) =
+            signal_names_generics.split_for_impl();
+
+        let signal_names_struct = quote! {
+            #[expect(dead_code)]
+            #vis struct #signal_names_ident #signal_names_ty_generics #signal_names_where_clause {
+                #( #vis #entry_idents: #entry_tys, )*
+            }
+        };
+
+        let struct_impl = quote! {
             impl #impl_generics #struct_ident #ty_generics #where_clause {
                 #struct_field_impls
+
+                #vis const fn signals() -> #signal_names_ident #signal_names_ty_generics {
+                    #signal_names_ident {
+                        #( #entry_idents: #entry_values, )*
+                    }
+                }
             }
-        }
+        };
+
+        (struct_impl, signal_names_struct)
     };
 
     let filtered_generics = filter_generics(item.generics, signal_decl_tys.iter(), false);
@@ -307,6 +376,8 @@ pub(crate) fn generate_signal_impl(
     };
 
     Ok(quote! {
+        #signal_names_struct
+
         #[expect(dead_code)]
         #deserialize_derive
         #vis struct #signal_ident #ty_generics #where_clause {

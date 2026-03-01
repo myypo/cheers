@@ -51,7 +51,8 @@ struct Stock<'a> {
 
 impl<'a> Render for Stock<'a> {
     fn render_to(&self, buffer: &mut Buffer<Element>) {
-        let price_cents_signal = Stock::price_cents_signal(self.id);
+        let StockSignals { signal_price_cents } = Stock::signals();
+        let signal_price_cents = signal_price_cents(self.id);
         let increment_action = IncrementStockAction {
             stock_id: self.id.clone(),
         };
@@ -61,7 +62,7 @@ impl<'a> Render for Stock<'a> {
                 h3 { (self.name) }
                 button !on:click(increment_action) {
                     "Price: "
-                    span !signals(price_cents_signal: self.price_cents) { (dollar_price) }
+                    span !signals(signal_price_cents: self.price_cents) { (dollar_price) }
                     " (+$1.00)"
                 }
             }
@@ -89,7 +90,7 @@ async fn home_page(ctx: State<Ctx>) -> AsyncLazy<impl Render> {
                     p   !text({
                             "'$' + ("
                             0
-                            @for (id, _) in stocks.iter() { "+" (Stock::price_cents_signal(id)) }
+                            @for (id, _) in stocks.iter() { "+" (Stock::signal_price_cents(id)) }
                             ") / 100"
                         }) {}
                 } @else {

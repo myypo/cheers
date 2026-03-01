@@ -530,7 +530,7 @@ fn data_indicator() {
         fetching: bool,
     }
 
-    let fetching = Something::fetching_signal();
+    let fetching = Something::signal_fetching();
     let result = html! {
         button !indicator(fetching) !json_signals {}
         div !show({ "!" (fetching) " || true" }) { "Loaded!" }
@@ -559,8 +559,8 @@ fn data_signals() {
         value: i32,
     }
 
-    let count = Counter::count_signal();
-    let value = Other::value_signal();
+    let count = Counter::signal_count();
+    let value = Other::signal_value();
 
     let multiple_nested = html! {
         div !signals(count: 5, value: 100) {}
@@ -582,7 +582,7 @@ fn data_style() {
         hiding: bool,
     }
 
-    let hiding = Options::hiding_signal();
+    let hiding = Options::signal_hiding();
     let name = "color";
     let result = html! {
         pre !style("display": { (hiding) " ? 'none' : 'flex'" }, name: "'red'") {}
@@ -611,12 +611,17 @@ fn signal_computed() {
 
     impl Render for Input {
         fn render_to(&self, buffer: &mut Buffer<Element>) {
-            let a = Input::a_signal();
-            let b = Input::b_signal();
-            let c = Input::c_signal();
-            let d = Input::d_signal();
+            let InputSignals {
+                signal_a,
+                signal_b,
+                signal_c,
+                signal_d,
+            } = Self::signals();
             html! {
-                p !computed(c: { (a) "+" (b) }, d: { (c) "- 1" }) {}
+                p   !computed(signal_c: { (signal_a) "+" (signal_b) }, signal_d: {
+                            (signal_c)
+                            "- 1"
+                        }) {}
             }
             .render_to(buffer);
         }
@@ -667,9 +672,12 @@ fn signal_without_field() {
 
     impl Render for Ghost {
         fn render_to(&self, buffer: &mut Buffer<Element>) {
-            let keepsake = Self::keepsake_signal("El".to_owned());
+            let GhostSignals { signal_keepsake } = Self::signals();
+            let signal_keepsake = signal_keepsake(self.name.clone());
             html! {
-                p !bind(&keepsake) !on:close({ (keepsake) " + 'noooo'" }) { (self.name) }
+                p !bind(&signal_keepsake) !on:close({ (signal_keepsake) " + 'noooo'" }) {
+                    (self.name)
+                }
             }
             .render_to(buffer);
         }
@@ -684,6 +692,41 @@ fn signal_without_field() {
     assert_eq!(
         result,
         r#"<p data-bind="keepsake-El" data-on:close="$keepsake-El + 'noooo'">El</p>"#
+    )
+}
+
+#[test]
+fn signal_id() {
+    #[derive(Component)]
+    #[expect(dead_code)]
+    struct Ghost {
+        #[signal(id)]
+        id: i32,
+        #[signal]
+        name: String,
+    }
+
+    impl Render for Ghost {
+        fn render_to(&self, buffer: &mut Buffer<Element>) {
+            let GhostSignals { signal_name } = Self::signals();
+            let signal_name = signal_name(self.id);
+            html! {
+                p !bind(signal_name) !on:click({ "console.log(" signal_name ")" }) {}
+            }
+            .render_to(buffer);
+        }
+    }
+
+    let result = Ghost {
+        id: 69,
+        name: "Ole".to_owned(),
+    }
+    .render()
+    .into_inner();
+
+    assert_eq!(
+        result,
+        r#"<p data-bind="69.ghost.name" data-on:click="console.log($69.ghost.name)"></p>"#
     )
 }
 
