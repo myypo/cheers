@@ -117,29 +117,47 @@ fn process_outer_signal_attrs(
     let params = field_fn_params(item, &fields)?;
     let leaf_ty = &args.ty;
     let json_ty = nested_btreemap_type(&key_tys, leaf_ty);
-    let signal_fn_ty = quote! { fn(#(#key_tys),*) -> ::cheers::prelude::Signal::<#leaf_ty> };
+    let signal_ty = if key_tys.is_empty() {
+        quote! { ::cheers::prelude::Signal::<#leaf_ty> }
+    } else {
+        quote! { fn(#(#key_tys),*) -> ::cheers::prelude::Signal::<#leaf_ty> }
+    };
+    let signal_value = if key_tys.is_empty() {
+        quote! { Self::#fn_ident() }
+    } else {
+        quote! { Self::#fn_ident }
+    };
 
     signal_field_decls.push(quote! { #name: #json_ty });
     signal_decl_tys.push(json_ty.clone());
     signal_name_entries.push(ReferenceEntry {
         ident: fn_ident.clone(),
-        ty: signal_fn_ty,
-        value: quote! { Self::#fn_ident },
+        ty: signal_ty,
+        value: signal_value,
     });
     signal_name_decl_tys.extend(key_tys.iter().cloned());
     signal_name_decl_tys.push(leaf_ty.clone());
 
-    struct_field_impls.append_all(quote! {
-        #vis fn #fn_ident(#params) -> ::cheers::prelude::Signal::<#leaf_ty> {
-            let mut s = ::std::string::String::new();
-            s.push_str(#name_str);
-            #(
-                s.push('-');
-                s.push_str(&(#fields).to_string());
-            )*
-            ::cheers::prelude::Signal::__string(s)
-        }
-    });
+    if key_tys.is_empty() {
+        struct_field_impls.append_all(quote! {
+            #[expect(non_upper_case_globals)]
+            #vis const fn #fn_ident() -> ::cheers::prelude::Signal::<#leaf_ty> {
+                ::cheers::prelude::Signal::__static(#name_str)
+            }
+        });
+    } else {
+        struct_field_impls.append_all(quote! {
+            #vis fn #fn_ident(#params) -> ::cheers::prelude::Signal::<#leaf_ty> {
+                let mut s = ::std::string::String::new();
+                s.push_str(#name_str);
+                #(
+                    s.push('-');
+                    s.push_str(&(#fields).to_string());
+                )*
+                ::cheers::prelude::Signal::__string(s)
+            }
+        });
+    }
 
     Ok(())
 }

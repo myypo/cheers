@@ -761,6 +761,19 @@ fn signal_deserialized() {
     assert_eq!(got.surname.get(&1).unwrap().get("person").unwrap(), "Smith");
 }
 
+#[test]
+fn signal_without_id() {
+    #[expect(dead_code)]
+    #[derive(Component)]
+    struct Flare {
+        #[signal]
+        num: i32,
+    }
+
+    let FlareSignals { signal_num } = Flare::signals();
+    assert_eq!(signal_num.render().into_inner(), "$flare.num");
+}
+
 type Ctx = ();
 cheers::app!(Ctx);
 
