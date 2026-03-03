@@ -1,26 +1,25 @@
 use crate::{
     component::{
-        ReferenceEntry, field_fn_params, filter_outer_attrs, generate_references_struct_and_impl,
-        to_owned_type,
+        ReferenceEntry, filter_outer_attrs, generate_references_struct_and_impl, to_owned_type,
     },
     shared::filter_generics,
 };
 use proc_macro2::TokenStream;
 use quote::{TokenStreamExt, quote};
 use syn::{
-    Error, Ident, ItemStruct, LitStr, Meta, Token, Type,
+    Attribute, Error, Ident, ItemStruct, Meta, Token, Type,
     parse::{Parse, ParseStream},
     parse_quote, parse2,
     spanned::Spanned,
 };
 
-struct SignalArgs {
+struct OuterSignalArgs {
     name: Ident,
     ty: Type,
     fields: Vec<Ident>,
 }
 
-impl Parse for SignalArgs {
+impl Parse for OuterSignalArgs {
     fn parse(input: ParseStream) -> syn::Result<Self> {
         let name = input.parse()?;
         input.parse::<Token![:]>().map_err(|_| {
@@ -89,75 +88,144 @@ fn nested_btreemap_type(key_tys: &[Type], leaf_ty: &Type) -> Type {
     ty
 }
 
+struct PushSignal<'a> {
+    vis: &'a syn::Visibility,
+    struct_snake_case: &'a str,
+    id_field: &'a Option<(Ident, Type)>,
+    name: &'a Ident,
+    leaf_ty: &'a Type,
+    key_names: &'a [Ident],
+    key_tys: &'a [Type],
+    struct_field_impls: &'a mut TokenStream,
+    signal_name_entries: &'a mut Vec<ReferenceEntry>,
+    signal_name_decl_tys: &'a mut Vec<Type>,
+    signal_field_decls: &'a mut Vec<TokenStream>,
+    signal_decl_tys: &'a mut Vec<Type>,
+}
+
+fn push_signal(
+    PushSignal {
+        vis,
+        struct_snake_case,
+        id_field,
+        name,
+        leaf_ty,
+        key_names,
+        key_tys,
+        struct_field_impls,
+        signal_name_entries,
+        signal_name_decl_tys,
+        signal_field_decls,
+        signal_decl_tys,
+    }: PushSignal,
+) {
+    let signal_name = name.to_string();
+    let fn_ident = Ident::new(&format!("signal_{signal_name}"), name.span());
+    let leaf_ty = to_owned_type(leaf_ty);
+
+    let json_ty = nested_btreemap_type(key_tys, &leaf_ty);
+    signal_field_decls.push(quote! { #name: #json_ty });
+    signal_decl_tys.push(json_ty);
+
+    let id_field_param = id_field.as_ref().map(|(ident, ty)| quote! { #ident: #ty, });
+    let id_field_ident = id_field.as_ref().map(|(ident, _)| ident);
+
+    let signal_ty = if id_field.is_none() && key_tys.is_empty() {
+        quote! { ::cheers::prelude::Signal::<#leaf_ty> }
+    } else {
+        let id_field_ty = id_field.as_ref().map(|(_, ty)| quote! { #ty, });
+        quote! { fn(#id_field_ty #(#key_tys),*) -> ::cheers::prelude::Signal::<#leaf_ty> }
+    };
+
+    let signal_value = if id_field.is_none() && key_tys.is_empty() {
+        let full_name = format!("{struct_snake_case}.{signal_name}");
+        quote! { ::cheers::prelude::Signal::<#leaf_ty>::__static(#full_name) }
+    } else {
+        quote! { Self::#fn_ident }
+    };
+
+    signal_name_entries.push(ReferenceEntry {
+        ident: fn_ident.clone(),
+        ty: signal_ty,
+        value: signal_value,
+    });
+
+    if let Some((_, ty)) = id_field {
+        signal_name_decl_tys.push(ty.clone());
+    }
+    signal_name_decl_tys.extend(key_tys.iter().cloned());
+    signal_name_decl_tys.push(leaf_ty.clone());
+
+    let method = if id_field.is_none() && key_tys.is_empty() {
+        quote! {
+            #vis fn #fn_ident() -> ::cheers::prelude::Signal::<#leaf_ty> {
+                let mut s = #struct_snake_case.to_owned();
+                s.push('.');
+                s.push_str(#signal_name);
+                ::cheers::prelude::Signal::__string(s)
+            }
+        }
+    } else {
+        let push_id = id_field_ident.map(|ident| {
+            quote! {
+                s.push_str(&#ident.to_string());
+                s.push('.');
+            }
+        });
+        quote! {
+            #vis fn #fn_ident(#id_field_param #(#key_names: #key_tys),*) -> ::cheers::prelude::Signal::<#leaf_ty> {
+                let mut s = #struct_snake_case.to_owned();
+                s.push('.');
+                #push_id
+                s.push_str(#signal_name);
+                #(
+                    s.push('.');
+                    s.push_str(&(#key_names).to_string());
+                )*
+                ::cheers::prelude::Signal::__string(s)
+            }
+        }
+    };
+
+    struct_field_impls.append_all(method);
+}
+
 fn process_outer_signal_attrs(
     item: &ItemStruct,
-    attr: syn::Attribute,
+    struct_snake_case: String,
+    attr: Attribute,
+    id_field: &Option<(Ident, Type)>,
     signal_field_decls: &mut Vec<TokenStream>,
     signal_decl_tys: &mut Vec<Type>,
     signal_name_entries: &mut Vec<ReferenceEntry>,
     signal_name_decl_tys: &mut Vec<Type>,
     struct_field_impls: &mut TokenStream,
 ) -> Result<(), Error> {
-    let args: SignalArgs = match attr.meta {
+    let args: OuterSignalArgs = match attr.meta {
         Meta::List(meta_list) => parse2(meta_list.tokens),
         _ => Err(Error::new_spanned(attr, r#"expected #[signal("...")]"#)),
     }?;
 
-    let name_str = args.name.to_string();
-    let fn_ident = Ident::new(&format!("signal_{name_str}"), args.name.span());
     let key_tys = args
         .fields
         .iter()
         .map(|ident| field_type_by_ident(item, ident))
         .collect::<Result<Vec<_>, Error>>()?;
 
-    let vis = &item.vis;
-    let name = &args.name;
-    let fields = args.fields;
-    let params = field_fn_params(item, &fields)?;
-    let leaf_ty = &args.ty;
-    let json_ty = nested_btreemap_type(&key_tys, leaf_ty);
-    let signal_ty = if key_tys.is_empty() {
-        quote! { ::cheers::prelude::Signal::<#leaf_ty> }
-    } else {
-        quote! { fn(#(#key_tys),*) -> ::cheers::prelude::Signal::<#leaf_ty> }
-    };
-    let signal_value = if key_tys.is_empty() {
-        quote! { Self::#fn_ident() }
-    } else {
-        quote! { Self::#fn_ident }
-    };
-
-    signal_field_decls.push(quote! { #name: #json_ty });
-    signal_decl_tys.push(json_ty.clone());
-    signal_name_entries.push(ReferenceEntry {
-        ident: fn_ident.clone(),
-        ty: signal_ty,
-        value: signal_value,
+    push_signal(PushSignal {
+        vis: &item.vis,
+        struct_snake_case: &struct_snake_case,
+        id_field,
+        name: &args.name,
+        leaf_ty: &args.ty,
+        key_names: &args.fields,
+        key_tys: &key_tys,
+        struct_field_impls,
+        signal_name_entries,
+        signal_name_decl_tys,
+        signal_field_decls,
+        signal_decl_tys,
     });
-    signal_name_decl_tys.extend(key_tys.iter().cloned());
-    signal_name_decl_tys.push(leaf_ty.clone());
-
-    if key_tys.is_empty() {
-        struct_field_impls.append_all(quote! {
-            #[expect(non_upper_case_globals)]
-            #vis const fn #fn_ident() -> ::cheers::prelude::Signal::<#leaf_ty> {
-                ::cheers::prelude::Signal::__static(#name_str)
-            }
-        });
-    } else {
-        struct_field_impls.append_all(quote! {
-            #vis fn #fn_ident(#params) -> ::cheers::prelude::Signal::<#leaf_ty> {
-                let mut s = ::std::string::String::new();
-                s.push_str(#name_str);
-                #(
-                    s.push('-');
-                    s.push_str(&(#fields).to_string());
-                )*
-                ::cheers::prelude::Signal::__string(s)
-            }
-        });
-    }
 
     Ok(())
 }
@@ -182,17 +250,6 @@ pub(crate) fn generate_signal_impl(
     let mut signal_field_decls = Vec::new();
     let mut struct_field_impls = TokenStream::new();
     let mut signal_name_entries: Vec<ReferenceEntry> = Vec::new();
-    for attr in signal_attrs {
-        process_outer_signal_attrs(
-            &item,
-            attr,
-            &mut signal_field_decls,
-            &mut signal_decl_tys,
-            &mut signal_name_entries,
-            &mut signal_name_decl_tys,
-            &mut struct_field_impls,
-        )?;
-    }
 
     let mut fields = Vec::new();
     let mut id_field: Option<(Ident, Type)> = None;
@@ -246,78 +303,43 @@ pub(crate) fn generate_signal_impl(
             let ident = format!("{}SignalsJson", last_segment.ident);
             last_segment.ident = Ident::new(&ident, last_segment.ident.span());
         }
-        fields.push(f);
+        fields.push(f.clone());
+    }
+
+    for attr in signal_attrs {
+        process_outer_signal_attrs(
+            &item,
+            struct_snake_case.clone(),
+            attr,
+            &id_field,
+            &mut signal_field_decls,
+            &mut signal_decl_tys,
+            &mut signal_name_entries,
+            &mut signal_name_decl_tys,
+            &mut struct_field_impls,
+        )?;
     }
 
     for f in &fields {
-        let ident = &f.ident;
-        let ty = to_owned_type(&f.ty);
-
-        let field_name = ident
-            .as_ref()
-            .map(|i| {
-                let mut s = struct_snake_case.clone();
-                s.push('.');
-                s.push_str(&i.to_string());
-                LitStr::new(&s, i.span())
-            })
-            .unwrap_or_else(|| {
-                LitStr::new(
-                    &{
-                        let mut s = struct_snake_case.clone();
-                        s.push('.');
-                        s.push_str("signal");
-                        s
-                    },
-                    f.span(),
-                )
-            });
-        let fn_ident = ident
-            .as_ref()
-            .map(|i| {
-                let mut s = "signal_".to_owned();
-                s.push_str(&i.to_string());
-                Ident::new(&s, i.span())
-            })
+        let name = f
+            .ident
+            .clone()
             .unwrap_or_else(|| Ident::new("signal", f.span()));
 
-        match &id_field {
-            Some((id_field_ident, id_field_ty)) => {
-                struct_field_impls.append_all(quote! {
-                    #vis fn #fn_ident(#id_field_ident: #id_field_ty) -> ::cheers::prelude::Signal::<#ty> {
-                        let mut s = #id_field_ident.to_string();
-                        s.push('.');
-                        s.push_str(#field_name);
-                        ::cheers::prelude::Signal::__string(s)
-                    }
-                });
-
-                signal_name_entries.push(ReferenceEntry {
-                    ident: fn_ident.clone(),
-                    ty: quote! { fn(#id_field_ty) -> ::cheers::prelude::Signal::<#ty> },
-                    value: quote! { Self::#fn_ident },
-                });
-                signal_name_decl_tys.push(id_field_ty.clone());
-                signal_name_decl_tys.push(ty.clone());
-            }
-            None => {
-                struct_field_impls.append_all(quote! {
-                    #vis fn #fn_ident() -> ::cheers::prelude::Signal::<#ty> {
-                        ::cheers::prelude::Signal::__string(#field_name.to_owned())
-                    }
-                });
-
-                signal_name_entries.push(ReferenceEntry {
-                    ident: fn_ident.clone(),
-                    ty: quote! { ::cheers::prelude::Signal::<#ty> },
-                    value: quote! { ::cheers::prelude::Signal::<#ty>::__static(#field_name) },
-                });
-                signal_name_decl_tys.push(ty.clone());
-            }
-        }
-
-        signal_field_decls.push(quote! { #ident: #ty });
-        signal_decl_tys.push(ty);
+        push_signal(PushSignal {
+            vis,
+            struct_snake_case: &struct_snake_case,
+            id_field: &id_field,
+            name: &name,
+            leaf_ty: &f.ty,
+            key_names: &[],
+            key_tys: &[],
+            struct_field_impls: &mut struct_field_impls,
+            signal_name_entries: &mut signal_name_entries,
+            signal_name_decl_tys: &mut signal_name_decl_tys,
+            signal_field_decls: &mut signal_field_decls,
+            signal_decl_tys: &mut signal_decl_tys,
+        });
     }
 
     if fields.is_empty() && struct_field_impls.is_empty() {

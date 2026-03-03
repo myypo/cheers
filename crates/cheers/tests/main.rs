@@ -703,7 +703,25 @@ fn signal_without_field() {
 
     assert_eq!(
         result,
-        r#"<p data-bind="keepsake-El" data-on:close="$keepsake-El + 'noooo'">El</p>"#
+        r#"<p data-bind="ghost.keepsake.El" data-on:close="$ghost.keepsake.El + 'noooo'">El</p>"#
+    )
+}
+
+#[test]
+fn signal_outer_with_id() {
+    #[expect(dead_code)]
+    #[derive(Component)]
+    #[signal(outside: String, name)]
+    struct Outer {
+        #[signal(id)]
+        id: i32,
+        name: String,
+    }
+
+    let OuterSignals { signal_outside } = Outer::signals();
+    assert_eq!(
+        signal_outside(42, "Nick".to_owned()).render().into_inner(),
+        "$outer.42.outside.Nick"
     )
 }
 
@@ -738,7 +756,7 @@ fn signal_id() {
 
     assert_eq!(
         result,
-        r#"<p data-bind="69.ghost.name" data-on:click="console.log($69.ghost.name)"></p>"#
+        r#"<p data-bind="ghost.69.name" data-on:click="console.log($ghost.69.name)"></p>"#
     )
 }
 
