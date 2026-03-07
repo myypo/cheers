@@ -3,6 +3,7 @@ use std::collections::BTreeSet;
 use crate::component::{IdField, field_fn_params, filter_outer_attrs};
 use proc_macro2::{Span, TokenStream};
 use quote::quote;
+use syn::punctuated::Punctuated;
 use syn::{
     Error, Ident, ItemStruct, LitStr, Meta, Token, Type,
     parse::{Parse, ParseStream},
@@ -17,25 +18,19 @@ struct IdArgs {
 
 impl Parse for IdArgs {
     fn parse(input: ParseStream) -> Result<Self, Error> {
-        if input.is_empty() {
-            return Ok(Self {
-                namespace: None,
-                fields: Vec::new(),
-            });
-        }
-
-        let mut namespace = None;
-        if input.peek(LitStr) {
-            namespace = Some(input.parse()?);
-        }
-
-        let mut fields = Vec::new();
-        while !input.is_empty() {
-            if namespace.is_some() || !fields.is_empty() {
+        let namespace = if input.peek(LitStr) {
+            let ns = input.parse()?;
+            if input.peek(Token![,]) {
                 input.parse::<Token![,]>()?;
             }
-            fields.push(input.parse()?);
-        }
+            Some(ns)
+        } else {
+            None
+        };
+
+        let fields = Punctuated::<Ident, Token![,]>::parse_terminated(input)?
+            .into_iter()
+            .collect();
 
         Ok(Self { namespace, fields })
     }
@@ -180,125 +175,86 @@ pub(crate) fn generate_id_impls(
     };
 
     let mut derived_methods = Vec::new();
-    for spec in &derived_specs {
-        let method_ident = &spec.method_ident;
-        let field_idents = &spec.field_idents;
-        let format_str = &spec.format_str;
+    let mut struct_generics = Vec::new();
+    let mut return_generics = Vec::new();
+    let mut struct_fields = Vec::new();
+    let mut method_fields = Vec::new();
 
-        let extra_params = field_fn_params(item, field_idents)?;
-        let params = if field_idents.is_empty() {
-            quote! { #id_ident: #id_ty }
-        } else {
-            quote! { #id_ident: #id_ty, #extra_params }
-        };
-
-        derived_methods.push(quote! {
-            #vis fn #method_ident(#params) -> ::cheers::prelude::ElementId {
-                ::cheers::prelude::ElementId::__dynamic(format!(#format_str, Self::id(#id_ident), #(#field_idents),*))
-            }
-        });
-    }
-
-    let mut closure_generic_idents = Vec::new();
-    let mut closure_return_tys = Vec::new();
-    let mut entry_generic_idents = Vec::with_capacity(derived_specs.len());
-
-    for (idx, spec) in derived_specs.iter().enumerate() {
-        if spec.field_tys.is_empty() {
-            entry_generic_idents.push(None);
-            continue;
-        }
-
-        let generic_ident = Ident::new(&format!("__IdFn{idx}"), spec.method_ident.span());
-        let field_tys = &spec.field_tys;
-        closure_generic_idents.push(generic_ident.clone());
-        closure_return_tys.push(quote! {
-            impl Fn(#(#field_tys),*) -> ::cheers::prelude::ElementId
-        });
-        entry_generic_idents.push(Some(generic_ident));
-    }
-
-    let ids_struct_decl_generics = if closure_generic_idents.is_empty() {
-        TokenStream::new()
-    } else {
-        quote! { <#(#closure_generic_idents),*> }
-    };
-
-    let ids_struct_return_generics = if closure_return_tys.is_empty() {
-        TokenStream::new()
-    } else {
-        quote! { <#(#closure_return_tys),*> }
-    };
-
-    let mut ids_struct_fields = Vec::new();
-    ids_struct_fields.push(quote! { #vis id: ::cheers::prelude::ElementId });
-
-    for (spec, generic_ident) in derived_specs.iter().zip(entry_generic_idents.iter()) {
-        let field_ident = &spec.method_ident;
-        let field_ty = if let Some(generic_ident) = generic_ident {
-            quote! { #generic_ident }
-        } else {
-            quote! { ::cheers::prelude::ElementId }
-        };
-        ids_struct_fields.push(quote! { #vis #field_ident: #field_ty });
-    }
-
-    let mut ids_method_fields = Vec::new();
-    ids_method_fields.push(quote! {
+    struct_fields.push(quote! { #vis id: ::cheers::prelude::ElementId });
+    method_fields.push(quote! {
         id: ::cheers::prelude::ElementId::__dynamic(__id_prefix.clone())
     });
 
-    for spec in &derived_specs {
+    for (idx, spec) in derived_specs.iter().enumerate() {
         let method_ident = &spec.method_ident;
         let field_idents = &spec.field_idents;
         let field_tys = &spec.field_tys;
         let format_str = &spec.format_str;
 
-        let field_value = if field_tys.is_empty() {
-            quote! { ::cheers::prelude::ElementId::__dynamic(format!(#format_str, __id_prefix)) }
+        let extra_params = field_fn_params(item, field_idents)?;
+        derived_methods.push(quote! {
+            #vis fn #method_ident(#id_ident: #id_ty, #extra_params) -> ::cheers::prelude::ElementId {
+                ::cheers::prelude::ElementId::__dynamic(format!(#format_str, Self::id(#id_ident), #(#field_idents),*))
+            }
+        });
+
+        if field_tys.is_empty() {
+            struct_fields.push(quote! { #vis #method_ident: ::cheers::prelude::ElementId });
+            method_fields.push(quote! {
+                #method_ident: ::cheers::prelude::ElementId::__dynamic(format!(#format_str, __id_prefix))
+            });
         } else {
-            quote! {
-                {
+            let gen_ident = Ident::new(&format!("__IdFn{idx}"), method_ident.span());
+            struct_generics.push(gen_ident.clone());
+            return_generics
+                .push(quote! { impl Fn(#(#field_tys),*) -> ::cheers::prelude::ElementId });
+            struct_fields.push(quote! { #vis #method_ident: #gen_ident });
+            method_fields.push(quote! {
+                #method_ident: {
                     let __id_prefix = __id_prefix.clone();
                     move |#(#field_idents: #field_tys),*| {
                         ::cheers::prelude::ElementId::__dynamic(format!(#format_str, __id_prefix, #(#field_idents),*))
                     }
                 }
-            }
-        };
-
-        ids_method_fields.push(quote! {
-            #method_ident: #field_value
-        });
+            });
+        }
     }
 
-    let methods_impl = {
-        let (impl_generics, ty_generics, where_clause) = item.generics.split_for_impl();
-        quote! {
-            impl #impl_generics #struct_ident #ty_generics #where_clause {
-                #base_id_method
+    let struct_generics = if struct_generics.is_empty() {
+        TokenStream::default()
+    } else {
+        quote! { <#(#struct_generics),*> }
+    };
+    let return_generics = if return_generics.is_empty() {
+        TokenStream::default()
+    } else {
+        quote! { <#(#return_generics),*> }
+    };
 
-                #(#derived_methods)*
+    let ids_struct = quote! {
+        #vis struct #ids_ident #struct_generics {
+            #(#struct_fields,)*
+        }
+    };
 
-                #vis fn ids(#id_ident: #id_ty) -> #ids_ident #ids_struct_return_generics {
-                    let __id_prefix = format!(#base_id_format, #id_ident);
-                    #ids_ident {
-                        #(#ids_method_fields,)*
-                    }
+    let (impl_generics, ty_generics, where_clause) = item.generics.split_for_impl();
+    let methods_impl = quote! {
+        impl #impl_generics #struct_ident #ty_generics #where_clause {
+            #base_id_method
+
+            #(#derived_methods)*
+
+            #vis fn ids(#id_ident: #id_ty) -> #ids_ident #return_generics {
+                let __id_prefix = format!(#base_id_format, #id_ident);
+                #ids_ident {
+                    #(#method_fields,)*
                 }
             }
         }
     };
 
-    let ids_struct = quote! {
-        #vis struct #ids_ident #ids_struct_decl_generics {
-            #(#ids_struct_fields,)*
-        }
-    };
-
     Ok(quote! {
         #ids_struct
-
         #methods_impl
     })
 }

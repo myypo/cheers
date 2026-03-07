@@ -1,9 +1,7 @@
 use std::collections::BTreeSet;
 
-use crate::{
-    component::{IdField, filter_outer_attrs, to_owned_type},
-    shared::filter_generics,
-};
+use crate::component::{IdField, filter_outer_attrs, to_owned_type};
+use crate::shared::filter_generics;
 use proc_macro2::TokenStream;
 use quote::quote;
 use syn::{
@@ -221,12 +219,19 @@ pub(crate) fn generate_signal_impl(
         }
     }
 
-    let mut signal_methods = Vec::new();
+    let id_param = id_field
+        .as_ref()
+        .map(|id_field| {
+            let id_ident = &id_field.ident;
+            let id_ty = &id_field.ty;
+            quote! { #id_ident: #id_ty }
+        })
+        .unwrap_or_default();
 
+    let mut signal_methods = Vec::new();
     let mut signals_struct_fields = Vec::new();
     let mut signals_method_fields = Vec::new();
     let mut signals_struct_decl_tys = Vec::new();
-
     let mut signal_json_scope_fields = Vec::new();
     let mut signal_json_scope_decl_tys = Vec::new();
 
@@ -234,15 +239,7 @@ pub(crate) fn generate_signal_impl(
         let signal_name = spec.name.to_string();
         let method_ident = signal_method_ident(&spec.name);
         let leaf_ty = to_owned_type(&spec.leaf_ty);
-
-        let id_param = id_field
-            .as_ref()
-            .map(|id_field| {
-                let id_ident = &id_field.ident;
-                let id_ty = &id_field.ty;
-                quote! { #id_ident: #id_ty }
-            })
-            .unwrap_or_default();
+        let signal_ty: Type = parse_quote! { ::cheers::prelude::Signal::<#leaf_ty> };
 
         let (method_vis, signal_expr, signal_field_value) = if let Some(id_field) = &id_field {
             let id_ident = &id_field.ident;
@@ -261,32 +258,23 @@ pub(crate) fn generate_signal_impl(
         };
 
         signal_methods.push(quote! {
-            #method_vis fn #method_ident(#id_param) -> ::cheers::prelude::Signal::<#leaf_ty> {
+            #method_vis fn #method_ident(#id_param) -> #signal_ty {
                 #signal_expr
             }
         });
 
-        let signal_ty: Type = parse_quote! { ::cheers::prelude::Signal::<#leaf_ty> };
-        signals_struct_decl_tys.push(signal_ty.clone());
-
-        signals_struct_fields.push(quote! {
-            #vis #method_ident: #signal_ty
-        });
-
-        signals_method_fields.push(quote! {
-            #method_ident: #signal_field_value
-        });
+        signals_struct_fields.push(quote! { #vis #method_ident: #signal_ty });
+        signals_method_fields.push(quote! { #method_ident: #signal_field_value });
+        signals_struct_decl_tys.push(signal_ty);
 
         let field_ident = &spec.name;
-        signal_json_scope_decl_tys.push(leaf_ty.clone());
-        signal_json_scope_fields.push(quote! {
-            #vis #field_ident: #leaf_ty
-        });
+        signal_json_scope_fields.push(quote! { #vis #field_ident: #leaf_ty });
+        signal_json_scope_decl_tys.push(leaf_ty);
     }
 
     let signal_names_generics =
         filter_generics(item.generics.clone(), signals_struct_decl_tys.iter(), false);
-
+    let signal_names_return_generics = generic_args_from(&signal_names_generics);
     let signal_names_struct = {
         let (struct_generics, _, struct_where_clause) = signal_names_generics.split_for_impl();
         quote! {
@@ -295,8 +283,6 @@ pub(crate) fn generate_signal_impl(
             }
         }
     };
-
-    let signal_names_return_generics = generic_args_from(&signal_names_generics);
 
     let signals_method = if let Some(id_field) = &id_field {
         let id_ident = &id_field.ident;
@@ -325,7 +311,6 @@ pub(crate) fn generate_signal_impl(
         false,
     );
     let signal_json_scope_ty_generics = generic_args_from(&signal_json_scope_generics);
-
     let signal_json_scope_struct = {
         let (scope_generics, _, scope_where_clause) = signal_json_scope_generics.split_for_impl();
         quote! {
@@ -349,10 +334,12 @@ pub(crate) fn generate_signal_impl(
         signal_json_component_scope_ty
     };
 
-    let signal_json_decl_tys = vec![signal_json_component_ty.clone()];
     let signal_json_struct = {
-        let signal_json_generics =
-            filter_generics(item.generics.clone(), signal_json_decl_tys.iter(), false);
+        let signal_json_generics = filter_generics(
+            item.generics.clone(),
+            std::iter::once(&signal_json_component_ty),
+            false,
+        );
         let (json_generics, _, json_where_clause) = signal_json_generics.split_for_impl();
 
         quote! {
@@ -378,11 +365,8 @@ pub(crate) fn generate_signal_impl(
 
     Ok(quote! {
         #signal_names_struct
-
         #signal_json_scope_struct
-
         #signal_json_struct
-
         #methods_impl
     })
 }
