@@ -40,9 +40,8 @@ impl<T: Render> Render for Base<T> {
 }
 
 #[derive(Component)]
-#[id(id)]
 struct Stock<'a> {
-    #[signal(id)]
+    #[id]
     id: &'a String,
     name: &'a str,
     #[signal]
@@ -51,15 +50,14 @@ struct Stock<'a> {
 
 impl<'a> Render for Stock<'a> {
     fn render_to(&self, buffer: &mut Buffer<Element>) {
-        let StockSignals { signal_price_cents } = Stock::signals();
-        let StockIds { id } = Stock::ids();
-        let signal_price_cents = signal_price_cents(self.id);
+        let StockSignals { signal_price_cents } = Stock::signals(self.id);
+        let StockIds { id } = Stock::ids(self.id);
         let increment_action = IncrementStockAction {
             stock_id: self.id.clone(),
         };
         let dollar_price = format!("${:.2}", self.price_cents as f64 / 100.0);
         html! {
-            section id=(id(self.id)) {
+            section id=id {
                 h3 { (self.name) }
                 button !on:click(increment_action) {
                     "Price: "

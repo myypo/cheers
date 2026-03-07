@@ -505,32 +505,35 @@ fn id() {
     #[expect(dead_code)]
     #[derive(Component)]
     #[id(number)]
-    #[id("location", city, street, number)]
-    #[id("hardcoded")]
+    #[id("location", city, street)]
     struct House<'a> {
+        #[id]
+        id: u32,
         city: &'a str,
         street: &'a str,
         number: u32,
     }
 
-    let number = 42;
-    let house_id = House::id(number);
-    assert_eq!(house_id.to_string(), "house-42");
-    let location_id = House::id_location("Berlin", "Main St", number);
-    assert_eq!(location_id.to_string(), "house-location-Berlin-Main St-42");
-    assert_eq!(House::id_hardcoded().to_string(), "house-hardcoded");
+    let instance_id = 7;
+    assert_eq!(House::id(instance_id).to_string(), "house-7");
+    assert_eq!(House::id_number(instance_id, 42).to_string(), "house-7-42");
+    assert_eq!(
+        House::id_location(instance_id, "Berlin", "Main St").to_string(),
+        "house-7-location-Berlin-Main St"
+    );
 
     let HouseIds {
         id,
+        id_number,
         id_location,
-        id_hardcoded,
-    } = House::ids();
-    assert_eq!(id(42).to_string(), "house-42");
+    } = House::ids(instance_id);
+
+    assert_eq!(id.to_string(), "house-7");
+    assert_eq!(id_number(42).to_string(), "house-7-42");
     assert_eq!(
-        id_location("Berlin", "Main St", 42).to_string(),
-        "house-location-Berlin-Main St-42"
+        id_location("Berlin", "Main St").to_string(),
+        "house-7-location-Berlin-Main St"
     );
-    assert_eq!(id_hardcoded.to_string(), "house-hardcoded");
 }
 
 #[test]
@@ -675,9 +678,9 @@ fn signal_computed() {
 }
 
 #[test]
-fn signal_without_field() {
+fn signal_outer_without_id() {
     #[derive(Component)]
-    #[signal(keepsake: String, name)]
+    #[signal(keepsake: String)]
     struct Ghost {
         name: String,
     }
@@ -685,7 +688,6 @@ fn signal_without_field() {
     impl Render for Ghost {
         fn render_to(&self, buffer: &mut Buffer<Element>) {
             let GhostSignals { signal_keepsake } = Self::signals();
-            let signal_keepsake = signal_keepsake(self.name.clone());
             html! {
                 p !bind(&signal_keepsake) !on:close({ (signal_keepsake) " + 'noooo'" }) {
                     (self.name)
@@ -703,7 +705,7 @@ fn signal_without_field() {
 
     assert_eq!(
         result,
-        r#"<p data-bind="ghost.keepsake.El" data-on:close="$ghost.keepsake.El + 'noooo'">El</p>"#
+        r#"<p data-bind="ghost.keepsake" data-on:close="$ghost.keepsake + 'noooo'">El</p>"#
     )
 }
 
@@ -711,18 +713,19 @@ fn signal_without_field() {
 fn signal_outer_with_id() {
     #[expect(dead_code)]
     #[derive(Component)]
-    #[signal(outside: String, name)]
+    #[signal(outside: String)]
     struct Outer {
-        #[signal(id)]
+        #[id]
         id: i32,
         name: String,
     }
 
-    let OuterSignals { signal_outside } = Outer::signals();
+    let OuterSignals { signal_outside } = Outer::signals(42);
+    assert_eq!(signal_outside.render().into_inner(), "$outer.42.outside");
     assert_eq!(
-        signal_outside(42, "Nick".to_owned()).render().into_inner(),
-        "$outer.42.outside.Nick"
-    )
+        Outer::signal_outside(42).render().into_inner(),
+        "$outer.42.outside"
+    );
 }
 
 #[test]
@@ -730,7 +733,7 @@ fn signal_id() {
     #[derive(Component)]
     #[expect(dead_code)]
     struct Ghost {
-        #[signal(id)]
+        #[id]
         id: i32,
         #[signal]
         name: String,
@@ -738,8 +741,7 @@ fn signal_id() {
 
     impl Render for Ghost {
         fn render_to(&self, buffer: &mut Buffer<Element>) {
-            let GhostSignals { signal_name } = Self::signals();
-            let signal_name = signal_name(self.id);
+            let GhostSignals { signal_name } = Self::signals(self.id);
             html! {
                 p !bind(signal_name) !on:click({ "console.log(" signal_name ")" }) {}
             }
@@ -761,22 +763,70 @@ fn signal_id() {
 }
 
 #[test]
-fn signal_deserialized() {
+fn signal_deserialized_with_id_scope() {
     #[derive(Component)]
-    #[signal(surname: &'a str, id, other_id)]
+    #[signal(task_status: String)]
     #[expect(dead_code)]
-    struct Employee<'a> {
-        id: i32,
-        other_id: &'a str,
+    struct Project {
+        #[id]
+        project_id: i32,
         #[signal]
         name: String,
     }
 
-    let got: EmployeeSignalsJson =
-        serde_json::from_str(r#"{ "name": "John", "surname": { "1": { "person": "Smith" } } }"#)
-            .unwrap();
-    assert_eq!(got.name, "John");
-    assert_eq!(got.surname.get(&1).unwrap().get("person").unwrap(), "Smith");
+    let got: ProjectSignalsJson = serde_json::from_str(
+        r#"{ "project": { "1": { "name": "Website Redesign", "task_status": "in_progress" } } }"#,
+    )
+    .unwrap();
+
+    let project = got.project.get(&1).unwrap();
+    assert_eq!(project.name, "Website Redesign");
+    assert_eq!(project.task_status, "in_progress");
+}
+
+#[test]
+fn signal_deserialized_nested_scope() {
+    #[expect(dead_code)]
+    #[derive(Component)]
+    struct Child {
+        #[signal]
+        value: i32,
+    }
+
+    #[expect(dead_code)]
+    #[derive(Component)]
+    struct Parent {
+        #[signal(nested)]
+        child: Child,
+    }
+
+    let got: ParentSignalsJson =
+        serde_json::from_str(r#"{ "parent": { "child": { "value": 1 } } }"#).unwrap();
+
+    assert_eq!(got.parent.child.value, 1);
+}
+
+#[test]
+fn signal_patch_with_id_scope() {
+    #[derive(Component)]
+    #[expect(dead_code)]
+    struct Project {
+        #[id]
+        id: i32,
+        #[signal]
+        name: String,
+    }
+
+    let name = Project::signal_name(1);
+    let result = html! {
+        div !signals(name: "'Website Redesign'".to_owned()) {}
+    }
+    .render();
+
+    assert_eq!(
+        result.as_inner(),
+        r#"<div data-signals="{project:{1:{name:'Website Redesign'}}}"></div>"#
+    );
 }
 
 #[test]

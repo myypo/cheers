@@ -9,7 +9,7 @@ use crate::shared::filter_generics;
 use proc_macro2::TokenStream;
 use quote::quote;
 use syn::spanned::Spanned;
-use syn::{Attribute, Error, Ident, ItemStruct, Type, Visibility};
+use syn::{Attribute, Error, Ident, ItemStruct, Meta, Type, Visibility};
 
 fn to_snake_case(s: &str) -> String {
     let mut result = String::new();
@@ -48,6 +48,58 @@ fn filter_outer_attrs(item: &mut ItemStruct, name: &'static str) -> Vec<Attribut
         .partition(|a| a.path().is_ident(name));
     item.attrs = remaining;
     attrs
+}
+
+#[derive(Clone)]
+pub(crate) struct IdField {
+    pub ident: Ident,
+    pub ty: Type,
+}
+
+pub(crate) fn find_id_field(item: &ItemStruct) -> Result<Option<IdField>, Error> {
+    let mut id_field = None;
+
+    for field in &item.fields {
+        let mut attrs = field.attrs.iter().filter(|a| a.path().is_ident("id"));
+        let Some(attr) = attrs.next() else {
+            continue;
+        };
+
+        if attrs.next().is_some() {
+            return Err(Error::new_spanned(
+                field,
+                "only one #[id] attribute is allowed on a field",
+            ));
+        }
+
+        match &attr.meta {
+            Meta::Path(_) => {}
+            _ => {
+                return Err(Error::new_spanned(
+                    attr,
+                    "field #[id] does not accept arguments",
+                ));
+            }
+        }
+
+        if id_field.is_some() {
+            return Err(Error::new_spanned(
+                field,
+                "only one field can be marked with #[id]",
+            ));
+        }
+
+        let ident = field
+            .ident
+            .clone()
+            .unwrap_or_else(|| Ident::new("id", field.span()));
+        id_field = Some(IdField {
+            ident,
+            ty: field.ty.clone(),
+        });
+    }
+
+    Ok(id_field)
 }
 
 struct ReferenceEntry {
@@ -115,9 +167,11 @@ fn to_owned_type(ty: &Type) -> Type {
 
 pub fn generate(mut item: ItemStruct) -> Result<TokenStream, Error> {
     let struct_snake_case = to_snake_case(&item.ident.to_string());
-    let id_impl = generate_id_impls(&mut item, &struct_snake_case)?;
+    let id_field = find_id_field(&item)?;
+
+    let id_impl = generate_id_impls(&mut item, &struct_snake_case, id_field.clone())?;
     let form_impl = generate_form_impl(&mut item)?;
-    let signal_impl = generate_signal_impl(item, struct_snake_case)?;
+    let signal_impl = generate_signal_impl(item, struct_snake_case, id_field)?;
 
     Ok(quote! {
         #id_impl
