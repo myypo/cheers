@@ -501,25 +501,24 @@ fn component_dotdot_default() {
 }
 
 #[test]
-fn id() {
+fn ids_with_id() {
     #[expect(dead_code)]
     #[derive(Component)]
-    #[id(number)]
-    #[id("location", city, street)]
+    #[id("number")]
+    #[id("location")]
     struct House<'a> {
         #[id]
         id: u32,
         city: &'a str,
         street: &'a str,
-        number: u32,
     }
 
     let instance_id = 7;
     assert_eq!(House::id(instance_id).to_string(), "house-7");
-    assert_eq!(House::id_number(instance_id, 42).to_string(), "house-7-42");
+    assert_eq!(House::id_number(instance_id).to_string(), "house-7-number");
     assert_eq!(
-        House::id_location(instance_id, "Berlin", "Main St").to_string(),
-        "house-7-location-Berlin-Main St"
+        House::id_location(instance_id).to_string(),
+        "house-7-location"
     );
 
     let HouseIds {
@@ -529,11 +528,35 @@ fn id() {
     } = House::ids(instance_id);
 
     assert_eq!(id.to_string(), "house-7");
-    assert_eq!(id_number(42).to_string(), "house-7-42");
-    assert_eq!(
-        id_location("Berlin", "Main St").to_string(),
-        "house-7-location-Berlin-Main St"
-    );
+    assert_eq!(id_number.to_string(), "house-7-number");
+    assert_eq!(id_location.to_string(), "house-7-location");
+}
+
+#[test]
+fn id_without_id() {
+    #[expect(dead_code)]
+    #[derive(Component)]
+    #[id("name")]
+    #[id("price")]
+    struct Steak<'a, M> {
+        name: &'a str,
+        dollars: M,
+        cents: M,
+    }
+
+    assert_eq!(Steak::<i32>::id().to_string(), "steak");
+    assert_eq!(Steak::<i32>::id_name().to_string(), "steak-name");
+    assert_eq!(Steak::<i32>::id_price().to_string(), "steak-price");
+
+    let SteakIds {
+        id,
+        id_name,
+        id_price,
+    } = Steak::<i32>::ids();
+
+    assert_eq!(id.to_string(), "steak");
+    assert_eq!(id_name.to_string(), "steak-name");
+    assert_eq!(id_price.to_string(), "steak-price");
 }
 
 #[test]

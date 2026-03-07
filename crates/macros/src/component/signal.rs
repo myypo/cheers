@@ -51,13 +51,6 @@ impl Parse for SignalFieldArgs {
                 continue;
             }
 
-            if ident == "id" {
-                return Err(Error::new_spanned(
-                    ident,
-                    "`id` is no longer supported in #[signal(...)]; mark the field with #[id] instead",
-                ));
-            }
-
             return Err(Error::new_spanned(ident, "expected `nested`"));
         }
 

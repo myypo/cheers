@@ -26,22 +26,6 @@ fn to_snake_case(s: &str) -> String {
     result
 }
 
-fn field_fn_params(item: &ItemStruct, arg_field_names: &[Ident]) -> Result<TokenStream, Error> {
-    let field_types = arg_field_names
-        .iter()
-        .map(|arg_field_name| {
-            for f in &item.fields {
-                if f.ident.as_ref() == Some(arg_field_name) {
-                    return Ok(&f.ty);
-                }
-            }
-            Err(Error::new_spanned(arg_field_name, "field not found"))
-        })
-        .collect::<Result<Vec<&Type>, Error>>()?;
-    let field_names = &arg_field_names;
-    Ok(quote! { #(#field_names: #field_types),* })
-}
-
 fn filter_outer_attrs(item: &mut ItemStruct, name: &'static str) -> Vec<Attribute> {
     let (attrs, remaining) = std::mem::take(&mut item.attrs)
         .into_iter()
