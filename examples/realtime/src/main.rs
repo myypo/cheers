@@ -50,8 +50,8 @@ struct Stock<'a> {
 
 impl<'a> Render for Stock<'a> {
     fn render_to(&self, buffer: &mut Buffer<Element>) {
-        let StockSignals { signal_price_cents } = Stock::signals(self.id);
-        let StockIds { id } = Stock::ids(self.id);
+        let StockSignals { signal_price_cents } = self.signals();
+        let StockIds { id } = self.ids();
         let increment_action = IncrementStockAction {
             stock_id: self.id.clone(),
         };

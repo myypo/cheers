@@ -234,30 +234,30 @@ pub(crate) fn generate_signal_impl(
         let leaf_ty = to_owned_type(&spec.leaf_ty);
         let signal_ty: Type = parse_quote! { ::cheers::prelude::Signal::<#leaf_ty> };
 
-        let (method_vis, signal_expr, signal_field_value) = if let Some(id_field) = &id_field {
+        if let Some(id_field) = &id_field {
             let id_ident = &id_field.ident;
-            (
-                quote! { #vis },
-                quote! { ::cheers::prelude::Signal::__string(format!("{}.{}.{}", #struct_snake_case, #id_ident, #signal_name)) },
-                quote! { ::cheers::prelude::Signal::__string(format!("{}.{}.{}", #struct_snake_case, __signal_id, #signal_name)) },
-            )
+            let string_constructor = quote! { ::cheers::prelude::Signal::__string(format!("{}.{}.{}", #struct_snake_case, #id_ident, #signal_name)) };
+
+            signal_methods.push(quote! {
+                #vis fn #method_ident(#id_param) -> #signal_ty {
+                    #string_constructor
+                }
+            });
+            signals_method_fields.push(quote! { #method_ident: #string_constructor });
         } else {
             let full_name = format!("{struct_snake_case}.{signal_name}");
-            (
-                quote! { #vis const },
-                quote! { ::cheers::prelude::Signal::__static(#full_name) },
-                quote! { ::cheers::prelude::Signal::<#leaf_ty>::__static(#full_name) },
-            )
+            let static_constructor =
+                quote! { ::cheers::prelude::Signal::<#leaf_ty>::__static(#full_name) };
+
+            signal_methods.push(quote! {
+                #vis const fn #method_ident() -> #signal_ty {
+                    #static_constructor
+                }
+            });
+            signals_method_fields.push(quote! { #method_ident: #static_constructor });
         };
 
-        signal_methods.push(quote! {
-            #method_vis fn #method_ident(#id_param) -> #signal_ty {
-                #signal_expr
-            }
-        });
-
         signals_struct_fields.push(quote! { #vis #method_ident: #signal_ty });
-        signals_method_fields.push(quote! { #method_ident: #signal_field_value });
         signals_struct_decl_tys.push(signal_ty);
 
         let field_ident = &spec.name;
@@ -277,20 +277,19 @@ pub(crate) fn generate_signal_impl(
         }
     };
 
-    let signals_method = if let Some(id_field) = &id_field {
-        let id_ident = &id_field.ident;
-        let id_ty = &id_field.ty;
+    let signals_accessor = {
+        let (id_decl, const_token) = if let Some(id_ident) = id_field.as_ref().map(|i| &i.ident) {
+            (
+                quote! { let #id_ident = (self.#id_ident); },
+                TokenStream::default(),
+            )
+        } else {
+            (TokenStream::default(), quote! { const })
+        };
+
         quote! {
-            #vis fn signals(#id_ident: #id_ty) -> #signal_names_ident #signal_names_return_generics {
-                let __signal_id = (#id_ident).to_string();
-                #signal_names_ident {
-                    #(#signals_method_fields,)*
-                }
-            }
-        }
-    } else {
-        quote! {
-            #vis const fn signals() -> #signal_names_ident #signal_names_return_generics {
+            #vis #const_token fn signals(&self) -> #signal_names_ident #signal_names_return_generics {
+                #id_decl
                 #signal_names_ident {
                     #(#signals_method_fields,)*
                 }
@@ -350,8 +349,7 @@ pub(crate) fn generate_signal_impl(
         quote! {
             impl #impl_generics #struct_ident #ty_generics #where_clause {
                 #(#signal_methods)*
-
-                #signals_method
+                #signals_accessor
             }
         }
     };

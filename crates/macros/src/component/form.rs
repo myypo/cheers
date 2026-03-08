@@ -1,13 +1,11 @@
 use crate::{
-    component::{
-        ReferenceEntry, filter_outer_attrs, generate_references_struct_and_impl, to_owned_type,
-    },
+    component::{filter_outer_attrs, to_owned_type},
     shared::filter_generics,
 };
 use proc_macro2::TokenStream;
 use quote::quote;
 use syn::{
-    Attribute, Error, Field, Ident, ItemStruct, LitStr, Meta, Token, Type, Visibility,
+    Attribute, Error, Field, Generics, Ident, ItemStruct, LitStr, Meta, Token, Type, Visibility,
     parse::{Parse, ParseStream},
     parse2, punctuated,
     spanned::Spanned,
@@ -151,6 +149,52 @@ fn process_form_inner_fields(
     }
 }
 
+fn generate_names_struct_and_impl(
+    vis: &Visibility,
+    struct_ident: &Ident,
+    generics: &Generics,
+    ident_str: &str,
+    form_name_entries: Vec<(Ident, LitStr)>,
+) -> TokenStream {
+    let references_ident = &Ident::new(&format!("{}Names", ident_str), struct_ident.span());
+    let entry_values = form_name_entries
+        .iter()
+        .map(|(_, field_name)| {
+            quote! { ::cheers::prelude::FormName::__static(#field_name) }
+        })
+        .collect::<Vec<_>>();
+    let entry_idents = form_name_entries
+        .iter()
+        .map(|(ident, _)| ident)
+        .collect::<Vec<_>>();
+
+    let references_generics = filter_generics(generics.clone(), &[], false);
+    let (_, references_ty_generics, references_where_clause) = references_generics.split_for_impl();
+
+    let references_struct = quote! {
+        #vis struct #references_ident #references_ty_generics #references_where_clause {
+            #( #vis #entry_idents: ::cheers::prelude::FormName, )*
+        }
+    };
+
+    let (impl_generics, ty_generics, where_clause) = generics.split_for_impl();
+    let struct_impl = quote! {
+        impl #impl_generics #struct_ident #ty_generics #where_clause {
+            #vis const fn form(&self) -> #references_ident #references_ty_generics {
+                #references_ident {
+                    #( #entry_idents: #entry_values, )*
+                }
+            }
+        }
+    };
+
+    quote! {
+        #references_struct
+
+        #struct_impl
+    }
+}
+
 pub(crate) fn generate_form_impl(item: &mut ItemStruct) -> Result<TokenStream, Error> {
     let form_outer_attrs = filter_outer_attrs(item, "form");
     let form_derives = find_form_derives(item).transpose()?;
@@ -183,21 +227,12 @@ pub(crate) fn generate_form_impl(item: &mut ItemStruct) -> Result<TokenStream, E
         return Ok(TokenStream::new());
     }
 
-    let names_struct_and_impl = generate_references_struct_and_impl(
+    let names_struct_and_impl = generate_names_struct_and_impl(
         vis,
-        &Ident::new(&format!("{}Names", ident_str), item.ident.span()),
         &item.ident,
         &item.generics,
-        form_name_entries
-            .into_iter()
-            .map(|(ident, field_name)| ReferenceEntry {
-                ident,
-                ty: quote! { ::cheers::prelude::FormName },
-                value: quote! { ::cheers::prelude::FormName::__static(#field_name) },
-            })
-            .collect(),
-        Vec::new(),
-        &Ident::new("form", item.ident.span()),
+        &ident_str,
+        form_name_entries,
     );
 
     let form_struct = {

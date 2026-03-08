@@ -5,11 +5,10 @@ mod signal;
 use crate::component::{
     form::generate_form_impl, id::generate_id_impls, signal::generate_signal_impl,
 };
-use crate::shared::filter_generics;
 use proc_macro2::TokenStream;
 use quote::quote;
 use syn::spanned::Spanned;
-use syn::{Attribute, Error, Ident, ItemStruct, Meta, Type, Visibility};
+use syn::{Attribute, Error, Ident, ItemStruct, Meta, Type};
 
 fn to_snake_case(s: &str) -> String {
     let mut result = String::new();
@@ -40,7 +39,7 @@ pub(crate) struct IdField {
     pub ty: Type,
 }
 
-pub(crate) fn find_id_field(item: &ItemStruct) -> Result<Option<IdField>, Error> {
+fn find_id_field(item: &ItemStruct) -> Result<Option<IdField>, Error> {
     let mut id_field = None;
 
     for field in &item.fields {
@@ -84,52 +83,6 @@ pub(crate) fn find_id_field(item: &ItemStruct) -> Result<Option<IdField>, Error>
     }
 
     Ok(id_field)
-}
-
-struct ReferenceEntry {
-    pub ident: Ident,
-    pub ty: TokenStream,
-    pub value: TokenStream,
-}
-
-fn generate_references_struct_and_impl(
-    vis: &Visibility,
-    references_ident: &Ident,
-    struct_ident: &Ident,
-    generics: &syn::Generics,
-    entries: Vec<ReferenceEntry>,
-    entry_decl_tys: Vec<Type>,
-    method_ident: &Ident,
-) -> TokenStream {
-    let entry_idents = entries.iter().map(|entry| &entry.ident).collect::<Vec<_>>();
-    let entry_tys = entries.iter().map(|entry| &entry.ty).collect::<Vec<_>>();
-    let entry_values = entries.iter().map(|entry| &entry.value).collect::<Vec<_>>();
-
-    let references_generics = filter_generics(generics.clone(), entry_decl_tys.iter(), false);
-    let (_, references_ty_generics, references_where_clause) = references_generics.split_for_impl();
-
-    let references_struct = quote! {
-        #vis struct #references_ident #references_ty_generics #references_where_clause {
-            #( #vis #entry_idents: #entry_tys, )*
-        }
-    };
-
-    let (impl_generics, ty_generics, where_clause) = generics.split_for_impl();
-    let struct_impl = quote! {
-        impl #impl_generics #struct_ident #ty_generics #where_clause {
-            #vis const fn #method_ident() -> #references_ident #references_ty_generics {
-                #references_ident {
-                    #( #entry_idents: #entry_values, )*
-                }
-            }
-        }
-    };
-
-    quote! {
-        #references_struct
-
-        #struct_impl
-    }
 }
 
 fn to_owned_type(ty: &Type) -> Type {

@@ -40,7 +40,7 @@ pub(crate) fn generate_id_impls(
 ) -> Result<TokenStream, Error> {
     let id_attrs = filter_outer_attrs(item, "id");
 
-    let id_params = id_field
+    let id_param = id_field
         .as_ref()
         .map(|IdField { ident, ty }| quote! { #ident: #ty });
     let id_ident = id_field.as_ref().map(|i| &i.ident);
@@ -75,20 +75,9 @@ pub(crate) fn generate_id_impls(
     let struct_ident = &item.ident;
     let ids_ident = Ident::new(&format!("{}Ids", item.ident), item.ident.span());
 
-    let (base_id_format, self_id_call) = if let Some(id_ident) = id_ident {
-        (
-            format!("{struct_snake_case}-{{}}"),
-            quote! { Self::id(#id_ident) },
-        )
-    } else {
-        (struct_snake_case.to_owned(), quote! { Self::id() })
-    };
-
-    let base_id_method = quote! {
-        #vis fn id(#id_params) -> ::cheers::prelude::ElementId {
-            ::cheers::prelude::ElementId::__dynamic(format!(#base_id_format, #id_ident))
-        }
-    };
+    let base_id_format = id_ident
+        .map(|_| format!("{struct_snake_case}-{{}}"))
+        .unwrap_or_else(|| struct_snake_case.to_owned());
 
     let mut derived_methods = Vec::new();
     let mut struct_fields = Vec::new();
@@ -103,8 +92,8 @@ pub(crate) fn generate_id_impls(
         let format_str = &spec.format_str;
 
         derived_methods.push(quote! {
-            #vis fn #method_ident(#id_params) -> ::cheers::prelude::ElementId {
-                ::cheers::prelude::ElementId::__dynamic(format!(#format_str, #self_id_call))
+            #vis fn #method_ident(#id_param) -> ::cheers::prelude::ElementId {
+                ::cheers::prelude::ElementId::__dynamic(format!(#format_str, Self::id(#id_ident)))
             }
         });
 
@@ -119,27 +108,48 @@ pub(crate) fn generate_id_impls(
         }
     };
 
-    let methods_impl = {
-        let (impl_generics, ty_generics, where_clause) = item.generics.split_for_impl();
+    let base_id_methods = {
+        let dynamic_param = if let Some(id_ident) = id_ident {
+            quote! { format!(#base_id_format, #id_ident) }
+        } else {
+            quote! { #base_id_format.to_owned() }
+        };
+
         quote! {
-            impl #impl_generics #struct_ident #ty_generics #where_clause {
-                #base_id_method
+            #vis fn id(#id_param) -> ::cheers::prelude::ElementId {
+                ::cheers::prelude::ElementId::__dynamic(#dynamic_param)
+            }
+        }
+    };
 
-                #(#derived_methods)*
+    let ids_accessor = {
+        let id_prefix = if let Some(id_ident) = id_ident {
+            quote! { format!(#base_id_format, self.#id_ident) }
+        } else {
+            quote! { #base_id_format.to_owned() }
+        };
 
-                #vis fn ids(#id_params) -> #ids_ident {
-                    let __id_prefix = format!(#base_id_format, #id_ident);
-                    #ids_ident {
-                        #(#method_fields,)*
-                    }
+        quote! {
+            #vis fn ids(&self) -> #ids_ident {
+                let __id_prefix = #id_prefix;
+                #ids_ident {
+                    #(#method_fields,)*
                 }
             }
         }
     };
 
+    let (impl_generics, ty_generics, where_clause) = item.generics.split_for_impl();
+    let methods_impl = quote! {
+        impl #impl_generics #struct_ident #ty_generics #where_clause {
+            #base_id_methods
+            #(#derived_methods)*
+            #ids_accessor
+        }
+    };
+
     Ok(quote! {
         #ids_struct
-
         #methods_impl
     })
 }

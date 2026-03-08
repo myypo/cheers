@@ -525,8 +525,12 @@ fn ids_with_id() {
         id,
         id_number,
         id_location,
-    } = House::ids(instance_id);
-
+    } = House {
+        id: 7,
+        city: "whatever",
+        street: "it is",
+    }
+    .ids();
     assert_eq!(id.to_string(), "house-7");
     assert_eq!(id_number.to_string(), "house-7-number");
     assert_eq!(id_location.to_string(), "house-7-location");
@@ -552,7 +556,12 @@ fn id_without_id() {
         id,
         id_name,
         id_price,
-    } = Steak::<i32>::ids();
+    } = Steak {
+        name: "porter",
+        dollars: 10,
+        cents: 99,
+    }
+    .ids();
 
     assert_eq!(id.to_string(), "steak");
     assert_eq!(id_name.to_string(), "steak-name");
@@ -654,7 +663,7 @@ fn signal_computed() {
                 signal_b,
                 signal_c,
                 signal_d,
-            } = Self::signals();
+            } = self.signals();
             html! {
                 p   !computed(signal_c: { (signal_a) "+" (signal_b) }, signal_d: {
                             (signal_c)
@@ -710,7 +719,7 @@ fn signal_outer_without_id() {
 
     impl Render for Ghost {
         fn render_to(&self, buffer: &mut Buffer<Element>) {
-            let GhostSignals { signal_keepsake } = Self::signals();
+            let GhostSignals { signal_keepsake } = self.signals();
             html! {
                 p !bind(&signal_keepsake) !on:close({ (signal_keepsake) " + 'noooo'" }) {
                     (self.name)
@@ -743,7 +752,11 @@ fn signal_outer_with_id() {
         name: String,
     }
 
-    let OuterSignals { signal_outside } = Outer::signals(42);
+    let OuterSignals { signal_outside } = Outer {
+        id: 42,
+        name: "skipped".to_owned(),
+    }
+    .signals();
     assert_eq!(signal_outside.render().into_inner(), "$outer.42.outside");
     assert_eq!(
         Outer::signal_outside(42).render().into_inner(),
@@ -764,7 +777,7 @@ fn signal_id() {
 
     impl Render for Ghost {
         fn render_to(&self, buffer: &mut Buffer<Element>) {
-            let GhostSignals { signal_name } = Self::signals(self.id);
+            let GhostSignals { signal_name } = self.signals();
             html! {
                 p !bind(signal_name) !on:click({ "console.log(" signal_name ")" }) {}
             }
@@ -861,7 +874,7 @@ fn signal_without_id() {
         num: i32,
     }
 
-    let FlareSignals { signal_num } = Flare::signals();
+    let FlareSignals { signal_num } = Flare { num: 5 }.signals();
     assert_eq!(signal_num.render().into_inner(), "$flare.num");
 }
 
@@ -931,7 +944,7 @@ fn action_form_generics() {
 
     impl<'a, S: Render> Render for Stuff<'a, S> {
         fn render_to(&self, buffer: &mut Buffer<Element>) {
-            let StuffFormNames { form_whatever } = Self::form();
+            let StuffFormNames { form_whatever } = self.form();
             html! {
                 form {
                     input name=(form_whatever);
@@ -1011,9 +1024,10 @@ fn form_without_field() {
 
     impl<'a> Render for Ghost<'a> {
         fn render_to(&self, buffer: &mut Buffer<Element>) {
+            let GhostFormNames { form_keepsake } = self.form();
             html! {
                 form {
-                    input name=(Self::form().form_keepsake);
+                    input name=(form_keepsake);
                     p { (self.name) }
                 }
             }
@@ -1021,7 +1035,7 @@ fn form_without_field() {
         }
     }
 
-    let result = Ghost::form();
+    let result = Ghost { name: "whatever" }.form();
     assert_eq!(result.form_keepsake.render().into_inner(), "keepsake");
 
     let result: GhostForm = serde_json::from_str("{}").unwrap();
