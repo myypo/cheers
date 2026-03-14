@@ -204,7 +204,7 @@ impl<T> Render<AttributeValue> for Signal<T> {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 pub struct FormName(&'static str);
 
 impl FormName {

@@ -184,15 +184,14 @@ pub mod data {
     /// Sets the value of any HTML attribute to an expression, and keeps it in
     /// sync.
     ///
-    /// The `data-attr` attribute can also be used to set the values of multiple
-    /// attributes on an element using a set of key-value pairs, where the keys
-    /// represent attribute names and the values represent expressions.
-    ///
     /// # Examples
     ///
-    /// ```html
-    /// <div data-attr:title="$foo"></div>
-    /// <div data-attr="{title: $foo, disabled: $bar}"></div>
+    /// ```
+    /// # use cheers::prelude::*;
+    /// # let foo: Signal<&str> = scoped_signal!("foo");
+    /// html! {
+    ///     div !attr("title": foo) {}
+    /// };
     /// ```
     pub const attr: Attribute = Attribute;
 
@@ -210,16 +209,23 @@ pub mod data {
     ///
     /// # Examples
     ///
-    /// ```html
-    /// <input data-bind:foo />
-    /// <input data-bind="foo" />
+    /// ```
+    /// # use cheers::prelude::*;
+    /// # let foo: Signal<String> = scoped_signal!("foo");
+    /// html! {
+    ///     input !bind(foo);
+    /// };
     /// ```
     ///
     /// The initial value of the signal is set to the value of the element,
     /// unless a signal has already been defined.
     ///
-    /// ```html
-    /// <input data-bind:foo value="bar" />
+    /// ```
+    /// # use cheers::prelude::*;
+    /// # let foo: Signal<String> = scoped_signal!("foo");
+    /// html! {
+    ///     input !bind(foo) value="bar";
+    /// };
     /// ```
     ///
     /// # Predefined Signal Types
@@ -228,22 +234,30 @@ pub mod data {
     /// Whenever the element's value changes, the signal value is automatically
     /// converted to match the original type.
     ///
-    /// ```html
-    /// <div data-signals:foo="0">
-    ///     <select data-bind:foo>
-    ///         <option value="10">10</option>
-    ///     </select>
-    /// </div>
+    /// ```
+    /// # use cheers::prelude::*;
+    /// # let foo: Signal<i32> = scoped_signal!("foo");
+    /// html! {
+    ///     div !signals(foo: 0) {
+    ///         select !bind(foo) {
+    ///             option value="10" { "10" }
+    ///         }
+    ///     }
+    /// };
     /// ```
     ///
     /// In the same way, you can assign multiple input values to a single signal
     /// by predefining it as an **array**.
     ///
-    /// ```html
-    /// <div data-signals:foo="[]">
-    ///     <input data-bind:foo type="checkbox" value="bar" />
-    ///     <input data-bind:foo type="checkbox" value="baz" />
-    /// </div>
+    /// ```
+    /// # use cheers::prelude::*;
+    /// # let foo: Signal<&str> = scoped_signal!("foo");
+    /// html! {
+    ///     div !signals(foo: "[]") {
+    ///         input !bind(foo) type="checkbox" value="bar";
+    ///         input !bind(foo) type="checkbox" value="baz";
+    ///     }
+    /// };
     /// ```
     ///
     /// # File Uploads
@@ -251,26 +265,16 @@ pub mod data {
     /// Input fields of type `file` will automatically encode file contents in
     /// base64. This means that a form is not required.
     ///
-    /// ```html
-    /// <input type="file" data-bind:files multiple />
+    /// ```
+    /// # use cheers::prelude::*;
+    /// # let files: Signal<()> = scoped_signal!("files");
+    /// html! {
+    ///     input type="file" !bind(files) multiple;
+    /// };
     /// ```
     ///
     /// The resulting signal is in the format `{ name: string, contents: string,
     /// mime: string }[]`.
-    ///
-    /// # Modifiers
-    ///
-    /// Modifiers allow you to modify behavior when binding signals using a key.
-    ///
-    /// - `__case` – Converts the casing of the signal name.
-    ///     - `.camel` – Camel case: `mySignal` (default)
-    ///     - `.kebab` – Kebab case: `my-signal`
-    ///     - `.snake` – Snake case: `my_signal`
-    ///     - `.pascal` – Pascal case: `MySignal`
-    ///
-    /// ```html
-    /// <input data-bind:my-signal__case.kebab />
-    /// ```
     pub const bind: Attribute = Attribute;
 
     /// Adds or removes a class to or from an element based on an expression.
@@ -278,30 +282,14 @@ pub mod data {
     /// If the expression evaluates to `true`, the class is added to the
     /// element; otherwise, it is removed.
     ///
-    /// The `data-class` attribute can also be used to add or remove multiple
-    /// classes from an element using a set of key-value pairs, where the keys
-    /// represent class names and the values represent expressions.
-    ///
     /// # Examples
     ///
-    /// ```html
-    /// <div data-class:hidden="$foo"></div>
-    /// <div data-class="{hidden: $foo, 'font-bold': $bar}"></div>
     /// ```
-    ///
-    /// # Modifiers
-    ///
-    /// Modifiers allow you to modify behavior when defining a class name using
-    /// a key.
-    ///
-    /// - `__case` – Converts the casing of the class.
-    ///     - `.camel` – Camel case: `myClass`
-    ///     - `.kebab` – Kebab case: `my-class` (default)
-    ///     - `.snake` – Snake case: `my_class`
-    ///     - `.pascal` – Pascal case: `MyClass`
-    ///
-    /// ```html
-    /// <div data-class:my-class__case.camel="$foo"></div>
+    /// # use cheers::prelude::*;
+    /// # let is_hidden: Signal<bool> = scoped_signal!("isHidden");
+    /// html! {
+    ///     div !class({ "{hidden: " (is_hidden) "}" }) {}
+    /// };
     /// ```
     pub const class: Attribute = Attribute;
 
@@ -312,37 +300,19 @@ pub mod data {
     ///
     /// # Examples
     ///
-    /// ```html
-    /// <div data-computed:foo="$bar + $baz"></div>
-    /// <div data-text="$foo"></div>
+    /// ```
+    /// # use cheers::prelude::*;
+    /// # let foo: Signal<i32> = scoped_signal!("foo");
+    /// # let bar: Signal<i32> = scoped_signal!("bar");
+    /// # let total: Signal<i32> = scoped_signal!("total");
+    /// html! {
+    ///     div !computed(total: { (foo) " + " (bar) }) {}
+    ///     div !text(total) {}
+    /// };
     /// ```
     ///
     /// Computed signals are useful for memoizing expressions containing other
     /// signals. Their values can be used in other expressions.
-    ///
-    /// The `data-computed` attribute can also be used to create computed signal
-    /// using a set of key-value pairs, where the keys represent signal names
-    /// and the values are callables (usually arrow functions) that return a
-    /// reactive value.
-    ///
-    /// ```html
-    /// <div data-computed="{foo: () => $bar + $baz}"></div>
-    /// ```
-    ///
-    /// # Modifiers
-    ///
-    /// Modifiers allow you to modify behavior when defining computed signals
-    /// using a key.
-    ///
-    /// - `__case` – Converts the casing of the signal name.
-    ///     - `.camel` – Camel case: `mySignal` (default)
-    ///     - `.kebab` – Kebab case: `my-signal`
-    ///     - `.snake` – Snake case: `my_signal`
-    ///     - `.pascal` – Pascal case: `MySignal`
-    ///
-    /// ```html
-    /// <div data-computed:my-signal__case.kebab="$bar + $baz"></div>
-    /// ```
     ///
     /// > Computed signal expressions must not be used for performing actions
     /// > (changing other signals, actions, JavaScript functions, etc.). If you
@@ -358,8 +328,13 @@ pub mod data {
     ///
     /// # Examples
     ///
-    /// ```html
-    /// <div data-effect="$foo = $bar + $baz"></div>
+    /// ```
+    /// # use cheers::prelude::*;
+    /// # let foo: Signal<i32> = scoped_signal!("foo");
+    /// # let bar: Signal<i32> = scoped_signal!("bar");
+    /// html! {
+    ///     div !effect({ (foo) " = " (bar) " + 1" }) {}
+    /// };
     /// ```
     pub const effect: Attribute = Attribute;
 
@@ -374,17 +349,16 @@ pub mod data {
     ///
     /// # Examples
     ///
-    /// ```html
-    /// <div data-ignore data-show-thirdpartylib="">
-    ///     <div>
-    ///         Datastar will not process this element.
-    ///     </div>
-    /// </div>
     /// ```
-    ///
-    /// # Modifiers
-    ///
-    /// - `__self` – Only ignore the element itself, not its descendants.
+    /// # use cheers::prelude::*;
+    /// html! {
+    ///     div !ignore {
+    ///         div {
+    ///             "Datastar will not process this element."
+    ///         }
+    ///     }
+    /// };
+    /// ```
     pub const ignore: Attribute = Attribute;
 
     /// Tells the PatchElements watcher to skip processing an element and its
@@ -392,10 +366,13 @@ pub mod data {
     ///
     /// # Examples
     ///
-    /// ```html
-    /// <div data-ignore-morph>
-    ///     This element will not be morphed.
-    /// </div>
+    /// ```
+    /// # use cheers::prelude::*;
+    /// html! {
+    ///     div !ignore_morph {
+    ///         "This element will not be morphed."
+    ///     }
+    /// };
     /// ```
     ///
     /// > To remove the `data-ignore-morph` attribute from an element, simply
@@ -409,49 +386,14 @@ pub mod data {
     ///
     /// # Examples
     ///
-    /// ```html
-    /// <button data-on:click="@get('/endpoint')"
-    ///         data-indicator:fetching
-    /// ></button>
     /// ```
-    ///
-    /// This can be useful for showing a loading spinner, disabling a button,
-    /// etc.
-    ///
-    /// ```html
-    /// <button data-on:click="@get('/endpoint')"
-    ///         data-indicator:fetching
-    ///         data-attr:disabled="$fetching"
-    /// ></button>
-    /// <div data-show="$fetching">Loading...</div>
+    /// # use cheers::prelude::*;
+    /// # let fetching: Signal<bool> = scoped_signal!("fetching");
+    /// html! {
+    ///     button !on:click("@get('/endpoint')") !indicator(fetching) {}
+    ///     div !show(fetching) { "Loading..." }
+    /// };
     /// ```
-    ///
-    /// The signal name can be specified in the key (as above), or in the value
-    /// (as below). This can be useful depending on the templating language you
-    /// are using.
-    ///
-    /// ```html
-    /// <button data-indicator="fetching"></button>
-    /// ```
-    ///
-    /// When using `data-indicator` with a fetch request initiated in a
-    /// `data-init` attribute, you should ensure that the indicator signal is
-    /// created before the fetch request is initialized.
-    ///
-    /// ```html
-    /// <div data-indicator:fetching data-init="@get('/endpoint')"></div>
-    /// ```
-    ///
-    /// # Modifiers
-    ///
-    /// Modifiers allow you to modify behavior when defining indicator signals
-    /// using a key.
-    ///
-    /// - `__case` – Converts the casing of the signal name.
-    ///     - `.camel` – Camel case: `mySignal` (default)
-    ///     - `.kebab` – Kebab case: `my-signal`
-    ///     - `.snake` – Snake case: `my_signal`
-    ///     - `.pascal` – Pascal case: `MySignal`
     pub const indicator: Attribute = Attribute;
 
     /// Runs an expression when the attribute is initialized.
@@ -462,23 +404,12 @@ pub mod data {
     ///
     /// # Examples
     ///
-    /// ```html
-    /// <div data-init="$count = 1"></div>
     /// ```
-    ///
-    /// # Modifiers
-    ///
-    /// Modifiers allow you to add a delay to the event listener.
-    ///
-    /// - `__delay` – Delay the event listener.
-    ///     - `.500ms` – Delay for 500 milliseconds (accepts any integer).
-    ///     - `.1s` – Delay for 1 second (accepts any integer).
-    /// - `__viewtransition` – Wraps the expression in
-    ///   `document.startViewTransition()` when the View Transition API is
-    ///   available.
-    ///
-    /// ```html
-    /// <div data-init__delay.500ms="$count = 1"></div>
+    /// # use cheers::prelude::*;
+    /// # let count: Signal<i32> = scoped_signal!("count");
+    /// html! {
+    ///     div !init({ (count) " = 1" }) {}
+    /// };
     /// ```
     pub const init: Attribute = Attribute;
 
@@ -489,35 +420,11 @@ pub mod data {
     ///
     /// # Examples
     ///
-    /// ```html
-    /// <!-- Display all signals -->
-    /// <pre data-json-signals></pre>
     /// ```
-    ///
-    /// You can optionally provide a filter object to include or exclude
-    /// specific signals using regular expressions.
-    ///
-    /// ```html
-    /// <!-- Only show signals that include "user" in their path -->
-    /// <pre data-json-signals="{include: /user/}"></pre>
-    ///
-    /// <!-- Show all signals except those ending with "temp" -->
-    /// <pre data-json-signals="{exclude: /temp$/}"></pre>
-    ///
-    /// <!-- Combine include and exclude filters -->
-    /// <pre data-json-signals="{include: /^app/, exclude: /password/}"></pre>
-    /// ```
-    ///
-    /// # Modifiers
-    ///
-    /// Modifiers allow you to modify the output format.
-    ///
-    /// - `__terse` – Outputs a more compact JSON format without extra
-    ///   whitespace. Useful for displaying filtered data inline.
-    ///
-    /// ```html
-    /// <!-- Display filtered signals in a compact format -->
-    /// <pre data-json-signals__terse="{include: /counter/}"></pre>
+    /// # use cheers::prelude::*;
+    /// html! {
+    ///     pre !json_signals {}
+    /// };
     /// ```
     pub const json_signals: Attribute = Attribute;
 
@@ -525,20 +432,14 @@ pub mod data {
     ///
     /// # Examples
     ///
-    /// ```html
-    /// <details open data-preserve-attr="open">
-    ///     <summary>Title</summary>
-    ///     Content
-    /// </details>
     /// ```
-    ///
-    /// You can preserve multiple attributes by separating them with a space.
-    ///
-    /// ```html
-    /// <details open class="foo" data-preserve-attr="open class">
-    ///     <summary>Title</summary>
-    ///     Content
-    /// </details>
+    /// # use cheers::prelude::*;
+    /// html! {
+    ///     details open !preserve_attr("open") {
+    ///         summary { "Title" }
+    ///         "Content"
+    ///     }
+    /// };
     /// ```
     pub const preserve_attr: Attribute = Attribute;
 
@@ -547,37 +448,12 @@ pub mod data {
     ///
     /// # Examples
     ///
-    /// ```html
-    /// <div data-ref:foo></div>
     /// ```
-    ///
-    /// The signal name can be specified in the key (as above), or in the value
-    /// (as below). This can be useful depending on the templating language you
-    /// are using.
-    ///
-    /// ```html
-    /// <div data-ref="foo"></div>
-    /// ```
-    ///
-    /// The signal value can then be used to reference the element.
-    ///
-    /// ```html
-    /// $foo is a reference to a <span data-text="$foo.tagName"></span> element
-    /// ```
-    ///
-    /// # Modifiers
-    ///
-    /// Modifiers allow you to modify behavior when defining references using a
-    /// key.
-    ///
-    /// - `__case` – Converts the casing of the signal name.
-    ///     - `.camel` – Camel case: `mySignal` (default)
-    ///     - `.kebab` – Kebab case: `my-signal`
-    ///     - `.snake` – Snake case: `my_signal`
-    ///     - `.pascal` – Pascal case: `MySignal`
-    ///
-    /// ```html
-    /// <div data-ref:my-signal__case.kebab></div>
+    /// # use cheers::prelude::*;
+    /// # let foo: Signal<()> = scoped_signal!("foo");
+    /// html! {
+    ///     div !ref(foo) {}
+    /// };
     /// ```
     pub const r#ref: Attribute = Attribute;
 
@@ -589,16 +465,12 @@ pub mod data {
     ///
     /// # Examples
     ///
-    /// ```html
-    /// <div data-show="$foo"></div>
     /// ```
-    ///
-    /// To prevent flickering of the element before Datastar has processed the
-    /// DOM, you can add a `display: none` style to the element to hide it
-    /// initially.
-    ///
-    /// ```html
-    /// <div data-show="$foo" style="display: none"></div>
+    /// # use cheers::prelude::*;
+    /// # let foo: Signal<bool> = scoped_signal!("foo");
+    /// html! {
+    ///     div !show(foo) {}
+    /// };
     /// ```
     pub const show: Attribute = Attribute;
 
@@ -609,63 +481,12 @@ pub mod data {
     ///
     /// # Examples
     ///
-    /// ```html
-    /// <div data-signals:foo="1"></div>
     /// ```
-    ///
-    /// Signals can be nested using dot-notation.
-    ///
-    /// ```html
-    /// <div data-signals:foo.bar="1"></div>
-    /// ```
-    ///
-    /// The `data-signals` attribute can also be used to patch multiple signals
-    /// using a set of key-value pairs, where the keys represent signal names
-    /// and the values represent expressions.
-    ///
-    /// ```html
-    /// <div data-signals="{foo: {bar: 1, baz: 2}}"></div>
-    /// ```
-    ///
-    /// The value above is written in JavaScript object notation, but JSON,
-    /// which is a subset and which most templating languages have built-in
-    /// support for, is also allowed.
-    ///
-    /// Setting a signal's value to `null` or `undefined` removes the signal.
-    ///
-    /// ```html
-    /// <div data-signals="{foo: null}"></div>
-    /// ```
-    ///
-    /// Keys used in `data-signals:*` are converted to camel case, so the signal
-    /// name `mySignal` must be written as `data-signals:my-signal` or
-    /// `data-signals="{mySignal: 1}"`.
-    ///
-    /// Signals beginning with an underscore are *not* included in requests to
-    /// the backend by default. You can opt to include them by modifying the
-    /// value of the [`filterSignals`](/reference/actions#filterSignals) option.
-    ///
-    /// > Signal names cannot begin with nor contain a double underscore (`__`),
-    /// > due to its use as a modifier delimiter.
-    ///
-    /// # Modifiers
-    ///
-    /// Modifiers allow you to modify behavior when patching signals using a
-    /// key.
-    ///
-    /// - `__case` – Converts the casing of the signal name.
-    ///     - `.camel` – Camel case: `mySignal` (default)
-    ///     - `.kebab` – Kebab case: `my-signal`
-    ///     - `.snake` – Snake case: `my_signal`
-    ///     - `.pascal` – Pascal case: `MySignal`
-    /// - `__ifmissing` Only patches signals if their keys do not already exist.
-    ///   This is useful for setting defaults without overwriting existing
-    ///   values.
-    ///
-    /// ```html
-    /// <div data-signals:my-signal__case.kebab="1"
-    ///      data-signals:foo__ifmissing="1"
-    /// ></div>
+    /// # use cheers::prelude::*;
+    /// # let foo: Signal<i32> = scoped_signal!("foo");
+    /// html! {
+    ///     div !signals(foo: 1) {}
+    /// };
     /// ```
     pub const signals: Attribute = Attribute;
 
@@ -674,54 +495,27 @@ pub mod data {
     ///
     /// # Examples
     ///
-    /// ```html
-    /// <div data-style:background-color="$usingRed ? 'red' : 'blue'"></div>
-    /// <div data-style:display="$hiding && 'none'"></div>
     /// ```
-    ///
-    /// The `data-style` attribute can also be used to set multiple style
-    /// properties on an element using a set of key-value pairs, where the keys
-    /// represent CSS property names and the values represent expressions.
-    ///
-    /// ```html
-    /// <div data-style="{
-    ///     display: $hiding ? 'none' : 'flex',
-    ///     flexDirection: 'column',
-    ///     color: $usingRed ? 'red' : 'green'
-    /// }"></div>
+    /// # use cheers::prelude::*;
+    /// # let using_red: Signal<bool> = scoped_signal!("usingRed");
+    /// html! {
+    ///     div !style("background-color": { (using_red) " ? 'red' : 'blue'" }) {}
+    /// };
     /// ```
-    ///
-    /// Style properties can be specified in either camelCase (e.g.,
-    /// `backgroundColor`) or kebab-case (e.g., `background-color`). They will
-    /// be automatically converted to the appropriate format.
-    ///
-    /// Empty string, `null`, `undefined`, or `false` values will restore the
-    /// original inline style value if one existed, or remove the style property
-    /// if there was no initial value. This allows you to use the logical AND
-    /// operator (`&&`) for conditional styles: `$condition && 'value'` will
-    /// apply the style when the condition is true and restore the original
-    /// value when false.
-    ///
-    /// ```html
-    /// <!-- When $x is false, color remains red from inline style -->
-    /// <div style="color: red;" data-style:color="$x && 'green'"></div>
-    ///
-    /// <!-- When $hiding is true, display becomes none; when false, reverts to flex from inline style -->
-    /// <div style="display: flex;" data-style:display="$hiding && 'none'"></div>
-    /// ```
-    ///
-    /// The plugin tracks initial inline style values and restores them when
-    /// data-style expressions become falsy or during cleanup. This ensures
-    /// existing inline styles are preserved and only the dynamic changes are
-    /// managed by Datastar.
     pub const style: Attribute = Attribute;
 
     /// Binds the text content of an element to an expression.
     ///
     /// # Examples
     ///
-    /// ```html
-    /// <div data-text="$foo"></div>
+    /// ```
+    /// # use cheers::prelude::*;
+    /// # let foo: Signal<i32> = scoped_signal!("foo");
+    /// html! {
+    ///     div !text(foo) {}
+    ///     // or with a complex expression
+    ///     div !text({ "'Value: ' + (" (foo) " * 2)" }) {}
+    /// };
     /// ```
     pub const text: Attribute = Attribute;
 
@@ -1079,72 +873,25 @@ pub mod data {
         ///
         /// # Examples
         ///
-        /// ```html
-        /// <div data-on-intersect="$intersected = true"></div>
         /// ```
-        ///
-        /// # Modifiers
-        ///
-        /// Modifiers allow you to modify the element intersection behavior and
-        /// the timing of the event listener.
-        ///
-        /// - `__once` – Only triggers the event once.
-        /// - `__half` – Triggers when half of the element is visible.
-        /// - `__full` – Triggers when the full element is visible.
-        /// - `__delay` – Delay the event listener.
-        ///     - `.500ms` – Delay for 500 milliseconds (accepts any integer).
-        ///     - `.1s` – Delay for 1 second (accepts any integer).
-        /// - `__debounce` – Debounce the event listener.
-        ///     - `.500ms` – Debounce for 500 milliseconds (accepts any
-        ///       integer).
-        ///     - `.1s` – Debounce for 1 second (accepts any integer).
-        ///     - `.leading` – Debounce with leading edge (must come after
-        ///       timing).
-        ///     - `.notrailing` – Debounce without trailing edge (must come
-        ///       after timing).
-        /// - `__throttle` – Throttle the event listener.
-        ///     - `.500ms` – Throttle for 500 milliseconds (accepts any
-        ///       integer).
-        ///     - `.1s` – Throttle for 1 second (accepts any integer).
-        ///     - `.noleading` – Throttle without leading edge (must come after
-        ///       timing).
-        ///     - `.trailing` – Throttle with trailing edge (must come after
-        ///       timing).
-        /// - `__viewtransition` – Wraps the expression in
-        ///   `document.startViewTransition()` when the View Transition API is
-        ///   available.
-        ///
-        /// ```html
-        /// <div data-on-intersect__once__full="$fullyIntersected = true"></div>
+        /// # use cheers::prelude::*;
+        /// # let intersected: Signal<bool> = scoped_signal!("intersected");
+        /// html! {
+        ///     div !on:intersect({ (intersected) " = true" }) {}
+        /// };
         /// ```
         pub const intersect: Attribute = Attribute;
 
         /// Runs an expression at a regular interval.
         ///
-        /// The interval duration defaults to one second and can be modified
-        /// using the `__duration` modifier.
-        ///
         /// # Examples
         ///
-        /// ```html
-        /// <div data-on-interval="$count++"></div>
         /// ```
-        ///
-        /// # Modifiers
-        ///
-        /// Modifiers allow you to modify the interval duration.
-        ///
-        /// - `__duration` – Sets the interval duration.
-        ///     - `.500ms` – Interval duration of 500 milliseconds (accepts any
-        ///       integer).
-        ///     - `.1s` – Interval duration of 1 second (default).
-        ///     - `.leading` – Execute the first interval immediately.
-        /// - `__viewtransition` – Wraps the expression in
-        ///   `document.startViewTransition()` when the View Transition API is
-        ///   available.
-        ///
-        /// ```html
-        /// <div data-on-interval__duration.500ms="$count++"></div>
+        /// # use cheers::prelude::*;
+        /// # let count: Signal<i32> = scoped_signal!("count");
+        /// html! {
+        ///     div !on:interval({ (count) "++" }) {}
+        /// };
         /// ```
         pub const interval: Attribute = Attribute;
 
@@ -1155,67 +902,24 @@ pub mod data {
         ///
         /// # Examples
         ///
-        /// ```html
-        /// <div data-on-signal-patch="console.log('A signal changed!')"></div>
         /// ```
-        ///
-        /// The `patch` variable is available in the expression and contains the
-        /// signal patch details.
-        ///
-        /// ```html
-        /// <div data-on-signal-patch="console.log('Signal patch:', patch)"></div>
-        /// ```
-        ///
-        /// You can filter which signals to watch using the
-        /// [`data-on-signal-patch-filter`](#data-on-signal-patch-filter)
-        /// attribute.
-        ///
-        /// # Modifiers
-        ///
-        /// Modifiers allow you to modify the timing of the event listener.
-        ///
-        /// - `__delay` – Delay the event listener.
-        ///     - `.500ms` – Delay for 500 milliseconds (accepts any integer).
-        ///     - `.1s` – Delay for 1 second (accepts any integer).
-        /// - `__debounce` – Debounce the event listener.
-        ///     - `.500ms` – Debounce for 500 milliseconds (accepts any
-        ///       integer).
-        ///     - `.1s` – Debounce for 1 second (accepts any integer).
-        ///     - `.leading` – Debounce with leading edge (must come after
-        ///       timing).
-        ///     - `.notrailing` – Debounce without trailing edge (must come
-        ///       after timing).
-        /// - `__throttle` – Throttle the event listener.
-        ///     - `.500ms` – Throttle for 500 milliseconds (accepts any
-        ///       integer).
-        ///     - `.1s` – Throttle for 1 second (accepts any integer).
-        ///     - `.noleading` – Throttle without leading edge (must come after
-        ///       timing).
-        ///     - `.trailing` – Throttle with trailing edge (must come after
-        ///       timing).
-        ///
-        /// ```html
-        /// <div data-on-signal-patch__debounce.500ms="doSomething()"></div>
+        /// # use cheers::prelude::*;
+        /// html! {
+        ///     div !on:signal_patch("console.log('A signal changed!')") {}
+        /// };
         /// ```
         pub const signal_patch: Attribute = Attribute;
 
         /// Filters which signals to watch when using the
         /// [`data-on-signal-patch`](#data-on-signal-patch) attribute.
         ///
-        /// The `data-on-signal-patch-filter` attribute accepts an object with
-        /// `include` and/or `exclude` properties that are regular expressions.
-        ///
         /// # Examples
         ///
-        /// ```html
-        /// <!-- Only react to counter signal changes -->
-        /// <div data-on-signal-patch-filter="{include: /^counter$/}"></div>
-        ///
-        /// <!-- React to all changes except those ending with "changes" -->
-        /// <div data-on-signal-patch-filter="{exclude: /changes$/}"></div>
-        ///
-        /// <!-- Combine include and exclude filters -->
-        /// <div data-on-signal-patch-filter="{include: /user/, exclude: /password/}"></div>
+        /// ```
+        /// # use cheers::prelude::*;
+        /// html! {
+        ///     div !on:signal_patch_filter("{include: /^counter$/}") {}
+        /// };
         /// ```
         pub const signal_patch_filter: Attribute = Attribute;
     }
