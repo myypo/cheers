@@ -290,11 +290,13 @@ pub fn generate(args: ActionArgs, item: &mut MaybeItemFn) -> Result<TokenStream,
     let (impl_generics, ty_generics, where_clause) = generics.split_for_impl();
     let struct_decl = if field_args.path.is_empty() {
         quote! {
+            #[derive(Debug, Clone)]
             #vis struct #struct_name #ty_generics #where_clause;
         }
     } else {
         let fields = field_args.path.iter().map(|(i, a)| quote! { #vis #i: #a });
         quote! {
+            #[derive(Debug, Clone)]
             #vis struct #struct_name #ty_generics #where_clause {
                 #(#fields),*
             }
