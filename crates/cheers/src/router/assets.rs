@@ -167,9 +167,10 @@ fn make_single_stylesheet<'a>(
 }
 
 impl CssBundler {
-    /// Used internally by the include_css macro
     #[doc(hidden)]
-    pub fn add(&self, s: String) {
+    /// Used by the `include_css!` macro to register stylesheet inputs for bundling.
+    /// Not part of the stable public API.
+    pub fn __add(&self, s: String) {
         let mut this = self.0.lock().expect("unlock css bundler");
         this.push(s);
     }
@@ -209,7 +210,7 @@ pub static CSS_BUNDLER: LazyLock<CssBundler> = LazyLock::new(|| CssBundler(Mutex
 #[macro_export]
 macro_rules! include_css {
     ($css_file:expr) => {
-        ($crate::router::CSS_BUNDLER).add({
+        ($crate::router::CSS_BUNDLER).__add({
             if cfg!(debug_assertions) {
                 let __manifest_dir = ::std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
                 let mut __file_path = ::std::path::PathBuf::from(file!());

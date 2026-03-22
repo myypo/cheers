@@ -7,8 +7,13 @@ mod response;
 pub mod router;
 
 #[doc(hidden)]
+/// Re-exported for macro expansions such as `html!`, `html_borrow!`, `html_static!`,
+/// `attribute!`, `attribute_borrow!`, and `attribute_static!`. Not part of the stable
+/// public API.
 pub mod validation;
 #[doc(hidden)]
+/// Support module for generated code from `#[derive(Component)]`, `ids!`, `signals!`,
+/// `form_names!`, `action`, and other Cheers macros. Not part of the stable public API.
 pub mod __internal {
     pub use axum;
     pub use futures;

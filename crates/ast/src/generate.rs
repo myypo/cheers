@@ -69,7 +69,7 @@ pub fn lazy<T: Parse + Generate>(tokens: TokenStream, move_: bool) -> Result<Tok
                 let stream = ::cheers::__internal::futures::stream::select_all([
                     #(#streams),*
                 ]);
-                ::cheers::prelude::AsyncLazy::select_all(lazy, stream)
+                ::cheers::prelude::AsyncLazy::__select_all(lazy, stream)
             }
         });
     };
@@ -378,6 +378,9 @@ impl ToTokens for Checks {
                 use elements::*;
 
                 #[doc(hidden)]
+                /// Used by the `html!`, `html_borrow!`, `html_static!`, `attribute!`,
+                /// `attribute_borrow!`, and `attribute_static!` macros to trigger
+                /// compile-time element validation.
                 fn check_element<
                     K: ::cheers::validation::ElementKind
                 >(_: impl ::cheers::validation::Element<Kind = K>) {}

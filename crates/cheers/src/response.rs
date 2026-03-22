@@ -14,7 +14,10 @@ pub struct AsyncLazy<R: Render> {
 
 impl<R: Render> AsyncLazy<R> {
     #[doc(hidden)]
-    pub fn select_all(
+    /// Used by the `html!`, `html_borrow!`, `attribute!`, and `attribute_borrow!`
+    /// macros when combining immediate output with async streams. Not part of the stable
+    /// public API.
+    pub fn __select_all(
         immediate: R,
         stream: SelectAll<Pin<Box<dyn Stream<Item = Rendered<String>> + Send>>>,
     ) -> Self {
