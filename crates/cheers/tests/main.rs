@@ -513,6 +513,16 @@ fn ids_with_id() {
         street: &'a str,
     }
 
+    impl<'a> House<'a> {
+        fn assert_ids(&self) {
+            ids!(id, id_number, id_location);
+
+            assert_eq!(id.to_string(), "house-7");
+            assert_eq!(id_number.to_string(), "house-7-number");
+            assert_eq!(id_location.to_string(), "house-7-location");
+        }
+    }
+
     let instance_id = 7;
     assert_eq!(House::id(instance_id).to_string(), "house-7");
     assert_eq!(House::id_number(instance_id).to_string(), "house-7-number");
@@ -521,19 +531,13 @@ fn ids_with_id() {
         "house-7-location"
     );
 
-    let HouseIds {
-        id,
-        id_number,
-        id_location,
-    } = House {
+    let house = House {
         id: 7,
         city: "whatever",
         street: "it is",
-    }
-    .ids();
-    assert_eq!(id.to_string(), "house-7");
-    assert_eq!(id_number.to_string(), "house-7-number");
-    assert_eq!(id_location.to_string(), "house-7-location");
+    };
+
+    house.assert_ids();
 }
 
 #[test]
@@ -548,24 +552,27 @@ fn id_without_id() {
         cents: M,
     }
 
+    impl<'a, M> Steak<'a, M> {
+        fn assert_ids(&self) {
+            ids!(id, id_name, id_price);
+
+            assert_eq!(id.to_string(), "steak");
+            assert_eq!(id_name.to_string(), "steak-name");
+            assert_eq!(id_price.to_string(), "steak-price");
+        }
+    }
+
     assert_eq!(Steak::<i32>::id().to_string(), "steak");
     assert_eq!(Steak::<i32>::id_name().to_string(), "steak-name");
     assert_eq!(Steak::<i32>::id_price().to_string(), "steak-price");
 
-    let SteakIds {
-        id,
-        id_name,
-        id_price,
-    } = Steak {
+    let steak = Steak {
         name: "porter",
         dollars: 10,
         cents: 99,
-    }
-    .ids();
+    };
 
-    assert_eq!(id.to_string(), "steak");
-    assert_eq!(id_name.to_string(), "steak-name");
-    assert_eq!(id_price.to_string(), "steak-price");
+    steak.assert_ids();
 }
 
 #[test]
@@ -642,6 +649,7 @@ fn data_style() {
     )
 }
 
+#[allow(dead_code)]
 #[test]
 fn signal_computed() {
     #[derive(Component)]
@@ -658,12 +666,8 @@ fn signal_computed() {
 
     impl Render for Input {
         fn render_to(&self, buffer: &mut Buffer<Element>) {
-            let InputSignals {
-                signal_a,
-                signal_b,
-                signal_c,
-                signal_d,
-            } = self.signals();
+            signals!(signal_a, signal_b, signal_c, signal_d);
+
             html! {
                 p   !computed(signal_c: { (signal_a) "+" (signal_b) }, signal_d: {
                             (signal_c)
@@ -719,7 +723,8 @@ fn signal_outer_without_id() {
 
     impl Render for Ghost {
         fn render_to(&self, buffer: &mut Buffer<Element>) {
-            let GhostSignals { signal_keepsake } = self.signals();
+            signals!(signal_keepsake);
+
             html! {
                 p !bind(&signal_keepsake) !on:close({ (signal_keepsake) " + 'noooo'" }) {
                     (self.name)
@@ -752,12 +757,18 @@ fn signal_outer_with_id() {
         name: String,
     }
 
-    let OuterSignals { signal_outside } = Outer {
+    impl Outer {
+        fn assert_signals(&self) {
+            signals!(signal_outside);
+            assert_eq!(signal_outside.render().into_inner(), "$outer.42.outside");
+        }
+    }
+
+    let outer = Outer {
         id: 42,
         name: "skipped".to_owned(),
-    }
-    .signals();
-    assert_eq!(signal_outside.render().into_inner(), "$outer.42.outside");
+    };
+    outer.assert_signals();
     assert_eq!(
         Outer::signal_outside(42).render().into_inner(),
         "$outer.42.outside"
@@ -777,7 +788,8 @@ fn signal_id() {
 
     impl Render for Ghost {
         fn render_to(&self, buffer: &mut Buffer<Element>) {
-            let GhostSignals { signal_name } = self.signals();
+            signals!(signal_name);
+
             html! {
                 p !bind(signal_name) !on:click({ "console.log(" signal_name ")" }) {}
             }
@@ -874,8 +886,15 @@ fn signal_without_id() {
         num: i32,
     }
 
-    let FlareSignals { signal_num } = Flare { num: 5 }.signals();
-    assert_eq!(signal_num.render().into_inner(), "$flare.num");
+    impl Flare {
+        fn assert_signals(&self) {
+            signals!(signal_num);
+
+            assert_eq!(signal_num.render().into_inner(), "$flare.num");
+        }
+    }
+
+    Flare { num: 5 }.assert_signals();
 }
 
 type Ctx = ();
@@ -944,7 +963,8 @@ fn action_form_generics() {
 
     impl<'a, S: Render> Render for Stuff<'a, S> {
         fn render_to(&self, buffer: &mut Buffer<Element>) {
-            let StuffFormNames { form_whatever } = self.form();
+            form_names!(form_whatever);
+
             html! {
                 form {
                     input name=(form_whatever);
@@ -1024,7 +1044,8 @@ fn form_without_field() {
 
     impl<'a> Render for Ghost<'a> {
         fn render_to(&self, buffer: &mut Buffer<Element>) {
-            let GhostFormNames { form_keepsake } = self.form();
+            form_names!(form_keepsake);
+
             html! {
                 form {
                     input name=(form_keepsake);
@@ -1035,8 +1056,14 @@ fn form_without_field() {
         }
     }
 
-    let result = Ghost { name: "whatever" }.form();
-    assert_eq!(result.form_keepsake.render().into_inner(), "keepsake");
+    impl<'a> Ghost<'a> {
+        fn assert_form_names(&self) {
+            form_names!(form_keepsake);
+            assert_eq!(form_keepsake.render().into_inner(), "keepsake");
+        }
+    }
+
+    Ghost { name: "whatever" }.assert_form_names();
 
     let result: GhostForm = serde_json::from_str("{}").unwrap();
     assert_eq!(result.keepsake, String::from(""));

@@ -131,7 +131,8 @@ pub(crate) fn generate_id_impls(
         };
 
         quote! {
-            #vis fn ids(&self) -> #ids_ident {
+            #[doc(hidden)]
+            #vis fn __ids(&self) -> #ids_ident {
                 let __id_prefix = #id_prefix;
                 #ids_ident {
                     #(#method_fields,)*
@@ -146,6 +147,10 @@ pub(crate) fn generate_id_impls(
             #base_id_methods
             #(#derived_methods)*
             #ids_accessor
+        }
+
+        impl #impl_generics ::cheers::__internal::Ids for #struct_ident #ty_generics #where_clause {
+            type Fields = #ids_ident;
         }
     };
 

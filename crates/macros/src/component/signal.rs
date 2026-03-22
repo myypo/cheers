@@ -291,7 +291,8 @@ pub(crate) fn generate_signal_impl(
         };
 
         quote! {
-            #vis #const_token fn signals(&self) -> #signal_names_ident #signal_names_return_generics {
+            #[doc(hidden)]
+            #vis #const_token fn __signals(&self) -> #signal_names_ident #signal_names_return_generics {
                 #id_decl
                 #signal_names_ident {
                     #(#signals_method_fields,)*
@@ -353,6 +354,10 @@ pub(crate) fn generate_signal_impl(
             impl #impl_generics #struct_ident #ty_generics #where_clause {
                 #(#signal_methods)*
                 #signals_accessor
+            }
+
+            impl #impl_generics ::cheers::__internal::Signals for #struct_ident #ty_generics #where_clause {
+                type Fields = #signal_names_ident #signal_names_return_generics;
             }
         }
     };

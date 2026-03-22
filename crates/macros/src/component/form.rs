@@ -181,11 +181,16 @@ fn generate_names_struct_and_impl(
     let (impl_generics, ty_generics, where_clause) = generics.split_for_impl();
     let struct_impl = quote! {
         impl #impl_generics #struct_ident #ty_generics #where_clause {
-            #vis const fn form(&self) -> #references_ident #references_ty_generics {
+            #[doc(hidden)]
+            #vis const fn __form_names(&self) -> #references_ident #references_ty_generics {
                 #references_ident {
                     #( #entry_idents: #entry_values, )*
                 }
             }
+        }
+
+        impl #impl_generics ::cheers::__internal::FormNames for #struct_ident #ty_generics #where_clause {
+            type Fields = #references_ident #references_ty_generics;
         }
     };
 
