@@ -2,13 +2,13 @@ mod form;
 mod id;
 mod signal;
 
+use proc_macro2::TokenStream;
+use quote::quote;
+use syn::{Attribute, Error, Ident, ItemStruct, Meta, Type, spanned::Spanned};
+
 use crate::component::{
     form::generate_form_impl, id::generate_id_impls, signal::generate_signal_impl,
 };
-use proc_macro2::TokenStream;
-use quote::quote;
-use syn::spanned::Spanned;
-use syn::{Attribute, Error, Ident, ItemStruct, Meta, Type};
 
 fn to_snake_case(s: &str) -> String {
     let mut result = String::new();

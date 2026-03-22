@@ -1,6 +1,5 @@
 use std::collections::BTreeSet;
 
-use crate::component::{IdField, filter_outer_attrs};
 use proc_macro2::TokenStream;
 use quote::quote;
 use syn::{
@@ -8,6 +7,8 @@ use syn::{
     parse::{Parse, ParseStream},
     parse2,
 };
+
+use crate::component::{IdField, filter_outer_attrs};
 
 struct IdArgs {
     namespace: LitStr,

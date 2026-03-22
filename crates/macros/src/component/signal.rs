@@ -1,7 +1,5 @@
 use std::collections::BTreeSet;
 
-use crate::component::{IdField, filter_outer_attrs, to_owned_type};
-use crate::shared::filter_generics;
 use proc_macro2::TokenStream;
 use quote::quote;
 use syn::{
@@ -10,6 +8,11 @@ use syn::{
     parse_quote, parse2,
     punctuated::Punctuated,
     spanned::Spanned,
+};
+
+use crate::{
+    component::{IdField, filter_outer_attrs, to_owned_type},
+    shared::filter_generics,
 };
 
 struct OuterSignalArgs {

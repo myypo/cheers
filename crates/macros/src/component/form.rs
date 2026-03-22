@@ -1,7 +1,3 @@
-use crate::{
-    component::{filter_outer_attrs, to_owned_type},
-    shared::filter_generics,
-};
 use proc_macro2::TokenStream;
 use quote::quote;
 use syn::{
@@ -9,6 +5,11 @@ use syn::{
     parse::{Parse, ParseStream},
     parse2, punctuated,
     spanned::Spanned,
+};
+
+use crate::{
+    component::{filter_outer_attrs, to_owned_type},
+    shared::filter_generics,
 };
 
 struct FormArgs {
@@ -245,6 +246,7 @@ pub(crate) fn generate_form_impl(item: &mut ItemStruct) -> Result<TokenStream, E
 
         quote! {
             #[derive(::cheers::__internal::serde::Deserialize, #form_derives)]
+            #[serde(crate = "::cheers::__internal::serde")]
             #vis struct #form_ident #ty_generics #where_clause {
                 #(#form_field_decls,)*
             }
