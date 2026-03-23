@@ -22,7 +22,10 @@ use crate::{
 ///     }
 /// };
 ///
-/// assert_eq!(page.render().into_inner(), "<!DOCTYPE html><html><body>Hello</body></html>");
+/// assert_eq!(
+///     page.render().into_inner(),
+///     "<!DOCTYPE html><html><body>Hello</body></html>"
+/// );
 /// ```
 pub struct Doctype;
 
@@ -154,7 +157,9 @@ where
 /// ```
 /// use cheers::{components::Debugged, prelude::*};
 ///
-/// let rendered = html! { pre { (Debugged(vec![1, 2, 3])) } }.render().into_inner();
+/// let rendered = html! { pre { (Debugged(vec![1, 2, 3])) } }
+///     .render()
+///     .into_inner();
 ///
 /// assert_eq!(rendered, "<pre>[1, 2, 3]</pre>");
 /// ```

@@ -392,7 +392,10 @@ pub trait Render<C: Context = Element> {
 /// let cached = html! { span { "cached" } }.memoize();
 /// let rendered = html! { div { (&cached) (&cached) } }.render().into_inner();
 ///
-/// assert_eq!(rendered, "<div><span>cached</span><span>cached</span></div>");
+/// assert_eq!(
+///     rendered,
+///     "<div><span>cached</span><span>cached</span></div>"
+/// );
 /// ```
 pub trait RenderExt: Render {
     /// Pre-renders the value and stores it in a [`Raw`] so that it can be
