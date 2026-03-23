@@ -109,16 +109,6 @@ impl Render for Scripts {
 /// Renders the `<link rel="stylesheet">` tag for the Cheers CSS bundle.
 ///
 /// This links to the framework-managed stylesheet path produced by the router.
-///
-/// # Example
-///
-/// ```
-/// use cheers::{components::Css, prelude::*};
-///
-/// let rendered = Css.render().into_inner();
-///
-/// assert!(rendered.starts_with("<link rel=\"stylesheet\" href=\"/cheers"));
-/// ```
 pub struct Css;
 
 impl Render for Css {

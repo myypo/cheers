@@ -12,7 +12,7 @@ pub mod router;
 /// public API.
 pub mod validation;
 #[doc(hidden)]
-/// Support module for generated code from `#[derive(Component)]`, `ids!`, `signals!`,
+/// Support module for generated code from `#[derive(Refs)]`, `ids!`, `signals!`,
 /// `form_names!`, `action`, and other Cheers macros. Not part of the stable public API.
 pub mod __internal {
     pub use axum;
@@ -40,7 +40,7 @@ pub mod macros {
     };
 }
 pub mod prelude {
-    pub use macros::{Component, action, form_names, html, ids, signals};
+    pub use macros::{Refs, action, form_names, html, ids, signals};
 
     pub use crate::{
         context::{AttributeValue, Element},

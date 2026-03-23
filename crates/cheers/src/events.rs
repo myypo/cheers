@@ -12,7 +12,10 @@ use crate::{
 };
 
 // TODO: write an impl that allows to construct this type from a stream
-/// This can be returned from a handler to continuously send [`PatchElements`] or [`JsScript`] updates to the browser.
+/// Receives a stream of Cheers server-sent events.
+///
+/// Return this from a handler when the client should stay subscribed for ongoing
+/// [`PatchElements`] or [`JsScript`] updates.
 pub struct EventReceiver(tokio::sync::mpsc::UnboundedReceiver<sse::Event>);
 
 /// Creates an in-process sender/receiver pair for streaming Cheers events.
@@ -23,14 +26,45 @@ pub struct EventReceiver(tokio::sync::mpsc::UnboundedReceiver<sse::Event>);
 /// # Example
 ///
 /// ```
+/// use axum::http::StatusCode;
 /// use cheers::prelude::*;
 ///
-/// async fn subscribe() -> EventReceiver {
+/// #[derive(Refs)]
+/// struct Status<'a> {
+///     #[id]
+///     id: u32,
+///     message: &'a str,
+/// }
+///
+/// impl Render for Status<'_> {
+///     fn render_to(&self, buffer: &mut Buffer<Element>) {
+///         ids!(id);
+///
+///         html! {
+///             p id=id { (self.message) }
+///         }
+///         .render_to(buffer);
+///     }
+/// }
+///
+/// async fn subscribe() -> Result<EventReceiver, StatusCode> {
 ///     let (tx, rx) = events();
 ///
-///     tx.send(PatchElements::new().selector("body")).expect("receiver to be connected");
+///     tx.send(
+///         PatchElements::new()
+///             .id(Status::id(1))
+///             .mode(PatchElementsMode::Outer)
+///             .element(Status {
+///                 id: 1,
+///                 message: "Subscription opened",
+///             }),
+///     )
+///     .map_err(|_| StatusCode::SERVICE_UNAVAILABLE)?;
 ///
-///     rx
+///     tx.send(JsScript::new("console.log('notifications stream ready')"))
+///         .map_err(|_| StatusCode::SERVICE_UNAVAILABLE)?;
+///
+///     Ok(rx)
 /// }
 /// ```
 pub fn events() -> (EventSender, EventReceiver) {
@@ -73,7 +107,7 @@ pub struct EventSender {
 }
 
 impl EventSender {
-    /// Sends an event to the paired receiver. Non-blocking.
+    /// Sends an event to the paired receiver. Non-blocking
     pub fn send<T>(&self, ev: T) -> Result<(), Error>
     where
         T: Into<Event>,
@@ -108,7 +142,7 @@ mod patch_elements {
     /// ```
     /// use cheers::prelude::*;
     ///
-    /// #[derive(Component)]
+    /// #[derive(Refs)]
     /// struct Row {
     ///     #[id]
     ///     id: u32,

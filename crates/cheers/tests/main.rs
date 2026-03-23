@@ -503,7 +503,7 @@ fn component_dotdot_default() {
 #[test]
 fn ids_with_id() {
     #[expect(dead_code)]
-    #[derive(Component)]
+    #[derive(Refs)]
     #[id("number")]
     #[id("location")]
     struct House<'a> {
@@ -543,7 +543,7 @@ fn ids_with_id() {
 #[test]
 fn id_without_id() {
     #[expect(dead_code)]
-    #[derive(Component)]
+    #[derive(Refs)]
     #[id("name")]
     #[id("price")]
     struct Steak<'a, M> {
@@ -578,7 +578,7 @@ fn id_without_id() {
 #[test]
 fn data_indicator() {
     #[expect(dead_code)]
-    #[derive(Component)]
+    #[derive(Refs)]
     struct Something {
         #[signal]
         fetching: bool,
@@ -600,14 +600,14 @@ fn data_indicator() {
 #[test]
 fn data_signals() {
     #[expect(dead_code)]
-    #[derive(Component)]
+    #[derive(Refs)]
     struct Counter {
         #[signal]
         count: i32,
     }
 
     #[expect(dead_code)]
-    #[derive(Component)]
+    #[derive(Refs)]
     struct Other {
         #[signal]
         value: i32,
@@ -630,7 +630,7 @@ fn data_signals() {
 #[test]
 fn data_style() {
     #[expect(dead_code)]
-    #[derive(Component)]
+    #[derive(Refs)]
     struct Options {
         #[signal]
         hiding: bool,
@@ -652,7 +652,7 @@ fn data_style() {
 #[allow(dead_code)]
 #[test]
 fn signal_computed() {
-    #[derive(Component)]
+    #[derive(Refs)]
     struct Input {
         #[signal]
         a: i32,
@@ -678,7 +678,7 @@ fn signal_computed() {
         }
     }
 
-    #[derive(Component)]
+    #[derive(Refs)]
     struct Calculator {
         #[signal(nested)]
         input: Input,
@@ -715,7 +715,7 @@ fn signal_computed() {
 
 #[test]
 fn signal_outer_without_id() {
-    #[derive(Component)]
+    #[derive(Refs)]
     #[signal(keepsake: String)]
     struct Ghost {
         name: String,
@@ -749,7 +749,7 @@ fn signal_outer_without_id() {
 #[test]
 fn signal_outer_with_id() {
     #[expect(dead_code)]
-    #[derive(Component)]
+    #[derive(Refs)]
     #[signal(outside: String)]
     struct Outer {
         #[id]
@@ -777,7 +777,7 @@ fn signal_outer_with_id() {
 
 #[test]
 fn signal_id() {
-    #[derive(Component)]
+    #[derive(Refs)]
     #[expect(dead_code)]
     struct Ghost {
         #[id]
@@ -812,7 +812,7 @@ fn signal_id() {
 
 #[test]
 fn signal_deserialized_with_id_scope() {
-    #[derive(Component)]
+    #[derive(Refs)]
     #[signal(task_status: String)]
     #[expect(dead_code)]
     struct Project {
@@ -835,14 +835,14 @@ fn signal_deserialized_with_id_scope() {
 #[test]
 fn signal_deserialized_nested_scope() {
     #[expect(dead_code)]
-    #[derive(Component)]
+    #[derive(Refs)]
     struct Child {
         #[signal]
         value: i32,
     }
 
     #[expect(dead_code)]
-    #[derive(Component)]
+    #[derive(Refs)]
     struct Parent {
         #[signal(nested)]
         child: Child,
@@ -856,7 +856,7 @@ fn signal_deserialized_nested_scope() {
 
 #[test]
 fn signal_patch_with_id_scope() {
-    #[derive(Component)]
+    #[derive(Refs)]
     #[expect(dead_code)]
     struct Project {
         #[id]
@@ -880,7 +880,7 @@ fn signal_patch_with_id_scope() {
 #[test]
 fn signal_without_id() {
     #[expect(dead_code)]
-    #[derive(Component)]
+    #[derive(Refs)]
     struct Flare {
         #[signal]
         num: i32,
@@ -955,7 +955,7 @@ fn action_explicit_path() {
 #[test]
 #[allow(dead_code)]
 fn action_form_generics() {
-    #[derive(Component)]
+    #[derive(Refs)]
     struct Stuff<'a, S> {
         #[form]
         whatever: &'a S,
@@ -1023,7 +1023,7 @@ fn action_form_serde() {
     }
 
     #[expect(dead_code)]
-    #[derive(Component, PartialEq)]
+    #[derive(Refs, PartialEq)]
     struct Stuff {
         #[signal]
         #[form(serde(default = "default_whatever"))]
@@ -1036,7 +1036,7 @@ fn action_form_serde() {
 
 #[test]
 fn form_without_field() {
-    #[derive(Component)]
+    #[derive(Refs)]
     #[form(keepsake: String, serde(default))]
     struct Ghost<'a> {
         name: &'a str,
@@ -1078,7 +1078,7 @@ fn form_without_field() {
 #[test]
 fn form_with_derive() {
     #[expect(dead_code)]
-    #[derive(Component)]
+    #[derive(Refs)]
     #[form_derive(Debug, Default, PartialEq)]
     struct Simple {
         #[form]

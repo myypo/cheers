@@ -39,7 +39,7 @@ impl<T: Render> Render for Base<T> {
     }
 }
 
-#[derive(Component)]
+#[derive(Refs)]
 struct Stock<'a> {
     #[id]
     id: &'a String,
