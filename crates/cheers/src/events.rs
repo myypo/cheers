@@ -12,8 +12,27 @@ use crate::{
 };
 
 // TODO: write an impl that allows to construct this type from a stream
+/// This can be returned from a handler to continuously send [`PatchElements`] or [`JsScript`] updates to the browser.
 pub struct EventReceiver(tokio::sync::mpsc::UnboundedReceiver<sse::Event>);
 
+/// Creates an in-process sender/receiver pair for streaming Cheers events.
+///
+/// Use the returned [`EventSender`] to push [`PatchElements`] or [`JsScript`] updates, and return
+/// the [`EventReceiver`] from your handler as an SSE response.
+///
+/// # Example
+///
+/// ```
+/// use cheers::prelude::*;
+///
+/// async fn subscribe() -> EventReceiver {
+///     let (tx, rx) = events();
+///
+///     tx.send(PatchElements::new().selector("body")).expect("receiver to be connected");
+///
+///     rx
+/// }
+/// ```
 pub fn events() -> (EventSender, EventReceiver) {
     let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
     (EventSender { tx }, EventReceiver(rx))
@@ -47,12 +66,14 @@ impl Display for Error {
 
 impl std::error::Error for Error {}
 
+/// Sends server-sent events to a connected [`EventReceiver`].
 #[derive(Debug, Clone)]
 pub struct EventSender {
     tx: tokio::sync::mpsc::UnboundedSender<sse::Event>,
 }
 
 impl EventSender {
+    /// Sends an event to the paired receiver. Non-blocking.
     pub fn send<T>(&self, ev: T) -> Result<(), Error>
     where
         T: Into<Event>,
@@ -74,6 +95,56 @@ pub use patch_elements::{PatchElements, PatchElementsMode};
 mod patch_elements {
     use super::*;
 
+    /// A patch command that updates matching DOM elements on the client.
+    ///
+    /// `PatchElements` is a primary response type for incremental UI updates. You can return it
+    /// directly from an HTTP handler or send it through [`EventSender`] for SSE-driven updates.
+    ///
+    /// Targets are selected either with [`PatchElements::id`] or [`PatchElements::selector`].
+    /// Content is supplied with one or more calls to [`PatchElements::element`].
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use cheers::prelude::*;
+    ///
+    /// #[derive(Component)]
+    /// struct Row {
+    ///     #[id]
+    ///     id: u32,
+    /// }
+    ///
+    /// impl Render for Row {
+    ///     fn render_to(&self, buffer: &mut Buffer<Element>) {
+    ///         ids!(id);
+    ///
+    ///         html! {
+    ///             tr id=id { "Updated" }
+    ///         }
+    ///         .render_to(buffer);
+    ///     }
+    /// }
+    ///
+    /// # tokio::runtime::Runtime::new().unwrap().block_on(async {
+    /// use axum::{body::to_bytes, response::IntoResponse};
+    ///
+    /// let patch = PatchElements::new()
+    ///     .id(Row::id(1))
+    ///     .mode(PatchElementsMode::Outer)
+    ///     .element(Row { id: 1 });
+    ///
+    /// let response = patch.into_response();
+    /// let body = String::from_utf8(
+    ///     to_bytes(response.into_body(), usize::MAX)
+    ///         .await
+    ///         .unwrap()
+    ///         .to_vec(),
+    /// )
+    /// .unwrap();
+    ///
+    /// assert_eq!(body, r#"<tr id="row-1">Updated</tr>"#);
+    /// # });
+    /// ```
     #[derive(Debug, Clone)]
     pub struct PatchElements {
         mode: Option<PatchElementsMode>,
@@ -89,6 +160,7 @@ mod patch_elements {
     }
 
     impl PatchElements {
+        /// Creates an empty patch.
         pub fn new() -> Self {
             Self {
                 mode: None,
@@ -98,11 +170,13 @@ mod patch_elements {
             }
         }
 
+        /// Sets how the matching DOM nodes should be updated.
         pub fn mode(mut self, mode: PatchElementsMode) -> Self {
             self.mode = Some(mode);
             self
         }
 
+        /// Targets a single element by component-generated [`ElementId`].
         pub fn id<I: AsRef<ElementId>>(mut self, id: I) -> Self {
             let mut selector = String::from("#");
             selector.push_str(&id.as_ref().0);
@@ -110,16 +184,21 @@ mod patch_elements {
             self
         }
 
+        /// Targets elements with a CSS selector.
         pub fn selector(mut self, selector: impl Into<String>) -> Self {
             self.selector = Some(selector.into());
             self
         }
 
+        /// Enables a view transition for the patch.
         pub fn use_view_transition(mut self) -> Self {
             self.use_view_transition = true;
             self
         }
 
+        /// Appends a rendered element payload to this patch.
+        ///
+        /// Multiple calls add multiple rendered elements to the same patch message.
         pub fn element<R: Render>(mut self, element: R) -> Self {
             if let Some(mut components) = self.components {
                 // XSS SAFETY: static newline
@@ -140,6 +219,7 @@ mod patch_elements {
         }
     }
 
+    /// The DOM operation performed by [`PatchElements`].
     #[derive(Debug, Clone, Copy)]
     pub enum PatchElementsMode {
         /// Morphs the outer HTML of the elements (default and recommended).
@@ -371,12 +451,14 @@ pub use js_script::JsScript;
 mod js_script {
     use super::*;
 
+    /// A JavaScript snippet sent to the client for execution.
     pub struct JsScript {
         js: String,
         persist: bool,
     }
 
     impl JsScript {
+        /// Creates a new script payload.
         pub fn new(script: impl AsRef<str>) -> Self {
             Self {
                 js: script.as_ref().to_owned(),
@@ -384,6 +466,7 @@ mod js_script {
             }
         }
 
+        /// Keeps the inserted `<script>` element in the DOM after execution.
         pub fn persist(self) -> Self {
             Self {
                 js: self.js,

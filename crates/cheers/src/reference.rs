@@ -10,6 +10,48 @@ use crate::{
     render::{Buffer, Render},
 };
 
+/// A DOM id generated for a component.
+///
+/// `ElementId` is not meant to be constructed manually.
+///
+/// - Inside the component that defines the ids, acquire `ElementId` values with
+///   [`ids!`](crate::prelude::ids).
+/// - Outside that component, acquire them through the generated associated functions such as
+///   `YourComponent::id(...)` and `YourComponent::id_name(...)`.
+///
+/// `ElementId` is used heavily when targeting patches at specific DOM nodes. It also renders as
+/// an attribute value, so it can still be reused for attributes such as `id`, `for`, and
+/// `aria-labelledby` when needed.
+///
+/// # Example
+///
+/// ```
+/// use cheers::prelude::*;
+///
+/// #[derive(Component)]
+/// struct Row {
+///     #[id]
+///     id: u32,
+/// }
+///
+/// impl Render for Row {
+///     fn render_to(&self, buffer: &mut Buffer<Element>) {
+///         ids!(id);
+///
+///         html! {
+///             tr id=id {}
+///         }
+///         .render_to(buffer);
+///     }
+/// }
+///
+/// assert_eq!(
+///     Row { id: 4 }.render().into_inner(),
+///     r#"<tr id="row-4"></tr>"#,
+/// );
+///
+/// assert_eq!(Row::id(4).to_string(), "row-4");
+/// ```
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 #[repr(transparent)]
 pub struct ElementId(pub(crate) String);
@@ -57,12 +99,87 @@ enum InnerSignalPath {
     Dynamic(String),
 }
 
+/// A typed reference to a client-side signal.
+///
+/// `Signal<T>` is not meant to be constructed manually.
+///
+/// - Inside the component that defines the signal, acquire it with
+///   [`signals!`](crate::prelude::signals).
+/// - For component-local state defined inside a component, acquire it with
+///   [`scoped_signal!`](crate::scoped_signal).
+/// - Outside the component that defines the signal, acquire it through the generated associated
+///   functions such as `YourComponent::signal_name(...)`.
+///
+/// When rendered in an attribute position, a signal becomes a `$`-prefixed path understood by the
+/// client-side runtime.
+///
+/// # Example
+///
+/// ```
+/// use cheers::prelude::*;
+///
+/// #[derive(Component)]
+/// struct Counter {
+///     #[signal]
+///     count: i32,
+/// }
+///
+/// impl Render for Counter {
+///     fn render_to(&self, buffer: &mut Buffer<Element>) {
+///         signals!(signal_count);
+///
+///         html! {
+///             span !text(signal_count) {}
+///         }
+///         .render_to(buffer);
+///     }
+/// }
+///
+/// assert_eq!(
+///     Counter { count: 3 }.render().into_inner(),
+///     r#"<span data-text="$counter.count"></span>"#,
+/// );
+///
+/// let count: Signal<i32> = Counter::signal_count();
+/// assert_eq!(
+///     html! { span !text(count) {} }.render().into_inner(),
+///     r#"<span data-text="$counter.count"></span>"#,
+/// );
+/// ```
 #[derive(Debug)]
 pub struct Signal<T> {
     path: InnerSignalPath,
     ty: PhantomData<T>,
 }
 
+/// Creates a component-local signal whose name is scoped to the current call site.
+///
+/// Use this when defining local state inside a component, not when referencing a component signal
+/// from outside. Scoped signals are intentionally internal to the component that creates them.
+///
+/// The generated signal path includes a hash derived from the source location, so it is not a
+/// stable external name that other components or callers should target directly. To reference a
+/// signal from outside its component, use that component's generated `signal_...` associated
+/// functions instead.
+///
+/// This is useful for component-local UI state such as loading spinners.
+///
+/// # Example
+///
+/// ```
+/// use cheers::prelude::*;
+///
+/// let fetching: Signal<bool> = scoped_signal!("spinner.fetching");
+/// let rendered = html! {
+///     button !on:click("@get('/items')") !indicator(fetching) { "Refresh" }
+///     div !show(fetching) { "Loading..." }
+/// }
+/// .render()
+/// .into_inner();
+///
+/// assert!(rendered.contains("data-indicator=\"spinner.fetching"));
+/// assert!(rendered.contains("data-show=\"$spinner.fetching"));
+/// ```
 #[macro_export]
 macro_rules! scoped_signal {
     ($name:literal $(, $id:expr)*) => {{
@@ -203,6 +320,45 @@ impl<T> Render<AttributeValue> for Signal<T> {
     }
 }
 
+/// A form field name generated for a component.
+///
+/// `FormName` is only meant to be acquired with [`form_names!`](crate::prelude::form_names)
+/// inside the component that defines the form fields.
+///
+/// Form names are component-local and are not meant to be referenced from outside the component.
+/// They render as attribute values and are used for `name=` on form controls.
+///
+/// # Example
+///
+/// ```
+/// use cheers::prelude::*;
+///
+/// #[derive(Component)]
+/// struct LoginForm {
+///     #[form]
+///     email: String,
+/// }
+///
+/// impl Render for LoginForm {
+///     fn render_to(&self, buffer: &mut Buffer<Element>) {
+///         form_names!(form_email);
+///
+///         html! {
+///             input name=(form_email);
+///         }
+///         .render_to(buffer);
+///     }
+/// }
+///
+/// assert_eq!(
+///     LoginForm {
+///         email: String::from("hello@example.com"),
+///     }
+///     .render()
+///     .into_inner(),
+///     r#"<input name="email">"#,
+/// );
+/// ```
 #[derive(Debug, Clone, Copy)]
 pub struct FormName(&'static str);
 

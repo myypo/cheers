@@ -6,6 +6,24 @@ use crate::{
     router::css_url,
 };
 
+/// Renders `<!DOCTYPE html>`.
+///
+/// This is the first item in a full HTML document response.
+///
+/// # Example
+///
+/// ```
+/// use cheers::{components::Doctype, prelude::*};
+///
+/// let page = html! {
+///     (Doctype)
+///     html {
+///         body { "Hello" }
+///     }
+/// };
+///
+/// assert_eq!(page.render().into_inner(), "<!DOCTYPE html><html><body>Hello</body></html>");
+/// ```
 pub struct Doctype;
 
 impl Render for Doctype {
@@ -15,6 +33,22 @@ impl Render for Doctype {
     }
 }
 
+/// Renders the core Cheers client-side runtime scripts.
+///
+/// This includes the streaming helper script and the `datastar.js` runtime. In debug builds it
+/// also includes the live-reload script.
+///
+/// Include this in pages that use Cheers client-side behaviors such as actions, signals and patching
+///
+/// # Example
+///
+/// ```
+/// use cheers::{components::Scripts, prelude::*};
+///
+/// let rendered = Scripts.render().into_inner();
+///
+/// assert!(rendered.contains("/cheers/assets/datastar.js"));
+/// ```
 pub struct Scripts;
 
 impl Render for Scripts {
@@ -72,6 +106,19 @@ impl Render for Scripts {
     }
 }
 
+/// Renders the `<link rel="stylesheet">` tag for the Cheers CSS bundle.
+///
+/// This links to the framework-managed stylesheet path produced by the router.
+///
+/// # Example
+///
+/// ```
+/// use cheers::{components::Css, prelude::*};
+///
+/// let rendered = Css.render().into_inner();
+///
+/// assert!(rendered.starts_with("<link rel=\"stylesheet\" href=\"/cheers"));
+/// ```
 pub struct Css;
 
 impl Render for Css {
@@ -85,6 +132,16 @@ impl Render for Css {
 /// A value rendered via its [`Display`] implementation.
 ///
 /// This will handle escaping special characters for you.
+///
+/// # Example
+///
+/// ```
+/// use cheers::{components::Displayed, prelude::*};
+///
+/// let rendered = html! { p { (Displayed("<hello>")) } }.render().into_inner();
+///
+/// assert_eq!(rendered, "<p>&lt;hello&gt;</p>");
+/// ```
 #[derive(Debug, Clone, Copy)]
 pub struct Displayed<T: Display>(pub T);
 
@@ -101,6 +158,16 @@ where
 /// A value rendered via its [`Debug`] implementation.
 ///
 /// This will handle escaping special characters for you.
+///
+/// # Example
+///
+/// ```
+/// use cheers::{components::Debugged, prelude::*};
+///
+/// let rendered = html! { pre { (Debugged(vec![1, 2, 3])) } }.render().into_inner();
+///
+/// assert_eq!(rendered, "<pre>[1, 2, 3]</pre>");
+/// ```
 #[derive(Debug, Clone, Copy)]
 pub struct Debugged<T: Debug>(pub T);
 

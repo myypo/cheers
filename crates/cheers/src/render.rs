@@ -7,6 +7,33 @@ use std::{borrow::Cow, rc::Rc, sync::Arc};
 
 use crate::context::{AttributeValue, Context, Element};
 
+/// A raw pre-escaped HTML fragment or attribute value.
+///
+/// `Raw<T, Element>` is for already-sanitized HTML nodes. [`RawAttribute<T>`] is the same idea in
+/// attribute context.
+///
+/// Most code should prefer [`html!`](crate::prelude::html) and normal [`Render`] implementations.
+/// Reach for `Raw` only when you already have trusted, pre-escaped markup and need to insert it
+/// without further escaping.
+///
+/// # Safety
+///
+/// `Raw` disables Cheers' normal escaping. Passing unsanitized user input here can create XSS
+/// vulnerabilities.
+///
+/// # Example
+///
+/// ```
+/// use cheers::{Raw, prelude::*};
+///
+/// // XSS SAFETY: this HTML is trusted and already sanitized.
+/// let trusted = Raw::dangerously_create("<strong>trusted</strong>");
+///
+/// assert_eq!(
+///     html! { div { (trusted) } }.render().into_inner(),
+///     "<div><strong>trusted</strong></div>",
+/// );
+/// ```
 #[derive(Clone, Copy, Default, Eq, Hash)]
 pub struct Raw<T: AsRef<str>, C: Context = Element> {
     inner: T,
@@ -86,6 +113,16 @@ pub type RawAttribute<T> = Raw<T, AttributeValue>;
 /// anti-patterns such as rendering to a string then embedding that HTML string
 /// into another page. To do this, you should use [`RenderExt::memoize`], or
 /// use [`Raw`] directly.
+///
+/// # Example
+///
+/// ```
+/// use cheers::prelude::*;
+///
+/// let rendered = html! { p { "Hello" } }.render();
+///
+/// assert_eq!(rendered.as_inner(), "<p>Hello</p>");
+/// ```
 #[derive(Debug, Clone, Copy, Default, Eq, Hash)]
 pub struct Rendered<T>(T);
 
@@ -228,10 +265,6 @@ impl<C: Context> Buffer<C> {
     /// double quotes. The pushed contents must escape `&` to `&amp;`, `<` to
     /// `&lt;`, `>` to `&gt;`, and `"` to `&quot;`.
     ///
-    /// This should only be needed in very specific cases, such as manually
-    /// constructing raw HTML, usually within a [`Render::render_to`]
-    /// implementation.
-    ///
     /// It is recommended to add a `// XSS SAFETY` comment above the usage of
     /// this method to indicate why it is safe to directly write to the
     /// underlying buffer.
@@ -274,7 +307,11 @@ impl Debug for Buffer {
     }
 }
 
-/// A type that can be rendered as an HTML node.
+/// A type that can be rendered by Cheers.
+///
+/// This is the core trait behind components. A type becomes usable as a component in `html!` by
+/// implementing `Render`. `#[derive(Component)]` does not implement this trait; it only generates
+/// helper APIs such as ids, signals, and form names.
 ///
 /// For [`Render<Node>`] (a.k.a. [`Render`]) implementations, this
 /// must render complete HTML nodes. If rendering string-like types, the
@@ -324,6 +361,9 @@ pub trait Render<C: Context = Element> {
     /// Renders this value to a string. This is a convenience method that
     /// calls [`render_to`] into a new [`Buffer`] and returns the result.
     ///
+    /// This is useful for tests, debugging, and one-off rendering. For composition inside other
+    /// markup, prefer rendering the value directly rather than round-tripping through a string.
+    ///
     /// If overridden for performance reasons, this must match the
     /// implementation of [`render_to`].
     ///
@@ -339,9 +379,21 @@ pub trait Render<C: Context = Element> {
     }
 }
 
-/// An extension trait for [`Render`] types.
+/// Convenience methods for [`Render`] types.
 ///
-/// This trait provides an additional method for pre-rendering values.
+/// This trait currently provides [`memoize`](RenderExt::memoize), which pre-renders a value into
+/// reusable [`Raw`] HTML.
+///
+/// # Example
+///
+/// ```
+/// use cheers::prelude::*;
+///
+/// let cached = html! { span { "cached" } }.memoize();
+/// let rendered = html! { div { (&cached) (&cached) } }.render().into_inner();
+///
+/// assert_eq!(rendered, "<div><span>cached</span><span>cached</span></div>");
+/// ```
 pub trait RenderExt: Render {
     /// Pre-renders the value and stores it in a [`Raw`] so that it can be
     /// re-used among multiple renderings without re-computing the value.
