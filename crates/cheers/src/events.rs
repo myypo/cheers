@@ -210,17 +210,26 @@ mod patch_elements {
             self
         }
 
-        /// Targets a single element by component-generated [`ElementId`].
-        pub fn id<I: AsRef<ElementId>>(mut self, id: I) -> Self {
-            let mut selector = String::from("#");
-            selector.push_str(&id.as_ref().0);
-            self.selector = Some(selector);
-            self
+        /// Targets one or more elements by component-generated [`ElementId`].
+        ///
+        /// Can be called multiple times to target several elements by IDs
+        pub fn id<I: AsRef<ElementId>>(self, id: I) -> Self {
+            self.selector(format!("#{}", id.as_ref().0))
         }
 
-        /// Targets elements with a CSS selector.
+        /// Targets elements with an arbitrary CSS selector.
+        ///
+        /// Can be called multiple times to target element by several selectors
         pub fn selector(mut self, selector: impl Into<String>) -> Self {
-            self.selector = Some(selector.into());
+            let new = selector.into();
+            self.selector = Some(match self.selector {
+                Some(mut existing) => {
+                    existing.push_str(",");
+                    existing.push_str(&new);
+                    existing
+                }
+                None => new,
+            });
             self
         }
 
@@ -545,6 +554,8 @@ mod js_script {
 
     #[cfg(test)]
     mod tests {
+        use macros::Refs;
+
         use super::*;
         use crate::test_utils::read_axum_body;
 
@@ -626,6 +637,89 @@ data: elements <script data-init=\"el.remove()\">console.log('hi');
 data: elements console.log('there');</script>\n\n"
                 )
             );
+        }
+
+        #[expect(dead_code)]
+        #[derive(Refs)]
+        struct Row {
+            #[id]
+            id: u32,
+        }
+
+        #[tokio::test]
+        async fn id_produces_hash_prefixed_selector() {
+            let patch = PatchElements::new()
+                .id(Row::id(1))
+                .mode(PatchElementsMode::Outer);
+
+            let (tx, rx) = events();
+            tokio::spawn(async move {
+                tx.send(patch).unwrap();
+            });
+
+            let body = read_axum_body(rx.into_response()).await;
+            assert!(body.contains("selector #row-1"));
+        }
+
+        #[tokio::test]
+        async fn multiple_ids_are_comma_separated() {
+            let patch = PatchElements::new()
+                .id(Row::id(1))
+                .id(Row::id(2))
+                .mode(PatchElementsMode::Outer);
+
+            let (tx, rx) = events();
+            tokio::spawn(async move {
+                tx.send(patch).unwrap();
+            });
+
+            let body = read_axum_body(rx.into_response()).await;
+            assert!(body.contains("selector #row-1,#row-2"));
+        }
+
+        #[tokio::test]
+        async fn multiple_selectors_are_comma_separated() {
+            let patch = PatchElements::new()
+                .selector(".card")
+                .selector("#sidebar")
+                .mode(PatchElementsMode::Inner);
+
+            let (tx, rx) = events();
+            tokio::spawn(async move {
+                tx.send(patch).unwrap();
+            });
+
+            let body = read_axum_body(rx.into_response()).await;
+            assert!(body.contains("selector .card,#sidebar"));
+        }
+
+        #[tokio::test]
+        async fn id_and_selector_can_be_mixed() {
+            let patch = PatchElements::new()
+                .id(Row::id(1))
+                .selector(".highlight")
+                .mode(PatchElementsMode::Outer);
+
+            let (tx, rx) = events();
+            tokio::spawn(async move {
+                tx.send(patch).unwrap();
+            });
+
+            let body = read_axum_body(rx.into_response()).await;
+            assert!(body.contains("selector #row-1,.highlight"));
+        }
+
+        #[tokio::test]
+        async fn later_selector_call_overwrites_earlier_one() {
+            let patch = PatchElements::new().id(Row::id(1)).selector(".override");
+
+            let (tx, rx) = events();
+            tokio::spawn(async move {
+                tx.send(patch).unwrap();
+            });
+
+            let body = read_axum_body(rx.into_response()).await;
+            assert!(body.contains("selector #row-1,.override"));
         }
     }
 }

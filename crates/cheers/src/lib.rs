@@ -1,3 +1,5 @@
+extern crate self as cheers;
+
 pub mod components;
 mod context;
 mod events;
