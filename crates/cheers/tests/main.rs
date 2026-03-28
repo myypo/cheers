@@ -145,6 +145,22 @@ fn void_elements() {
 }
 
 #[test]
+fn opengraph_meta_property_attribute() {
+    let result = html! {
+        head {
+            meta property="og:title" content="Cheers";
+            meta property="og:type" content="website";
+        }
+    }
+    .render();
+
+    assert_eq!(
+        result.as_inner(),
+        r#"<head><meta property="og:title" content="Cheers"><meta property="og:type" content="website"></head>"#
+    );
+}
+
+#[test]
 fn component() {
     struct Repeater<R> {
         count: usize,
@@ -485,7 +501,7 @@ fn scoped_signal_hash() {
 
     assert_eq!(
         result.as_inner(),
-        r#"<div data-on:interval="@get('/')"></div><p data-signals="{toggle1168097918:true,nested:{go42:{bye3713718811:'impressive'}}}"></p>"#
+        r#"<div data-on:interval="@get('/')"></div><p data-signals="{toggle3463295118:true,nested:{go42:{bye1528366059:'impressive'}}}"></p>"#
     );
 }
 
@@ -498,7 +514,7 @@ fn svg_macro_sprite_bundle() {
                     path d="M6.5 11.2 3.3 8l-1.1 1.1 4.3 4.3L14 5.9l-1.1-1.1z";
                 }
             }
-            r#use href="#icon-check" x="0" y="0" width="16" height="16";
+            use href="#icon-check" x="0" y="0" width="16" height="16";
         }
     }
     .render();

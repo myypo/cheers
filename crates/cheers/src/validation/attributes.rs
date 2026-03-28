@@ -929,6 +929,42 @@ pub trait DataAttributes: GlobalAttributes {
 
 impl<T: GlobalAttributes> DataAttributes for T {}
 
+/// Attributes for [Open Graph protocol](https://ogp.me/) metadata.
+///
+/// This trait is implemented only for the
+/// [`meta`](crate::validation::elements::meta) element and is intended for
+/// tags such as `<meta property="og:title" content="...">`.
+///
+/// # Examples
+///
+/// ```
+/// # use cheers::prelude::*;
+/// let result = html! {
+///     head {
+///         meta property="og:title" content="Cheers";
+///         meta property="og:description" content="Fullstack hypermedia framework";
+///     }
+/// }
+/// .render();
+///
+/// assert_eq!(
+///     result.as_inner(),
+///     r#"<head><meta property="og:title" content="Cheers"><meta property="og:description" content="Fullstack hypermedia framework"></head>"#,
+/// );
+/// ```
+///
+/// See the Open Graph [Basic Metadata](https://ogp.me/#metadata) section for
+/// details and required properties.
+pub trait OpenGraphMeta: GlobalAttributes {
+    /// The Open Graph property key (for example, `og:title` or `og:image`).
+    ///
+    /// Use this with [`meta`](crate::validation::elements::meta) elements
+    /// alongside [`content`](crate::validation::elements::meta::content).
+    const property: Attribute = Attribute;
+}
+
+impl OpenGraphMeta for crate::validation::elements::meta {}
+
 #[expect(missing_docs)]
 pub trait SvgGlobalAttributes: Element {
     const id: Attribute = Attribute;
