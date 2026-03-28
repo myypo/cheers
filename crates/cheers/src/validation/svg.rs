@@ -1,49 +1,12 @@
 #![expect(missing_docs)]
 
 pub mod elements {
-    macro_rules! elements {
+    use crate::validation::define_validation_elements;
+
+    define_validation_elements! {
+        kind = crate::validation::Xml,
+        globals = crate::validation::attributes::SvgGlobalAttributes,
         {
-            $(
-                $(#[$meta:meta])*
-                $name:ident $(
-                    {
-                        $(
-                            $(#[$attr_meta:meta])*
-                            $attr:ident
-                        )*
-                    }
-                )?
-            )*
-        } => {
-            $(
-                $(#[$meta])*
-                #[expect(
-                    non_camel_case_types,
-                    reason = "camel case types will be interpreted as components"
-                )]
-                #[derive(::core::fmt::Debug, ::core::clone::Clone, ::core::marker::Copy)]
-                pub struct $name;
-
-                $(
-                    #[allow(non_upper_case_globals)]
-                    impl $name {
-                        $(
-                            $(#[$attr_meta])*
-                            pub const $attr: $crate::validation::Attribute = $crate::validation::Attribute;
-                        )*
-                    }
-                )?
-
-                impl $crate::validation::Element for $name {
-                    type Kind = $crate::validation::Xml;
-                }
-
-                impl $crate::validation::attributes::SvgGlobalAttributes for $name {}
-            )*
-        }
-    }
-
-    elements! {
     a {
             href
 
@@ -998,5 +961,7 @@ pub mod elements {
             viewBox
 
             preserveAspectRatio
-        }    }
+        }
+    }
+    }
 }

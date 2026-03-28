@@ -1,9 +1,7 @@
 #![allow(non_upper_case_globals)]
 #[cfg(feature = "mathml")]
 pub use super::mathml::MathMlGlobalAttributes;
-use crate::validation::{Attribute, Element};
-#[allow(unused_imports)]
-use crate::validation::{AttributeNamespace, AttributeSymbol};
+use crate::validation::{Attribute, AttributeNamespace, Element};
 
 pub trait GlobalAttributes: Element {
     /// Used as a guide for creating a keyboard shortcut that activates or

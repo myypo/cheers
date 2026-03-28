@@ -31,49 +31,12 @@ pub trait MathMlGlobalAttributes: Element {
 }
 
 pub mod elements {
-    macro_rules! elements {
+    use crate::validation::define_validation_elements;
+
+    define_validation_elements! {
+        kind = crate::validation::Xml,
+        globals = super::MathMlGlobalAttributes,
         {
-            $(
-                $(#[$meta:meta])*
-                $name:ident $(
-                    {
-                        $(
-                            $(#[$attr_meta:meta])*
-                            $attr:ident
-                        )*
-                    }
-                )?
-            )*
-        } => {
-            $(
-                $(#[$meta])*
-                #[expect(
-                    non_camel_case_types,
-                    reason = "camel case types will be interpreted as components"
-                )]
-                #[derive(::core::fmt::Debug, ::core::clone::Clone, ::core::marker::Copy)]
-                pub struct $name;
-
-                $(
-                    #[allow(non_upper_case_globals)]
-                    impl $name {
-                        $(
-                            $(#[$attr_meta])*
-                            pub const $attr: $crate::validation::Attribute = $crate::validation::Attribute;
-                        )*
-                    }
-                )?
-
-                impl $crate::validation::Element for $name {
-                    type Kind = $crate::validation::Xml;
-                }
-
-                impl super::MathMlGlobalAttributes for $name {}
-            )*
-        }
-    }
-
-    elements! {
         math {
             display
         }
@@ -196,5 +159,6 @@ pub mod elements {
         }
 
         semantics
+        }
     }
 }

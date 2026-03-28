@@ -6,91 +6,12 @@
 //!
 //! [`GlobalAttributes`]: crate::validation::attributes::GlobalAttributes
 
-macro_rules! define_elements {
+use super::define_validation_elements;
+
+define_validation_elements! {
+    kind = crate::validation::Normal,
+    globals = crate::validation::attributes::GlobalAttributes,
     {
-        $(
-            $(#[$meta:meta])*
-            $name:ident $(
-                {
-                    $(
-                        $(#[$attr_meta:meta])*
-                        $attr:ident
-                    )*
-                }
-            )?
-        )*
-    } => {
-        $(
-            $(#[$meta])*
-            #[expect(
-                non_camel_case_types,
-                reason = "camel case types will be interpreted as components"
-            )]
-            #[derive(::core::fmt::Debug, ::core::clone::Clone, ::core::marker::Copy)]
-            pub struct $name;
-
-            $(
-                #[allow(non_upper_case_globals)]
-                impl $name {
-                    $(
-                        $(#[$attr_meta])*
-                        pub const $attr: $crate::validation::Attribute = $crate::validation::Attribute;
-                    )*
-                }
-            )?
-
-            impl $crate::validation::Element for $name {
-                type Kind = $crate::validation::Normal;
-            }
-
-            impl $crate::validation::attributes::GlobalAttributes for $name {}
-        )*
-    }
-}
-
-macro_rules! define_void_elements {
-    {
-        $(
-            $(#[$meta:meta])*
-            $name:ident $(
-                {
-                    $(
-                        $(#[$attr_meta:meta])*
-                        $attr:ident
-                    )*
-                }
-            )?
-        )*
-    } => {
-        $(
-            $(#[$meta])*
-            #[expect(
-                non_camel_case_types,
-                reason = "camel case types will be interpreted as components"
-            )]
-            #[derive(::core::fmt::Debug, ::core::clone::Clone, ::core::marker::Copy)]
-            pub struct $name;
-
-            $(
-                #[allow(non_upper_case_globals)]
-                impl $name {
-                    $(
-                        $(#[$attr_meta])*
-                        pub const $attr: $crate::validation::Attribute = $crate::validation::Attribute;
-                    )*
-                }
-            )?
-
-            impl $crate::validation::Element for $name {
-                type Kind = $crate::validation::Void;
-            }
-
-            impl $crate::validation::attributes::GlobalAttributes for $name {}
-        )*
-    }
-}
-
-define_elements! {
     /// The root of an HTML document.
     html
 
@@ -944,35 +865,28 @@ define_elements! {
         /// The XML namespace for the SVG element.
         xmlns
     }
-
+    }
 }
 
 #[cfg(feature = "mathml")]
-#[expect(
-    non_camel_case_types,
-    reason = "camel case types will be interpreted as components"
-)]
-#[derive(::core::fmt::Debug, ::core::clone::Clone, ::core::marker::Copy)]
-pub struct math;
+define_validation_elements! {
+    kind = crate::validation::Normal,
+    globals = crate::validation::attributes::GlobalAttributes,
+    {
+        math {
+            /// Specifies the display rendering mode.
+            display
 
-#[cfg(feature = "mathml")]
-#[allow(non_upper_case_globals)]
-impl math {
-    /// Specifies the display rendering mode.
-    pub const display: crate::validation::Attribute = crate::validation::Attribute;
-    /// The XML namespace for the MathML element.
-    pub const xmlns: crate::validation::Attribute = crate::validation::Attribute;
+            /// The XML namespace for the MathML element.
+            xmlns
+        }
+    }
 }
 
-#[cfg(feature = "mathml")]
-impl crate::validation::Element for math {
-    type Kind = crate::validation::Normal;
-}
-
-#[cfg(feature = "mathml")]
-impl crate::validation::attributes::GlobalAttributes for math {}
-
-define_void_elements! {
+define_validation_elements! {
+    kind = crate::validation::Void,
+    globals = crate::validation::attributes::GlobalAttributes,
+    {
     /// Either a hyperlink with some text and a corresponding area on an image
     /// map, or a dead area on an image map.
     area {
@@ -1317,4 +1231,5 @@ define_void_elements! {
 
     /// A line break opportunity.
     wbr
+    }
 }

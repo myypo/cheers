@@ -8,6 +8,54 @@ pub mod svg;
 // Re-export attribute namespace modules at the validation level
 pub use attributes::*;
 
+macro_rules! define_validation_elements {
+    (
+        kind = $kind:path,
+        globals = $globals:path,
+        {
+            $(
+                $(#[$meta:meta])*
+                $name:ident $(
+                    {
+                        $(
+                            $(#[$attr_meta:meta])*
+                            $attr:ident
+                        )*
+                    }
+                )?
+            )*
+        }
+    ) => {
+        $(
+            $(#[$meta])*
+            #[expect(
+                non_camel_case_types,
+                reason = "camel case types will be interpreted as components"
+            )]
+            #[derive(::core::fmt::Debug, ::core::clone::Clone, ::core::marker::Copy)]
+            pub struct $name;
+
+            $(
+                #[allow(non_upper_case_globals)]
+                impl $name {
+                    $(
+                        $(#[$attr_meta])*
+                        pub const $attr: $crate::validation::Attribute = $crate::validation::Attribute;
+                    )*
+                }
+            )?
+
+            impl $crate::validation::Element for $name {
+                type Kind = $kind;
+            }
+
+            impl $globals for $name {}
+        )*
+    };
+}
+
+use define_validation_elements;
+
 /// A marker trait for type-checked elements.
 pub trait Element {
     /// The kind of this element.
@@ -78,7 +126,3 @@ pub struct Attribute;
 /// An attribute namespace.
 #[derive(Debug, Clone, Copy)]
 pub struct AttributeNamespace;
-
-/// An attribute prefixed by a symbol.
-#[derive(Debug, Clone, Copy)]
-pub struct AttributeSymbol;
