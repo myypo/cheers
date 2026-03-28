@@ -1,6 +1,6 @@
 ---
 name: cheers
-description: "Use this skill when editing an existing cheers fullstack Rust app: `html!` markup, `Render` implementations, `#[derive(Refs)]`, `ids!` / `signals!` / `form_names!`, `#[action]` handlers, `PatchElements`, `EventReceiver`, page-shell helpers like `Doctype` / `Css` / `Scripts`, and Datastar-powered server-driven UI updates."
+description: "Use this skill when editing an existing cheers fullstack Rust app: `html!` markup, `Render` implementations, `#[derive(Cheers)]`, `ids!` / `signals!` / `form_names!`, `#[action]` handlers, `PatchElements`, `EventReceiver`, page-shell helpers like `Doctype` / `Css` / `Scripts`, and Datastar-powered server-driven UI updates."
 ---
 
 # Workflow
@@ -16,7 +16,7 @@ description: "Use this skill when editing an existing cheers fullstack Rust app:
 
 A type becomes usable as a component by implementing `Render`.
 
-`#[derive(Refs)]` does **not** implement `Render`. It only generates helper APIs around a struct.
+`#[derive(Cheers)]` does **not** implement `Render`. It only generates helper APIs around a struct.
 
 Use this as the default mental model when editing cheers code.
 
@@ -39,9 +39,9 @@ impl Render for Greeting<'_> {
 }
 ```
 
-## When to derive `Refs`
+## When to derive `Cheers`
 
-Use `#[derive(Refs)]` when the component needs generated helpers for:
+Use `#[derive(Cheers)]` when the component needs generated helpers for:
 - ids
 - signals
 - forms
@@ -51,7 +51,7 @@ Example:
 ```rust
 use cheers::prelude::*;
 
-#[derive(Refs)]
+#[derive(Cheers)]
 #[id("input")]
 struct TodoRow {
     #[id]
@@ -81,7 +81,7 @@ impl Render for TodoRow {
 
 ## Default props for components
 
-Use `#[derive(Refs)]` with `#[prop(default(...))]` when a component should have optional props in `html!`.
+Use `#[derive(Cheers)]` with `#[prop(default(...))]` when a component should have optional props in `html!`.
 
 Rules:
 - fields with `#[prop(default(...))]` are optional
@@ -92,7 +92,7 @@ Rules:
 Example:
 
 ```rust
-#[derive(Refs)]
+#[derive(Cheers)]
 struct Card<'a, R> {
     title: &'a str,
     #[prop(default("anonymous"))]
@@ -186,7 +186,7 @@ Patterns:
 Example:
 
 ```rust
-#[derive(Refs)]
+#[derive(Cheers)]
 struct Counter {
     #[signal]
     count: i32,
@@ -377,7 +377,7 @@ Prefer `.id(...)` when targeting a specific component instance.
 Example:
 
 ```rust
-#[derive(Refs)]
+#[derive(Cheers)]
 struct Row {
     #[id]
     id: u32,
@@ -436,7 +436,7 @@ Example:
 use axum::http::StatusCode;
 use cheers::prelude::*;
 
-#[derive(Refs)]
+#[derive(Cheers)]
 struct Status<'a> {
     #[id]
     id: u32,

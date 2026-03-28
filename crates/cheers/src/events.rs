@@ -29,7 +29,7 @@ pub struct EventReceiver(tokio::sync::mpsc::UnboundedReceiver<sse::Event>);
 /// use axum::http::StatusCode;
 /// use cheers::prelude::*;
 ///
-/// #[derive(Refs)]
+/// #[derive(Cheers)]
 /// struct Status<'a> {
 ///     #[id]
 ///     id: u32,
@@ -142,7 +142,7 @@ mod patch_elements {
     /// ```
     /// use cheers::prelude::*;
     ///
-    /// #[derive(Refs)]
+    /// #[derive(Cheers)]
     /// struct Row {
     ///     #[id]
     ///     id: u32,
@@ -554,7 +554,7 @@ mod js_script {
 
     #[cfg(test)]
     mod tests {
-        use macros::Refs;
+        use macros::Cheers;
 
         use super::*;
         use crate::test_utils::read_axum_body;
@@ -640,7 +640,7 @@ data: elements console.log('there');</script>\n\n"
         }
 
         #[expect(dead_code)]
-        #[derive(Refs)]
+        #[derive(Cheers)]
         struct Row {
             #[id]
             id: u32,

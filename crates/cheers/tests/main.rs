@@ -162,7 +162,7 @@ fn opengraph_meta_property_attribute() {
 
 #[test]
 fn component() {
-    #[derive(Refs)]
+    #[derive(Cheers)]
     struct Repeater<R> {
         count: usize,
         children: R,
@@ -397,7 +397,7 @@ fn toggles() {
     );
 }
 
-#[derive(Refs)]
+#[derive(Cheers)]
 struct Base<T> {
     children: T,
 }
@@ -691,7 +691,7 @@ fn component_dotdot_default() {
 
 #[test]
 fn component_default_prop_without_override() {
-    #[derive(Refs)]
+    #[derive(Cheers)]
     struct Feedback<'a> {
         text: &'a str,
         #[prop(default("anonymous"))]
@@ -718,7 +718,7 @@ fn component_default_prop_without_override() {
 
 #[test]
 fn component_default_prop_with_override() {
-    #[derive(Refs)]
+    #[derive(Cheers)]
     struct Feedback<'a> {
         text: &'a str,
         #[prop(default("anonymous"))]
@@ -745,7 +745,7 @@ fn component_default_prop_with_override() {
 
 #[test]
 fn component_default_prop_with_children() {
-    #[derive(Refs)]
+    #[derive(Cheers)]
     struct Card<'a, R> {
         title: &'a str,
         #[prop(default("note"))]
@@ -781,7 +781,7 @@ fn component_default_prop_with_children() {
 
 #[test]
 fn component_required_props_can_be_out_of_order() {
-    #[derive(Refs)]
+    #[derive(Cheers)]
     struct Pair<'a> {
         a: &'a str,
         b: &'a str,
@@ -806,7 +806,7 @@ fn component_required_props_can_be_out_of_order() {
 
 #[test]
 fn component_default_prop_with_filtered_where_clause() {
-    #[derive(Refs)]
+    #[derive(Cheers)]
     struct Message<T, U>
     where
         U: Clone,
@@ -845,7 +845,7 @@ fn component_default_prop_with_filtered_where_clause() {
 
 #[test]
 fn component_default_prop_can_use_old_builder_method_names() {
-    #[derive(Refs)]
+    #[derive(Cheers)]
     struct BuilderNames<'a> {
         #[prop(default("one"))]
         build: &'a str,
@@ -872,7 +872,7 @@ fn component_default_prop_can_use_old_builder_method_names() {
 
 #[test]
 fn component_default_only_props() {
-    #[derive(Refs)]
+    #[derive(Cheers)]
     struct Badge<'a> {
         #[prop(default("info"))]
         kind: &'a str,
@@ -904,7 +904,7 @@ fn component_default_only_props() {
 #[test]
 fn ids_with_id() {
     #[expect(dead_code)]
-    #[derive(Refs)]
+    #[derive(Cheers)]
     #[id("number")]
     #[id("location")]
     struct House<'a> {
@@ -944,7 +944,7 @@ fn ids_with_id() {
 #[test]
 fn id_without_id() {
     #[expect(dead_code)]
-    #[derive(Refs)]
+    #[derive(Cheers)]
     #[id("name")]
     #[id("price")]
     struct Steak<'a, M> {
@@ -979,7 +979,7 @@ fn id_without_id() {
 #[test]
 fn data_indicator() {
     #[expect(dead_code)]
-    #[derive(Refs)]
+    #[derive(Cheers)]
     struct Something {
         #[signal]
         fetching: bool,
@@ -1001,14 +1001,14 @@ fn data_indicator() {
 #[test]
 fn data_signals() {
     #[expect(dead_code)]
-    #[derive(Refs)]
+    #[derive(Cheers)]
     struct Counter {
         #[signal]
         count: i32,
     }
 
     #[expect(dead_code)]
-    #[derive(Refs)]
+    #[derive(Cheers)]
     struct Other {
         #[signal]
         value: i32,
@@ -1031,7 +1031,7 @@ fn data_signals() {
 #[test]
 fn data_style() {
     #[expect(dead_code)]
-    #[derive(Refs)]
+    #[derive(Cheers)]
     struct Options {
         #[signal]
         hiding: bool,
@@ -1053,7 +1053,7 @@ fn data_style() {
 #[allow(dead_code)]
 #[test]
 fn signal_computed() {
-    #[derive(Refs)]
+    #[derive(Cheers)]
     struct Input {
         #[signal]
         a: i32,
@@ -1079,7 +1079,7 @@ fn signal_computed() {
         }
     }
 
-    #[derive(Refs)]
+    #[derive(Cheers)]
     struct Calculator {
         #[signal(nested)]
         input: Input,
@@ -1116,7 +1116,7 @@ fn signal_computed() {
 
 #[test]
 fn signal_outer_without_id() {
-    #[derive(Refs)]
+    #[derive(Cheers)]
     #[signal(keepsake: String)]
     struct Ghost {
         name: String,
@@ -1150,7 +1150,7 @@ fn signal_outer_without_id() {
 #[test]
 fn signal_outer_with_id() {
     #[expect(dead_code)]
-    #[derive(Refs)]
+    #[derive(Cheers)]
     #[signal(outside: String)]
     struct Outer {
         #[id]
@@ -1178,7 +1178,7 @@ fn signal_outer_with_id() {
 
 #[test]
 fn signal_id() {
-    #[derive(Refs)]
+    #[derive(Cheers)]
     #[expect(dead_code)]
     struct Ghost {
         #[id]
@@ -1213,7 +1213,7 @@ fn signal_id() {
 
 #[test]
 fn signal_deserialized_with_id_scope() {
-    #[derive(Refs)]
+    #[derive(Cheers)]
     #[signal(task_status: String)]
     #[expect(dead_code)]
     struct Project {
@@ -1236,14 +1236,14 @@ fn signal_deserialized_with_id_scope() {
 #[test]
 fn signal_deserialized_nested_scope() {
     #[expect(dead_code)]
-    #[derive(Refs)]
+    #[derive(Cheers)]
     struct Child {
         #[signal]
         value: i32,
     }
 
     #[expect(dead_code)]
-    #[derive(Refs)]
+    #[derive(Cheers)]
     struct Parent {
         #[signal(nested)]
         child: Child,
@@ -1257,7 +1257,7 @@ fn signal_deserialized_nested_scope() {
 
 #[test]
 fn signal_patch_with_id_scope() {
-    #[derive(Refs)]
+    #[derive(Cheers)]
     #[expect(dead_code)]
     struct Project {
         #[id]
@@ -1281,7 +1281,7 @@ fn signal_patch_with_id_scope() {
 #[test]
 fn signal_without_id() {
     #[expect(dead_code)]
-    #[derive(Refs)]
+    #[derive(Cheers)]
     struct Flare {
         #[signal]
         num: i32,
@@ -1356,7 +1356,7 @@ fn action_explicit_path() {
 #[test]
 #[allow(dead_code)]
 fn action_form_generics() {
-    #[derive(Refs)]
+    #[derive(Cheers)]
     struct Stuff<'a, S> {
         #[form]
         whatever: &'a S,
@@ -1424,7 +1424,7 @@ fn action_form_serde() {
     }
 
     #[expect(dead_code)]
-    #[derive(Refs, PartialEq)]
+    #[derive(Cheers, PartialEq)]
     struct Stuff {
         #[signal]
         #[form(serde(default = "default_whatever"))]
@@ -1437,7 +1437,7 @@ fn action_form_serde() {
 
 #[test]
 fn form_without_field() {
-    #[derive(Refs)]
+    #[derive(Cheers)]
     #[form(keepsake: String, serde(default))]
     struct Ghost<'a> {
         name: &'a str,
@@ -1479,7 +1479,7 @@ fn form_without_field() {
 #[test]
 fn form_with_derive() {
     #[expect(dead_code)]
-    #[derive(Refs)]
+    #[derive(Cheers)]
     #[form_derive(Debug, Default, PartialEq)]
     struct Simple {
         #[form]

@@ -7,7 +7,7 @@ use proc_macro2::TokenStream;
 use quote::quote;
 use syn::{Attribute, Error, Ident, ItemStruct, Meta, Type, spanned::Spanned};
 
-use crate::refs::{
+use crate::cheers::{
     form::generate_form_impl, id::generate_id_impls, prop::generate_prop_impl,
     signal::generate_signal_impl,
 };

@@ -310,7 +310,7 @@ impl Debug for Buffer {
 /// A type that can be rendered by Cheers.
 ///
 /// This is the core trait behind components. A type becomes usable as a component in `html!` by
-/// implementing `Render`. `#[derive(Refs)]` does not implement this trait; it only generates
+/// implementing `Render`. `#[derive(Cheers)]` does not implement this trait; it only generates
 /// helper APIs such as ids, signals, and form names.
 ///
 /// For [`Render<Node>`] (a.k.a. [`Render`]) implementations, this

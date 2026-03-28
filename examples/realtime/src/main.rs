@@ -17,7 +17,7 @@ struct Ctx {
     stocks_tx: tokio::sync::broadcast::Sender<(String, String, u64)>,
 }
 
-#[derive(Refs)]
+#[derive(Cheers)]
 struct Base<T> {
     children: T,
 }
@@ -40,7 +40,7 @@ impl<T: Render> Render for Base<T> {
     }
 }
 
-#[derive(Refs)]
+#[derive(Cheers)]
 struct Stock<'a> {
     #[id]
     id: &'a String,

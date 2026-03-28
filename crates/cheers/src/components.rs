@@ -1,6 +1,6 @@
 use std::fmt::{Debug, Display};
 
-use macros::Refs;
+use macros::Cheers;
 
 use crate::{
     context::Context,
@@ -29,7 +29,7 @@ use crate::{
 ///     "<!DOCTYPE html><html><body>Hello</body></html>"
 /// );
 /// ```
-#[derive(Refs)]
+#[derive(Cheers)]
 pub struct Doctype;
 
 impl Render for Doctype {
@@ -55,7 +55,7 @@ impl Render for Doctype {
 ///
 /// assert!(rendered.contains("/cheers/assets/datastar.js"));
 /// ```
-#[derive(Refs)]
+#[derive(Cheers)]
 pub struct Scripts;
 
 impl Render for Scripts {
@@ -116,7 +116,7 @@ impl Render for Scripts {
 /// Renders the `<link rel="stylesheet">` tag for the Cheers CSS bundle.
 ///
 /// This links to the framework-managed stylesheet path produced by the router.
-#[derive(Refs)]
+#[derive(Cheers)]
 pub struct Css;
 
 impl Render for Css {
