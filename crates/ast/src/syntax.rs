@@ -1,11 +1,39 @@
+use std::collections::BTreeSet;
+
 use syn::{
-    Ident, LitBool, LitChar, LitFloat, LitInt, LitStr, Token, braced,
+    Error, Ident, LitBool, LitChar, LitFloat, LitInt, LitStr, Token, braced,
     ext::IdentExt,
     parse::{Parse, ParseStream},
     token::{Brace, Paren},
 };
 
-use crate::{Component, Element, ElementBody, ElementNode, Group, UnquotedName};
+use crate::{
+    Component, Element, ElementBody, ElementNode, Group, UnquotedName,
+    component::{ComponentAttribute, ComponentDefaultAttributes},
+};
+
+fn ensure_unique_component_attrs(
+    attrs: &[ComponentAttribute],
+    default_attrs: Option<&ComponentDefaultAttributes>,
+) -> Result<(), Error> {
+    let mut seen = BTreeSet::new();
+
+    for attr in attrs.iter().chain(
+        default_attrs
+            .into_iter()
+            .flat_map(|default_attrs| default_attrs.attrs.iter()),
+    ) {
+        let name = attr.name.unraw().to_string();
+        if !seen.insert(name.clone()) {
+            return Err(Error::new_spanned(
+                &attr.name,
+                format!("duplicate component prop `{name}`"),
+            ));
+        }
+    }
+
+    Ok(())
+}
 
 impl Parse for ElementNode {
     fn parse(input: ParseStream) -> syn::Result<Self> {
@@ -85,17 +113,29 @@ impl Parse for ElementBody {
 
 impl Parse for Component {
     fn parse(input: ParseStream) -> syn::Result<Self> {
+        let name = input.parse()?;
+        let mut attrs = Vec::new();
+
+        while !(input.peek(Paren)
+            || input.peek(Token![..])
+            || input.peek(Token![;])
+            || input.peek(Brace))
+        {
+            attrs.push(input.parse()?);
+        }
+
+        let default_attrs = if input.peek(Paren) {
+            Some(input.parse()?)
+        } else {
+            None
+        };
+
+        ensure_unique_component_attrs(&attrs, default_attrs.as_ref())?;
+
         Ok(Self {
-            name: input.parse()?,
-            attrs: {
-                let mut attrs = Vec::new();
-
-                while !(input.peek(Token![..]) || input.peek(Token![;]) || input.peek(Brace)) {
-                    attrs.push(input.parse()?);
-                }
-
-                attrs
-            },
+            name,
+            attrs,
+            default_attrs,
             dotdot: input.parse()?,
             body: input.parse()?,
         })

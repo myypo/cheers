@@ -33,6 +33,12 @@ pub mod __internal {
     pub trait FormNames {
         type Fields;
     }
+
+    #[doc(hidden)]
+    #[inline]
+    pub fn __component_placeholder<T>() -> T {
+        panic!("component placeholder should only be used for rust-analyzer expansion")
+    }
 }
 
 pub mod macros {

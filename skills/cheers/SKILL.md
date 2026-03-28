@@ -79,6 +79,64 @@ impl Render for TodoRow {
 }
 ```
 
+## Default props for components
+
+Use `#[derive(Refs)]` with `#[prop(default(...))]` when a component should have optional props in `html!`.
+
+Rules:
+- fields with `#[prop(default(...))]` are optional
+- other non-`children` fields are required
+- `children` stays special and still comes from the component body
+- optional/defaulted prop overrides go in a grouped `(...)` section
+
+Example:
+
+```rust
+#[derive(Refs)]
+struct Card<'a, R> {
+    title: &'a str,
+    #[prop(default("anonymous"))]
+    author: &'a str,
+    children: R,
+}
+
+impl<'a, R: Render> Render for Card<'a, R> {
+    fn render_to(&self, buffer: &mut Buffer<Element>) {
+        html! {
+            article {
+                h2 { (self.title) }
+                p { (self.author) }
+                div { (self.children) }
+            }
+        }
+        .render_to(buffer);
+    }
+}
+```
+
+Usage:
+
+```rust
+html! {
+    Card title="Welcome" {
+        "Body"
+    }
+
+    Card title="Welcome" (author="myypo") {
+        "Body"
+    }
+}
+```
+
+If a component has only defaulted props, it can be used without `()` and overridden only when needed:
+
+```rust
+html! {
+    Badge;
+    Badge (kind="warning");
+}
+```
+
 ## Generated helpers: inside vs outside the component
 
 Inside the component, bind generated helpers explicitly with:

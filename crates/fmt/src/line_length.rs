@@ -1,13 +1,32 @@
 use ast::{
     Attribute, AttributeKind, AttributeName, AttributeValueNode, DataContent, DataExprValue,
     ElementBody, ElementNode, Node, ParenExpr, Toggle,
-    component::{ComponentAttribute, ComponentAttributeValue},
+    component::{ComponentAttribute, ComponentAttributeValue, ComponentDefaultAttributes},
     control::{self, ControlBlock},
 };
 use syn::{Expr, Ident, Token, punctuated::Punctuated, spanned::Spanned};
 
 fn paren_expr_len<N: Node>(paren_expr: &ParenExpr<N>) -> Option<usize> {
     span_len(&paren_expr.expr).map(|len| len + 2)
+}
+
+fn component_attr_value_len(value: &ComponentAttributeValue) -> Option<usize> {
+    match value {
+        ComponentAttributeValue::Literal(literal) => span_len(literal),
+        ComponentAttributeValue::Ident(ident) => span_len(ident),
+        ComponentAttributeValue::Expr(paren_expr) => paren_expr_len(paren_expr),
+    }
+}
+
+fn component_attr_len(attr: &ComponentAttribute) -> Option<usize> {
+    let mut len = span_len(&attr.name)?;
+
+    if let Some(value) = &attr.value {
+        len += 1;
+        len += component_attr_value_len(value)?;
+    }
+
+    Some(len)
 }
 
 pub fn node_len(node: &ElementNode) -> Option<usize> {
@@ -116,6 +135,7 @@ pub fn element_len(ident: &Ident, attrs: &[Attribute], body: &ElementBody) -> Op
 pub fn component_len(
     ident: &Ident,
     attrs: &[ComponentAttribute],
+    default_attrs: Option<&ComponentDefaultAttributes>,
     dotdot: bool,
     body: &ElementBody,
 ) -> Option<usize> {
@@ -129,20 +149,20 @@ pub fn component_len(
         // ` `
         element_len += 1;
 
-        element_len += span_len(&attr.name)?;
-        let Some(value) = &attr.value else {
-            continue;
-        };
+        element_len += component_attr_len(attr)?;
+    }
 
-        // `=`
-        element_len += 1;
+    if let Some(default_attrs) = default_attrs {
+        // ` ` + `(` + `)`
+        element_len += 3;
 
-        match &value {
-            ComponentAttributeValue::Literal(literal) => element_len += span_len(literal)?,
-            ComponentAttributeValue::Ident(ident) => element_len += span_len(ident)?,
-            ComponentAttributeValue::Expr(paren_expr) => {
-                element_len += span_len(&paren_expr.expr).map(|len| len + 2)?
+        for (idx, attr) in default_attrs.attrs.iter().enumerate() {
+            if idx > 0 {
+                // ` `
+                element_len += 1;
             }
+
+            element_len += component_attr_len(attr)?;
         }
     }
 

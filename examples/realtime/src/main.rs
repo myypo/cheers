@@ -17,6 +17,7 @@ struct Ctx {
     stocks_tx: tokio::sync::broadcast::Sender<(String, String, u64)>,
 }
 
+#[derive(Refs)]
 struct Base<T> {
     children: T,
 }

@@ -1,12 +1,16 @@
 mod form;
 mod id;
+mod prop;
 mod signal;
 
 use proc_macro2::TokenStream;
 use quote::quote;
 use syn::{Attribute, Error, Ident, ItemStruct, Meta, Type, spanned::Spanned};
 
-use crate::refs::{form::generate_form_impl, id::generate_id_impls, signal::generate_signal_impl};
+use crate::refs::{
+    form::generate_form_impl, id::generate_id_impls, prop::generate_prop_impl,
+    signal::generate_signal_impl,
+};
 
 fn to_snake_case(s: &str) -> String {
     let mut result = String::new();
@@ -106,6 +110,7 @@ pub fn generate(mut item: ItemStruct) -> Result<TokenStream, Error> {
 
     let id_impl = generate_id_impls(&mut item, &struct_snake_case, id_field.clone())?;
     let form_impl = generate_form_impl(&mut item)?;
+    let prop_impl = generate_prop_impl(&mut item)?;
     let signal_impl = generate_signal_impl(item, struct_snake_case, id_field)?;
 
     Ok(quote! {
@@ -114,5 +119,7 @@ pub fn generate(mut item: ItemStruct) -> Result<TokenStream, Error> {
         #signal_impl
 
         #form_impl
+
+        #prop_impl
     })
 }

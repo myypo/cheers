@@ -162,6 +162,7 @@ fn opengraph_meta_property_attribute() {
 
 #[test]
 fn component() {
+    #[derive(Refs)]
     struct Repeater<R> {
         count: usize,
         children: R,
@@ -396,6 +397,7 @@ fn toggles() {
     );
 }
 
+#[derive(Refs)]
 struct Base<T> {
     children: T,
 }
@@ -501,7 +503,7 @@ fn scoped_signal_hash() {
 
     assert_eq!(
         result.as_inner(),
-        r#"<div data-on:interval="@get('/')"></div><p data-signals="{toggle3463295118:true,nested:{go42:{bye1528366059:'impressive'}}}"></p>"#
+        r#"<div data-on:interval="@get('/')"></div><p data-signals="{toggle3736150044:true,nested:{go42:{bye1986803641:'impressive'}}}"></p>"#
     );
 }
 
@@ -685,6 +687,218 @@ fn component_dotdot_default() {
     .render();
 
     assert_eq!(result.as_inner(), r#"<p>Great</p>"#);
+}
+
+#[test]
+fn component_default_prop_without_override() {
+    #[derive(Refs)]
+    struct Feedback<'a> {
+        text: &'a str,
+        #[prop(default("anonymous"))]
+        author: &'a str,
+    }
+
+    impl<'a> Render for Feedback<'a> {
+        fn render_to(&self, buffer: &mut Buffer<Element>) {
+            html! {
+                h3 { (self.author) }
+                p { (self.text) }
+            }
+            .render_to(buffer);
+        }
+    }
+
+    let result = html! {
+        Feedback text="Great";
+    }
+    .render();
+
+    assert_eq!(result.as_inner(), r#"<h3>anonymous</h3><p>Great</p>"#);
+}
+
+#[test]
+fn component_default_prop_with_override() {
+    #[derive(Refs)]
+    struct Feedback<'a> {
+        text: &'a str,
+        #[prop(default("anonymous"))]
+        author: &'a str,
+    }
+
+    impl<'a> Render for Feedback<'a> {
+        fn render_to(&self, buffer: &mut Buffer<Element>) {
+            html! {
+                h3 { (self.author) }
+                p { (self.text) }
+            }
+            .render_to(buffer);
+        }
+    }
+
+    let result = html! {
+        Feedback text="Great" (author="myypo");
+    }
+    .render();
+
+    assert_eq!(result.as_inner(), r#"<h3>myypo</h3><p>Great</p>"#);
+}
+
+#[test]
+fn component_default_prop_with_children() {
+    #[derive(Refs)]
+    struct Card<'a, R> {
+        title: &'a str,
+        #[prop(default("note"))]
+        kind: &'a str,
+        children: R,
+    }
+
+    impl<'a, R: Render> Render for Card<'a, R> {
+        fn render_to(&self, buffer: &mut Buffer<Element>) {
+            html! {
+                section {
+                    h2 { (self.title) }
+                    p { (self.kind) }
+                    div { (self.children) }
+                }
+            }
+            .render_to(buffer);
+        }
+    }
+
+    let result = html! {
+        Card title="Greetings" (kind="warning") {
+            span { "Hello" }
+        }
+    }
+    .render();
+
+    assert_eq!(
+        result.as_inner(),
+        r#"<section><h2>Greetings</h2><p>warning</p><div><span>Hello</span></div></section>"#
+    );
+}
+
+#[test]
+fn component_required_props_can_be_out_of_order() {
+    #[derive(Refs)]
+    struct Pair<'a> {
+        a: &'a str,
+        b: &'a str,
+    }
+
+    impl<'a> Render for Pair<'a> {
+        fn render_to(&self, buffer: &mut Buffer<Element>) {
+            html! {
+                p { (self.a) "-" (self.b) }
+            }
+            .render_to(buffer);
+        }
+    }
+
+    let result = html! {
+        Pair b="B" a="A";
+    }
+    .render();
+
+    assert_eq!(result.as_inner(), r#"<p>A-B</p>"#);
+}
+
+#[test]
+fn component_default_prop_with_filtered_where_clause() {
+    #[derive(Refs)]
+    struct Message<T, U>
+    where
+        U: Clone,
+    {
+        value: T,
+        #[prop(default(None))]
+        extra: Option<U>,
+    }
+
+    impl<T, U> Render for Message<T, U>
+    where
+        T: Display,
+        U: Clone + Display,
+    {
+        fn render_to(&self, buffer: &mut Buffer<Element>) {
+            let extra = self
+                .extra
+                .as_ref()
+                .map(ToString::to_string)
+                .unwrap_or_else(|| "none".to_string());
+
+            html! {
+                p { (self.value.to_string()) " / " (extra) }
+            }
+            .render_to(buffer);
+        }
+    }
+
+    let result = html! {
+        Message value=1 (extra=(Some("bonus")));
+    }
+    .render();
+
+    assert_eq!(result.as_inner(), r#"<p>1 / bonus</p>"#);
+}
+
+#[test]
+fn component_default_prop_can_use_old_builder_method_names() {
+    #[derive(Refs)]
+    struct BuilderNames<'a> {
+        #[prop(default("one"))]
+        build: &'a str,
+        #[prop(default("two"))]
+        build_with_children: &'a str,
+    }
+
+    impl<'a> Render for BuilderNames<'a> {
+        fn render_to(&self, buffer: &mut Buffer<Element>) {
+            html! {
+                p { (self.build) ":" (self.build_with_children) }
+            }
+            .render_to(buffer);
+        }
+    }
+
+    let result = html! {
+        BuilderNames (build="left" build_with_children="right");
+    }
+    .render();
+
+    assert_eq!(result.as_inner(), r#"<p>left:right</p>"#);
+}
+
+#[test]
+fn component_default_only_props() {
+    #[derive(Refs)]
+    struct Badge<'a> {
+        #[prop(default("info"))]
+        kind: &'a str,
+    }
+
+    impl<'a> Render for Badge<'a> {
+        fn render_to(&self, buffer: &mut Buffer<Element>) {
+            html! {
+                span { (self.kind) }
+            }
+            .render_to(buffer);
+        }
+    }
+
+    let default_result = html! {
+        Badge;
+    }
+    .render();
+
+    let overridden_result = html! {
+        Badge (kind="warning");
+    }
+    .render();
+
+    assert_eq!(default_result.as_inner(), r#"<span>info</span>"#);
+    assert_eq!(overridden_result.as_inner(), r#"<span>warning</span>"#);
 }
 
 #[test]

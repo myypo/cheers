@@ -47,8 +47,8 @@ fn expand_attribute_literal(tokens: proc_macro::TokenStream) -> proc_macro::Toke
         .into()
 }
 
-#[proc_macro_derive(Refs, attributes(id, signal, form, form_derive))]
-/// Derives id, signal, and form helpers for a component struct.
+#[proc_macro_derive(Refs, attributes(id, signal, form, form_derive, prop))]
+/// Derives id, signal, form, and component-prop helpers for a component struct.
 ///
 /// This derive does **not** implement `Render`. A type becomes
 ///
@@ -65,6 +65,7 @@ fn expand_attribute_literal(tokens: proc_macro::TokenStream) -> proc_macro::Toke
 ///   `#[signal(name: Type)]`; inside the component, bind those signals with [`signals!`]
 /// - form field-name bindings and a deserializable `...Form` type from `#[form]` and
 ///   `#[form_derive(...)]`; inside the component, bind those names with [`form_names!`]
+/// - support for `#[prop(default(...))]`
 ///
 /// Form names are component-local and are not meant to be referenced from outside the
 /// component. Ids and signals can be referenced from outside through the generated associated
@@ -90,6 +91,7 @@ fn expand_attribute_literal(tokens: proc_macro::TokenStream) -> proc_macro::Toke
 ///   attributes, to the generated form field.
 /// - `#[form(name: Type)]` on the struct adds an extra field to the generated form type.
 /// - `#[form_derive(...)]` adds derives to the generated `...Form` type.
+/// - `#[prop(default(...))]` marks a component field as optional when used from `html!`.
 ///
 /// # Example
 ///

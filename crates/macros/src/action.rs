@@ -6,7 +6,10 @@ use syn::{
     parse::{Parse, ParseStream},
 };
 
-use crate::{MaybeItemFn, shared::filter_generics};
+use crate::{
+    MaybeItemFn,
+    shared::{filter_generics, to_pascal_case},
+};
 
 pub struct ActionArgs {
     method: Ident,
@@ -85,24 +88,6 @@ impl ActionFieldArgs {
             path: path_args.unwrap_or_default(),
         })
     }
-}
-
-fn to_pascal_case(s: &str) -> String {
-    let mut result = String::new();
-    let mut capitalize_next = true;
-
-    for c in s.chars() {
-        if c == '_' {
-            capitalize_next = true;
-        } else if capitalize_next {
-            result.push(c.to_ascii_uppercase());
-            capitalize_next = false;
-        } else {
-            result.push(c);
-        }
-    }
-
-    result
 }
 
 fn state(sig: &Signature) -> GenericArgument {

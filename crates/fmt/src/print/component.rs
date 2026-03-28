@@ -4,11 +4,40 @@ use crate::{line_length::component_len, print::Printer};
 
 // TODO: abstract over components and elements to dedup code
 impl<'a, 'b> Printer<'a, 'b> {
+    fn print_component_attr_value(
+        &mut self,
+        value: ComponentAttributeValue,
+        attr_indent_level: usize,
+    ) {
+        match value {
+            ComponentAttributeValue::Literal(literal) => self.print_tokens(literal),
+            ComponentAttributeValue::Ident(ident) => self.write(&ident.to_string()),
+            ComponentAttributeValue::Expr(paren_expr) => {
+                self.print_paren_expr(paren_expr, attr_indent_level)
+            }
+        }
+    }
+
+    fn print_component_attr(
+        &mut self,
+        attr: ast::component::ComponentAttribute,
+        attr_indent_level: usize,
+    ) {
+        self.write(&attr.name.to_string());
+        let Some(value) = attr.value else {
+            return;
+        };
+
+        self.write("=");
+        self.print_component_attr_value(value, attr_indent_level);
+    }
+
     pub fn print_component(
         &mut self,
         Component {
             name,
             attrs,
+            default_attrs,
             dotdot,
             body,
         }: Component,
@@ -19,7 +48,13 @@ impl<'a, 'b> Printer<'a, 'b> {
 
         let preserve_blank_lines = preserve_blank_lines && !will_collapse_block;
 
-        let element_opening_len = component_len(&name, &attrs, dotdot.is_some(), &body);
+        let element_opening_len = component_len(
+            &name,
+            &attrs,
+            default_attrs.as_ref(),
+            dotdot.is_some(),
+            &body,
+        );
         let should_wrap = if let Some(element_opening_len) = element_opening_len {
             (self.line_len() + element_opening_len) > self.options.line_length
         } else {
@@ -35,6 +70,7 @@ impl<'a, 'b> Printer<'a, 'b> {
         } else {
             indent_level
         };
+        let has_attrs = !attrs.is_empty();
 
         for (idx, attr) in attrs.into_iter().enumerate() {
             if !should_wrap {
@@ -47,21 +83,31 @@ impl<'a, 'b> Printer<'a, 'b> {
                 self.new_line(indent_level + 1);
             }
 
-            self.write(&attr.name.to_string());
-            let Some(value) = attr.value else {
-                continue;
-            };
-
-            self.write("=");
-
-            match value {
-                ComponentAttributeValue::Literal(literal) => self.print_tokens(literal),
-                ComponentAttributeValue::Ident(ident) => self.write(&ident.to_string()),
-                ComponentAttributeValue::Expr(paren_expr) => {
-                    self.print_paren_expr(paren_expr, attr_indent_level)
-                }
-            }
+            self.print_component_attr(attr, attr_indent_level);
         }
+
+        if let Some(default_attrs) = default_attrs {
+            if !should_wrap {
+                self.write(" ");
+            } else if !has_attrs && element_name_len < 4 {
+                self.write(&" ".repeat(4 - element_name_len));
+            } else {
+                self.new_line(indent_level + 1);
+            }
+
+            self.write("(");
+
+            for (idx, attr) in default_attrs.attrs.into_iter().enumerate() {
+                if idx > 0 {
+                    self.write(" ");
+                }
+
+                self.print_component_attr(attr, attr_indent_level);
+            }
+
+            self.write(")");
+        }
+
         if dotdot.is_some() {
             self.write(" ");
             self.write("..");
@@ -151,6 +197,18 @@ mod test {
     );
 
     test_default!(
+        component_with_default_override_group,
+        r#"
+        html! { Card title="Welcome"(author="me") { "Content" } }
+        "#,
+        r#"
+        html! {
+            Card title="Welcome" (author="me") { "Content" }
+        }
+        "#
+    );
+
+    test_default!(
         component_shorthand_attributes,
         r#"
         html! { Profile username email age { "User details" } }
@@ -208,6 +266,23 @@ mod test {
             MyComponent
                 very_long_attribute_name="value"
                 another_long_attr="data"
+            { "Content" }
+        }
+        "#
+    );
+
+    test_small_line!(
+        component_wrapping_default_override_group,
+        r#"
+        html! {
+        MyComponent very_long_attribute_name="value"(another_long_attr="data") { "Content" }
+        }
+        "#,
+        r#"
+        html! {
+            MyComponent
+                very_long_attribute_name="value"
+                (another_long_attr="data")
             { "Content" }
         }
         "#
