@@ -1,8 +1,4 @@
-use std::{
-    collections::BTreeMap,
-    iter,
-    ops::{Deref, DerefMut},
-};
+use std::{collections::BTreeMap, iter};
 
 use proc_macro2::{Ident, Span, TokenStream};
 use quote::{ToTokens, TokenStreamExt, quote, quote_spanned};
@@ -423,7 +419,11 @@ impl Generator {
     }
 
     pub fn record_element(&mut self, el_checks: ElementCheck) {
-        self.checks.push(el_checks);
+        self.checks.push_element(el_checks);
+    }
+
+    pub fn push_diagnostic(&mut self, diagnostic: impl ToTokens) {
+        self.checks.push_diagnostic(diagnostic.to_token_stream());
     }
 
     pub const fn node_flavour(&self) -> NodeFlavour {
@@ -474,17 +474,32 @@ impl<T: Generate> Generate for &mut T {
 
 struct Checks {
     elements: Vec<ElementCheck>,
+    recovered_errors: Vec<TokenStream>,
 }
 
 impl Checks {
     const fn new() -> Self {
         Self {
             elements: Vec::new(),
+            recovered_errors: Vec::new(),
         }
     }
 
     fn append(&mut self, other: &mut Self) {
         self.elements.append(&mut other.elements);
+        self.recovered_errors.append(&mut other.recovered_errors);
+    }
+
+    fn is_empty(&self) -> bool {
+        self.elements.is_empty() && self.recovered_errors.is_empty()
+    }
+
+    fn push_element(&mut self, element: ElementCheck) {
+        self.elements.push(element);
+    }
+
+    fn push_diagnostic(&mut self, diagnostic: TokenStream) {
+        self.recovered_errors.push(diagnostic);
     }
 }
 
@@ -492,6 +507,10 @@ impl ToTokens for Checks {
     fn to_tokens(&self, tokens: &mut TokenStream) {
         if self.is_empty() {
             return;
+        }
+
+        for diagnostic in &self.recovered_errors {
+            diagnostic.to_tokens(tokens);
         }
 
         let mut by_module: BTreeMap<ValidationModule, Vec<&ElementCheck>> = BTreeMap::new();
@@ -522,25 +541,10 @@ impl ToTokens for Checks {
     }
 }
 
-impl Deref for Checks {
-    type Target = Vec<ElementCheck>;
-
-    fn deref(&self) -> &Self::Target {
-        &self.elements
-    }
-}
-
-impl DerefMut for Checks {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.elements
-    }
-}
-
 pub struct ElementCheck {
     module: ValidationModule,
     ident: UnquotedName,
     kind: ElementKind,
-    closing_spans: Vec<Span>,
     attributes: Vec<AttributeNameCheck>,
 }
 
@@ -554,13 +558,8 @@ impl ElementCheck {
             module,
             ident: el_name.clone(),
             kind: element_kind,
-            closing_spans: Vec::new(),
             attributes: Vec::new(),
         }
-    }
-
-    pub fn set_closing_spans(&mut self, spans: Vec<Span>) {
-        self.closing_spans = spans;
     }
 
     pub fn push_attribute(&mut self, attr: AttributeNameCheck) {

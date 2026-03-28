@@ -232,17 +232,18 @@ impl Attribute {
     fn check(&self) -> Option<AttributeNameCheck> {
         match &self {
             Attribute::Regular { name, .. } => name.check(false),
-            Attribute::Data(data) => match &data.namespace {
-                Some(namespace) => Some(AttributeNameCheck::new(
+            Attribute::Data(data) => match (&data.namespace, data.name.ident()) {
+                (Some(namespace), Some(name)) => Some(AttributeNameCheck::new(
                     AttributeNameCheckKind::Namespace(namespace.clone()),
-                    data.name.clone(),
+                    name.clone(),
                     true,
                 )),
-                None => Some(AttributeNameCheck::new(
+                (None, Some(name)) => Some(AttributeNameCheck::new(
                     AttributeNameCheckKind::Normal,
-                    data.name.clone(),
+                    name.clone(),
                     true,
                 )),
+                _ => None,
             },
         }
     }
@@ -557,6 +558,32 @@ impl<V: Parse> Parse for DataExprValue<V> {
     }
 }
 
+#[derive(Clone)]
+pub enum DataName {
+    Present(UnquotedName),
+    Missing(Span),
+}
+
+impl DataName {
+    pub fn ident(&self) -> Option<&UnquotedName> {
+        match self {
+            Self::Present(name) => Some(name),
+            Self::Missing(_) => None,
+        }
+    }
+
+    pub fn lit(&self) -> Option<LitStr> {
+        self.ident().map(UnquotedName::lit)
+    }
+
+    pub fn span(&self) -> Span {
+        match self {
+            Self::Present(name) => name.span(),
+            Self::Missing(span) => *span,
+        }
+    }
+}
+
 #[allow(clippy::large_enum_variant)]
 pub enum DataContent {
     Node(AttributeValueNode),
@@ -565,115 +592,164 @@ pub enum DataContent {
     Computed(Punctuated<DataExprValue<AttributeValueNode>, Token![,]>),
     Bind(Expr),
     Empty,
+    /// Fallback for parsing failures that allows rust-analyzer to emit better completions
+    Recovered,
 }
 
 pub struct Data {
     pub namespace: Option<UnquotedName>,
-    pub name: UnquotedName,
-    paren_token: Paren,
+    pub name: DataName,
+    paren_token: Option<Paren>,
     pub content: DataContent,
+    recovery_error: Option<Error>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum DataParseKind {
+    Node,
+    Signals,
+    Kv,
+    Computed,
+    Bind,
+}
+
+impl DataParseKind {
+    fn new(name: Option<&UnquotedName>) -> Self {
+        match name {
+            Some(name) if name == &"signals" => Self::Signals,
+            Some(name) if name == &"style" || name == &"attr" => Self::Kv,
+            Some(name) if name == &"computed" => Self::Computed,
+            Some(name) if name == &"indicator" || name == &"bind" => Self::Bind,
+            _ => Self::Node,
+        }
+    }
+
+    fn parse_content(self, input: ParseStream) -> syn::Result<DataContent> {
+        match self {
+            Self::Signals => Ok(DataContent::Signals(Punctuated::<
+                DataExprValue<Expr>,
+                Token![,],
+            >::parse_terminated(input)?)),
+            Self::Kv => Ok(DataContent::Kv(Punctuated::<
+                DataExprValue<AttributeValueNode>,
+                Token![,],
+            >::parse_terminated(input)?)),
+            Self::Computed => Ok(DataContent::Computed(Punctuated::<
+                DataExprValue<AttributeValueNode>,
+                Token![,],
+            >::parse_terminated(
+                input
+            )?)),
+            Self::Bind => Ok(DataContent::Bind(input.parse()?)),
+            Self::Node => Ok(DataContent::Node(input.parse()?)),
+        }
+    }
 }
 
 impl Parse for Data {
-    // TODO: get rid of string literals here
-    // should rather use some kind of enums
     fn parse(input: ParseStream) -> syn::Result<Self> {
         let mut namespace = None::<UnquotedName>;
+        let mut recovery_error = None;
 
         if input.peek2(Token![:]) {
             namespace = Some(input.parse()?);
             input.parse::<Token![:]>()?;
         }
-        let name = input.parse().unwrap_or_else(|_| {
-            UnquotedName(Ident::new(
-                "EMPTY",
-                namespace
+        let name = match input.parse() {
+            Ok(name) => DataName::Present(name),
+            Err(_) => {
+                let span = namespace
                     .as_ref()
-                    .map(|n| n.span())
-                    .unwrap_or_else(Span::mixed_site),
-            ))
-        });
+                    .map(UnquotedName::span)
+                    .unwrap_or_else(Span::mixed_site);
 
-        // TODO: come up with a way to generate some tokens
-        // that prevent compilation when the attribute has to have a value
+                recovery_error = Some(if let Some(namespace) = &namespace {
+                    Error::new(
+                        span,
+                        format!(
+                            "expected data attribute name after `{}:`",
+                            namespace.lit().value()
+                        ),
+                    )
+                } else {
+                    Error::new(span, "expected data attribute name after `!`")
+                });
+
+                DataName::Missing(span)
+            }
+        };
+
         if !input.peek(Paren) {
             return Ok(Data {
                 name,
                 namespace,
-                paren_token: Paren::default(),
-                content: DataContent::Empty,
+                paren_token: None,
+                content: if recovery_error.is_some() {
+                    DataContent::Recovered
+                } else {
+                    DataContent::Empty
+                },
+                recovery_error,
             });
         }
 
         let data;
         let paren_token = parenthesized!(data in input);
 
-        if name == "signals" {
+        if recovery_error.is_some() {
             return Ok(Self {
                 namespace,
                 name,
-                paren_token,
-                content: DataContent::Signals(
-                    Punctuated::<DataExprValue<Expr>, Token![,]>::parse_terminated(&data)?,
-                ),
+                paren_token: Some(paren_token),
+                content: DataContent::Recovered,
+                recovery_error,
             });
         }
-        if name == "style" || name == "attr" {
-            return Ok(Self {
-                namespace,
-                name,
-                paren_token,
-                content: DataContent::Kv(
-                    Punctuated::<DataExprValue<AttributeValueNode>, Token![,]>::parse_terminated(
-                        &data,
-                    )?,
-                ),
-            });
-        }
-        if name == "computed" {
-            return Ok(Self {
-                namespace,
-                name,
-                paren_token,
-                content: DataContent::Computed(Punctuated::<
-                    DataExprValue<AttributeValueNode>,
-                    Token![,],
-                >::parse_terminated(&data)?),
-            });
-        }
-        if name == "indicator" || name == "bind" {
-            return Ok(Self {
-                namespace,
-                name,
-                paren_token,
-                content: DataContent::Bind(data.parse()?),
-            });
-        }
+
+        let parse_kind = DataParseKind::new(name.ident());
+        let content = match parse_kind.parse_content(&data) {
+            Ok(content) => content,
+            Err(err) => {
+                recovery_error = Some(err);
+                DataContent::Recovered
+            }
+        };
 
         Ok(Self {
             namespace,
             name,
-            paren_token,
-            content: data
-                .parse()
-                .map(DataContent::Node)
-                .unwrap_or_else(|_| DataContent::Empty),
+            paren_token: Some(paren_token),
+            content,
+            recovery_error,
         })
     }
 }
 
 impl Data {
+    pub const fn has_parens(&self) -> bool {
+        self.paren_token.is_some()
+    }
+
+    fn paren_token(&self) -> Paren {
+        self.paren_token.unwrap_or_default()
+    }
+
     fn name_literals(&self) -> Vec<LitStr> {
-        let name = self.name.lit();
-        let name_str = name.value();
-        // TODO: I think, we should update everything to use snake_case
-        let name = LitStr::new(&name_str.replace('_', "-"), name.span());
+        let mut literals = Vec::new();
 
         if let Some(namespace) = &self.namespace {
-            vec![namespace.lit(), LitStr::new(":", namespace.span()), name]
-        } else {
-            vec![name]
+            literals.push(namespace.lit());
+            literals.push(LitStr::new(":", namespace.span()));
         }
+
+        if let Some(name) = self.name.lit() {
+            let name_str = name.value();
+            // TODO: I think, we should update everything to use snake_case
+            let name = LitStr::new(&name_str.replace('_', "-"), name.span());
+            literals.push(name);
+        }
+
+        literals
     }
 }
 
@@ -681,7 +757,13 @@ impl Generate for Data {
     const CONTEXT: Context = Context::AttributeValue;
 
     fn generate(&mut self, g: &mut Generator) {
+        if let Some(recovery_error) = &self.recovery_error {
+            g.push_diagnostic(recovery_error.to_compile_error());
+        }
+
         let name_literals = self.name_literals();
+        let paren_token = self.paren_token();
+        let has_parens = self.has_parens();
 
         match &mut self.content {
             DataContent::Signals(signals) => {
@@ -726,7 +808,7 @@ impl Generate for Data {
                         first = false;
                     }
 
-                    g.push_expr(self.paren_token, Self::CONTEXT, &d.ident);
+                    g.push_expr(paren_token, Self::CONTEXT, &d.ident);
                     g.push_str(":");
                     g.push(&mut d.value);
                 }
@@ -769,7 +851,7 @@ impl Generate for Data {
                 g.push_literals(name_literals);
                 g.push_str("=\"");
                 g.push_expr(
-                    self.paren_token,
+                    paren_token,
                     Context::AttributeValue,
                     quote! { ::cheers::prelude::Signal::__path(&#expr) },
                 );
@@ -779,6 +861,67 @@ impl Generate for Data {
                 g.push_str(" data-");
                 g.push_literals(self.name_literals());
             }
+            DataContent::Recovered => {
+                g.push_str(" data-");
+                g.push_literals(name_literals);
+                if has_parens {
+                    g.push_str("=\"\"");
+                }
+            }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use syn::parse_str;
+
+    use super::{Attribute, DataContent, DataName};
+
+    #[test]
+    fn data_attribute_recovers_missing_name_without_placeholder() {
+        let attr = parse_str::<Attribute>("!").unwrap();
+
+        let Attribute::Data(data) = attr else {
+            panic!("expected data attribute");
+        };
+
+        assert!(matches!(data.name, DataName::Missing(_)));
+        assert!(matches!(data.content, DataContent::Recovered));
+        assert!(data.recovery_error.is_some());
+        assert!(!data.has_parens());
+    }
+
+    #[test]
+    fn data_attribute_recovers_invalid_payload() {
+        let attr = parse_str::<Attribute>("!on:click()").unwrap();
+
+        let Attribute::Data(data) = attr else {
+            panic!("expected data attribute");
+        };
+
+        assert!(
+            data.namespace
+                .as_ref()
+                .is_some_and(|namespace| namespace == &"on")
+        );
+        assert!(matches!(data.name, DataName::Present(ref name) if name == &"click"));
+        assert!(matches!(data.content, DataContent::Recovered));
+        assert!(data.recovery_error.is_some());
+        assert!(data.has_parens());
+    }
+
+    #[test]
+    fn data_attribute_flags_remain_distinct_from_recovery() {
+        let attr = parse_str::<Attribute>("!ignore").unwrap();
+
+        let Attribute::Data(data) = attr else {
+            panic!("expected data attribute");
+        };
+
+        assert!(matches!(data.name, DataName::Present(ref name) if name == &"ignore"));
+        assert!(matches!(data.content, DataContent::Empty));
+        assert!(data.recovery_error.is_none());
+        assert!(!data.has_parens());
     }
 }

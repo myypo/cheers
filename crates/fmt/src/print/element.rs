@@ -94,7 +94,9 @@ impl<'a, 'b> Printer<'a, 'b> {
                         self.write(":");
                     }
 
-                    self.write(&data.name.lit().value());
+                    if let Some(name) = data.name.lit() {
+                        self.write(&name.value());
+                    }
 
                     let attr_indent_level = if should_wrap {
                         indent_level + 1
@@ -175,6 +177,12 @@ impl<'a, 'b> Printer<'a, 'b> {
                             self.write(")");
                         }
                         DataContent::Empty => {}
+                        DataContent::Recovered => {
+                            if data.has_parens() {
+                                self.write("(");
+                                self.write(")");
+                            }
+                        }
                     }
                 }
             }

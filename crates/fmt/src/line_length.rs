@@ -67,9 +67,11 @@ pub fn element_len(ident: &Ident, attrs: &[Attribute], body: &ElementBody) -> Op
                     element_len += 1;
                 }
 
-                element_len += span_len(&data.name.0)?;
+                if let Some(name) = data.name.ident() {
+                    element_len += span_len(&name.0)?;
+                }
 
-                if !matches!(data.content, DataContent::Empty) {
+                if data.has_parens() {
                     // `(` + `)` = 2
                     element_len += 2;
                 }
@@ -90,7 +92,7 @@ pub fn element_len(ident: &Ident, attrs: &[Attribute], body: &ElementBody) -> Op
                     DataContent::Computed(decls) => {
                         element_len += data_decl_len_attr_values(decls)?;
                     }
-                    DataContent::Empty => {}
+                    DataContent::Empty | DataContent::Recovered => {}
                 }
             }
         }
