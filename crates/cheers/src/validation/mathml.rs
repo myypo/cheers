@@ -65,7 +65,7 @@ pub mod elements {
                 )?
 
                 impl $crate::validation::Element for $name {
-                    type Kind = $crate::validation::Normal;
+                    type Kind = $crate::validation::Xml;
                 }
 
                 impl super::MathMlGlobalAttributes for $name {}

@@ -1,4 +1,5 @@
 use std::{
+    collections::BTreeMap,
     iter,
     ops::{Deref, DerefMut},
 };
@@ -20,7 +21,15 @@ fn pinned_stream_tokens_expr(stream: &TokenStream) -> TokenStream {
 }
 
 pub fn lazy<T: Parse + Generate>(tokens: TokenStream, move_: bool) -> Result<TokenStream, Error> {
-    let mut g = Generator::new_closure(T::CONTEXT);
+    lazy_with_flavour::<T>(tokens, move_, NodeFlavour::Html)
+}
+
+pub fn lazy_with_flavour<T: Parse + Generate>(
+    tokens: TokenStream,
+    move_: bool,
+    flavour: NodeFlavour,
+) -> Result<TokenStream, Error> {
+    let mut g = Generator::new_closure(T::CONTEXT, flavour);
 
     g.push(syn::parse2::<T>(tokens)?);
 
@@ -42,7 +51,7 @@ pub fn lazy<T: Parse + Generate>(tokens: TokenStream, move_: bool) -> Result<Tok
     if block.async_stmts.is_empty() {
         tokens.append_all(quote! {
             {
-                use ::cheers::validation::{elements, attributes::*};
+                use ::cheers::validation::attributes::*;
 
                 ::cheers::prelude::Lazy::<_, #marker_ident>::dangerously_create(
                     #move_token |#buffer_ident: &mut ::cheers::prelude::Buffer<#marker_ident>| {
@@ -58,7 +67,7 @@ pub fn lazy<T: Parse + Generate>(tokens: TokenStream, move_: bool) -> Result<Tok
 
         tokens.append_all(quote! {
             {
-                use ::cheers::validation::{elements, attributes::*};
+                use ::cheers::validation::attributes::*;
 
                 let lazy = ::cheers::prelude::Lazy::<_, #marker_ident>::dangerously_create(
                     #move_token |#buffer_ident: &mut ::cheers::prelude::Buffer<#marker_ident>| {
@@ -78,7 +87,14 @@ pub fn lazy<T: Parse + Generate>(tokens: TokenStream, move_: bool) -> Result<Tok
 }
 
 pub fn literal<T: Parse + Generate>(tokens: TokenStream) -> syn::Result<TokenStream> {
-    let mut g = Generator::new_static(T::CONTEXT);
+    literal_with_flavour::<T>(tokens, NodeFlavour::Html)
+}
+
+pub fn literal_with_flavour<T: Parse + Generate>(
+    tokens: TokenStream,
+    flavour: NodeFlavour,
+) -> syn::Result<TokenStream> {
+    let mut g = Generator::new_static(T::CONTEXT, flavour);
 
     g.push(syn::parse2::<T>(tokens)?);
 
@@ -88,15 +104,91 @@ pub fn literal<T: Parse + Generate>(tokens: TokenStream) -> syn::Result<TokenStr
 
     Ok(quote! {
         {
-            use ::cheers::validation::{elements, attributes::*};
+            use ::cheers::validation::attributes::*;
             ::cheers::Raw::<_, #marker_ident>::dangerously_create(#literal)
         }
     })
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum NodeFlavour {
+    Html,
+    Xml(XmlFlavour),
+}
+
+impl NodeFlavour {
+    pub const fn void_close(self) -> &'static str {
+        match self {
+            Self::Html => ">",
+            Self::Xml(_) => "/>",
+        }
+    }
+
+    pub const fn elements_module(self) -> ValidationModule {
+        match self {
+            Self::Html => ValidationModule::Html,
+            Self::Xml(XmlFlavour::Svg) => ValidationModule::Svg,
+            Self::Xml(XmlFlavour::MathMl) => ValidationModule::MathMl,
+        }
+    }
+
+    pub const fn element_kind(self, is_void: bool) -> ElementKind {
+        match self {
+            Self::Html => {
+                if is_void {
+                    ElementKind::Void
+                } else {
+                    ElementKind::Normal
+                }
+            }
+            Self::Xml(_) => ElementKind::Xml,
+        }
+    }
+
+    pub fn child_flavour(self, element_name: &UnquotedName) -> Self {
+        match self {
+            Self::Html => match element_name {
+                name if name == &"svg" => Self::Xml(XmlFlavour::Svg),
+                name if name == &"math" => Self::Xml(XmlFlavour::MathMl),
+                _ => self,
+            },
+            Self::Xml(XmlFlavour::Svg) => match element_name {
+                name if name == &"foreignObject" => Self::Html,
+                _ => self,
+            },
+            Self::Xml(XmlFlavour::MathMl) => self,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum XmlFlavour {
+    Svg,
+    MathMl,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub enum ValidationModule {
+    Html,
+    Svg,
+    MathMl,
+}
+
+impl ToTokens for ValidationModule {
+    fn to_tokens(&self, tokens: &mut TokenStream) {
+        match self {
+            Self::Html => quote!(::cheers::validation::elements),
+            Self::Svg => quote!(::cheers::validation::svg::elements),
+            Self::MathMl => quote!(::cheers::validation::mathml::elements),
+        }
+        .to_tokens(tokens);
+    }
+}
+
 pub struct Generator {
     lazy: bool,
     context: Context,
+    flavour: NodeFlavour,
     brace_token: Brace,
     parts: Vec<Part>,
     checks: Checks,
@@ -109,18 +201,24 @@ impl Generator {
         Ident::new("__hypertext_buffer", Span::mixed_site())
     }
 
-    fn new_closure(context: Context) -> Self {
-        Self::new_with_brace(context, true, Brace::default())
+    fn new_closure(context: Context, flavour: NodeFlavour) -> Self {
+        Self::new_with_brace(context, true, Brace::default(), flavour)
     }
 
-    fn new_static(context: Context) -> Self {
-        Self::new_with_brace(context, false, Brace::default())
+    fn new_static(context: Context, flavour: NodeFlavour) -> Self {
+        Self::new_with_brace(context, false, Brace::default(), flavour)
     }
 
-    const fn new_with_brace(context: Context, lazy: bool, brace_token: Brace) -> Self {
+    const fn new_with_brace(
+        context: Context,
+        lazy: bool,
+        brace_token: Brace,
+        flavour: NodeFlavour,
+    ) -> Self {
         Self {
             lazy,
             context,
+            flavour,
             brace_token,
             parts: Vec::new(),
             checks: Checks::new(),
@@ -213,7 +311,17 @@ impl Generator {
         f: impl FnOnce(&mut Self),
         append_async: bool,
     ) -> AnyBlock {
-        let mut g = Self::new_with_brace(self.context, true, brace_token);
+        self.block_with_flavour(brace_token, self.flavour, f, append_async)
+    }
+
+    pub fn block_with_flavour(
+        &mut self,
+        brace_token: Brace,
+        flavour: NodeFlavour,
+        f: impl FnOnce(&mut Self),
+        append_async: bool,
+    ) -> AnyBlock {
+        let mut g = Self::new_with_brace(self.context, true, brace_token, flavour);
 
         f(&mut g);
 
@@ -223,6 +331,18 @@ impl Generator {
         }
 
         g.finish()
+    }
+
+    pub fn push_with_flavour(&mut self, flavour: NodeFlavour, f: impl FnOnce(&mut Self)) {
+        if self.lazy {
+            let block = self.block_with_flavour(Brace::default(), flavour, f, true);
+            self.push_stmt(block);
+        } else {
+            let mut g = Self::new_with_brace(self.context, false, Brace::default(), flavour);
+            f(&mut g);
+            self.checks.append(&mut g.checks);
+            self.parts.extend(g.parts);
+        }
     }
 
     pub fn push_in_block(&mut self, brace_token: Brace, f: impl FnOnce(&mut Self)) {
@@ -306,6 +426,10 @@ impl Generator {
         self.checks.push(el_checks);
     }
 
+    pub const fn node_flavour(&self) -> NodeFlavour {
+        self.flavour
+    }
+
     pub fn push_all(&mut self, values: impl IntoIterator<Item = impl Generate>) {
         for value in values {
             self.push(value);
@@ -370,25 +494,31 @@ impl ToTokens for Checks {
             return;
         }
 
-        let checks = &self.elements;
-
-        quote! {
-            const _: fn() = || {
-                #[allow(unused_imports)]
-                use elements::*;
-
-                #[doc(hidden)]
-                /// Used by the `html!`, `html_borrow!`, `html_static!`, `attribute!`,
-                /// `attribute_borrow!`, and `attribute_static!` macros to trigger
-                /// compile-time element validation.
-                fn check_element<
-                    K: ::cheers::validation::ElementKind
-                >(_: impl ::cheers::validation::Element<Kind = K>) {}
-
-                #(#checks)*
-            };
+        let mut by_module: BTreeMap<ValidationModule, Vec<&ElementCheck>> = BTreeMap::new();
+        for check in &self.elements {
+            by_module.entry(check.module).or_default().push(check);
         }
-        .to_tokens(tokens);
+
+        for (module, checks) in by_module {
+            quote! {
+                const _: fn() = || {
+                    #[allow(unused_imports)]
+                    use #module::*;
+
+                    #[doc(hidden)]
+                    /// Used by the `html!`, `html_borrow!`, `html_static!`, `svg!`,
+                    /// `svg_borrow!`, `svg_static!`, `attribute!`, `attribute_borrow!`,
+                    /// and `attribute_static!` macros to trigger compile-time element
+                    /// validation.
+                    fn check_element<
+                        K: ::cheers::validation::ElementKind
+                    >(_: impl ::cheers::validation::Element<Kind = K>) {}
+
+                    #(#checks)*
+                };
+            }
+            .to_tokens(tokens);
+        }
     }
 }
 
@@ -407,6 +537,7 @@ impl DerefMut for Checks {
 }
 
 pub struct ElementCheck {
+    module: ValidationModule,
     ident: UnquotedName,
     kind: ElementKind,
     closing_spans: Vec<Span>,
@@ -414,8 +545,13 @@ pub struct ElementCheck {
 }
 
 impl ElementCheck {
-    pub fn new(el_name: &UnquotedName, element_kind: ElementKind) -> Self {
+    pub fn new(
+        el_name: &UnquotedName,
+        element_kind: ElementKind,
+        module: ValidationModule,
+    ) -> Self {
         Self {
+            module,
             ident: el_name.clone(),
             kind: element_kind,
             closing_spans: Vec::new(),
@@ -460,6 +596,7 @@ impl ToTokens for ElementCheck {
 pub enum ElementKind {
     Normal,
     Void,
+    Xml,
 }
 
 impl ToTokens for ElementKind {
@@ -467,6 +604,7 @@ impl ToTokens for ElementKind {
         match self {
             Self::Normal => quote!(::cheers::validation::Normal),
             Self::Void => quote!(::cheers::validation::Void),
+            Self::Xml => quote!(::cheers::validation::Xml),
         }
         .to_tokens(tokens);
     }
@@ -512,6 +650,17 @@ impl AttributeNameCheck {
                     }
                 }
             }
+            AttributeNameCheckKind::NamespaceOnly(namespace) => {
+                if self.data {
+                    quote! {
+                        let _: ::cheers::validation::AttributeNamespace = ::cheers::validation::data::#namespace::Namespace;
+                    }
+                } else {
+                    quote! {
+                        let _: ::cheers::validation::AttributeNamespace = <#el>::#namespace;
+                    }
+                }
+            }
         }
     }
 }
@@ -519,6 +668,7 @@ impl AttributeNameCheck {
 pub enum AttributeNameCheckKind {
     Normal,
     Namespace(UnquotedName),
+    NamespaceOnly(UnquotedName),
 }
 
 pub struct AnyBlock {

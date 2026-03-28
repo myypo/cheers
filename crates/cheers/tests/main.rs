@@ -14,7 +14,7 @@ use axum::{
 };
 use cheers::{
     components::{Debugged, Displayed, Doctype, Scripts},
-    macros::html_borrow,
+    macros::{html_borrow, svg_borrow, svg_static},
     prelude::*,
 };
 use futures::StreamExt;
@@ -262,6 +262,110 @@ fn mathml() {
 }
 
 #[test]
+fn svg_embedded_in_html() {
+    let result = html! {
+        div {
+            svg width="100" height="100" {
+                circle cx="50" cy="50" r="40" fill="red";
+            }
+        }
+    }
+    .render();
+
+    assert_eq!(
+        result.as_inner(),
+        r#"<div><svg width="100" height="100"><circle cx="50" cy="50" r="40" fill="red"/></svg></div>"#
+    );
+}
+
+#[test]
+fn svg_root_self_closing_children() {
+    let result = html! {
+        svg viewBox="0 0 100 100" {
+            rect x="10" y="10" width="80" height="80";
+            line x1="0" y1="0" x2="100" y2="100" stroke="black";
+        }
+    }
+    .render();
+
+    assert_eq!(
+        result.as_inner(),
+        r#"<svg viewBox="0 0 100 100"><rect x="10" y="10" width="80" height="80"/><line x1="0" y1="0" x2="100" y2="100" stroke="black"/></svg>"#
+    );
+}
+
+#[test]
+fn svg_nested_children() {
+    let result = html! {
+        div {
+            svg viewBox="0 0 200 200" {
+                g transform="translate(10,10)" {
+                    circle cx="50" cy="50" r="40";
+                }
+            }
+        }
+    }
+    .render();
+
+    assert_eq!(
+        result.as_inner(),
+        r#"<div><svg viewBox="0 0 200 200"><g transform="translate(10,10)"><circle cx="50" cy="50" r="40"/></g></svg></div>"#
+    );
+}
+
+#[test]
+fn svg_namespace_attributes() {
+    let result = html! {
+        svg viewBox="0 0 10 10" {
+            g xml:lang="en" xmlns:sprite="urn:cheers:test" {
+                circle cx="5" cy="5" r="4";
+            }
+        }
+    }
+    .render();
+
+    assert_eq!(
+        result.as_inner(),
+        r#"<svg viewBox="0 0 10 10"><g xml:lang="en" xmlns:sprite="urn:cheers:test"><circle cx="5" cy="5" r="4"/></g></svg>"#
+    );
+}
+
+#[test]
+fn svg_root_xmlns_attribute_in_html_mode() {
+    let result = html! {
+        svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10" {
+            circle cx="5" cy="5" r="4";
+        }
+    }
+    .render();
+
+    assert_eq!(
+        result.as_inner(),
+        r#"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10"><circle cx="5" cy="5" r="4"/></svg>"#
+    );
+}
+
+#[test]
+fn svg_foreign_object_switches_back_to_html() {
+    let result = html! {
+        svg width="200" height="200" {
+            foreignObject x="10" y="10" width="180" height="180" {
+                div {
+                    p { "Hello from HTML inside SVG" }
+                    input type="text";
+                }
+            }
+        }
+    }
+    .render();
+
+    assert_eq!(
+        result.as_inner(),
+        r#"<svg width="200" height="200"><foreignObject x="10" y="10" width="180" height="180"><div><p>Hello from HTML inside SVG</p><input type="text"></div></foreignObject></svg>"#
+    );
+}
+
+#[test]
 fn toggles() {
     let option_some = Some("value");
 
@@ -381,8 +485,75 @@ fn scoped_signal_hash() {
 
     assert_eq!(
         result.as_inner(),
-        r#"<div data-on:interval="@get('/')"></div><p data-signals="{toggle1781021206:true,nested:{go42:{bye4094663779:'impressive'}}}"></p>"#
+        r#"<div data-on:interval="@get('/')"></div><p data-signals="{toggle1168097918:true,nested:{go42:{bye3713718811:'impressive'}}}"></p>"#
     );
+}
+
+#[test]
+fn svg_macro_sprite_bundle() {
+    let result = svg! {
+        svg xmlns:sprite="urn:cheers:test" xml:lang="en" viewBox="0 0 16 16" {
+            defs {
+                symbol id="icon-check" viewBox="0 0 16 16" {
+                    path d="M6.5 11.2 3.3 8l-1.1 1.1 4.3 4.3L14 5.9l-1.1-1.1z";
+                }
+            }
+            r#use href="#icon-check" x="0" y="0" width="16" height="16";
+        }
+    }
+    .render();
+
+    assert_eq!(
+        result.as_inner(),
+        r##"<svg xmlns:sprite="urn:cheers:test" xml:lang="en" viewBox="0 0 16 16"><defs><symbol id="icon-check" viewBox="0 0 16 16"><path d="M6.5 11.2 3.3 8l-1.1 1.1 4.3 4.3L14 5.9l-1.1-1.1z"/></symbol></defs><use href="#icon-check" x="0" y="0" width="16" height="16"/></svg>"##
+    );
+}
+
+#[test]
+fn svg_macro_foreign_object_switches_back_to_html() {
+    let result = svg! {
+        svg width="200" height="200" {
+            foreignObject x="10" y="10" width="180" height="180" {
+                div {
+                    p { "Hello from HTML inside SVG" }
+                    input type="text";
+                }
+            }
+        }
+    }
+    .render();
+
+    assert_eq!(
+        result.as_inner(),
+        r#"<svg width="200" height="200"><foreignObject x="10" y="10" width="180" height="180"><div><p>Hello from HTML inside SVG</p><input type="text"></div></foreignObject></svg>"#
+    );
+}
+
+#[test]
+fn svg_borrow_captures_by_reference() {
+    let label = String::from("Icon");
+
+    let result = svg_borrow! {
+        svg viewBox="0 0 16 16" {
+            title { (label) }
+        }
+    }
+    .render();
+
+    assert_eq!(
+        result.as_inner(),
+        r#"<svg viewBox="0 0 16 16"><title>Icon</title></svg>"#
+    );
+    assert_eq!(label, "Icon");
+}
+
+#[test]
+fn svg_static_supports_fragments() {
+    let result = svg_static! {
+        circle cx="50" cy="50" r="40";
+    };
+
+    assert_eq!(*result.as_inner(), r#"<circle cx="50" cy="50" r="40"/>"#);
 }
 
 #[tokio::test]

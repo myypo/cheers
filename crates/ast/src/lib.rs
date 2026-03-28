@@ -24,7 +24,7 @@ use self::{
     control::Control,
     generate::{
         AnyBlock, AttributeNameCheck, AttributeNameCheckKind, ElementCheck, ElementKind, Generate,
-        Generator,
+        Generator, NodeFlavour,
     },
 };
 use crate::generate::Context;
@@ -169,7 +169,9 @@ impl Generate for Element {
     const CONTEXT: Context = Context::Element;
 
     fn generate(&mut self, g: &mut Generator) {
-        let mut el_checks = ElementCheck::new(&self.name, self.body.kind());
+        let flavour = g.node_flavour();
+        let module = flavour.elements_module();
+        let mut el_checks = ElementCheck::new(&self.name, self.body.kind(flavour), module);
 
         g.push_str("<");
         g.push_literal(self.name.lit());
@@ -181,16 +183,22 @@ impl Generate for Element {
             }
         }
 
-        g.push_str(">");
-
         match &mut self.body {
             ElementBody::Normal { children, .. } => {
-                g.push(children);
+                g.push_str(">");
+
+                let child_flavour = flavour.child_flavour(&self.name);
+                if child_flavour != flavour {
+                    g.push_with_flavour(child_flavour, |g| g.push(children));
+                } else {
+                    g.push(children);
+                }
+
                 g.push_str("</");
                 g.push_literal(self.name.lit());
                 g.push_str(">");
             }
-            ElementBody::Void => {}
+            ElementBody::Void => g.push_str(flavour.void_close()),
         }
 
         g.record_element(el_checks);
@@ -206,11 +214,8 @@ pub enum ElementBody {
 }
 
 impl ElementBody {
-    const fn kind(&self) -> ElementKind {
-        match self {
-            Self::Normal { .. } => ElementKind::Normal,
-            Self::Void => ElementKind::Void,
-        }
+    const fn kind(&self, flavour: NodeFlavour) -> ElementKind {
+        flavour.element_kind(matches!(self, Self::Void))
     }
 }
 
@@ -341,7 +346,11 @@ impl AttributeName {
         match self {
             Self::Unchecked(_) => None,
             Self::Namespace { namespace, rest } => Some(AttributeNameCheck::new(
-                AttributeNameCheckKind::Namespace(namespace.clone()),
+                if !data && (namespace == &"xml" || namespace == &"xmlns") {
+                    AttributeNameCheckKind::NamespaceOnly(namespace.clone())
+                } else {
+                    AttributeNameCheckKind::Namespace(namespace.clone())
+                },
                 rest.clone(),
                 data,
             )),
@@ -357,7 +366,12 @@ impl AttributeName {
         match self {
             Self::Namespace { namespace, rest } => {
                 let mut literals = vec![namespace.lit()];
-                literals.push(LitStr::new("-", namespace.span()));
+                let separator = if namespace == &"xml" || namespace == &"xmlns" {
+                    ":"
+                } else {
+                    "-"
+                };
+                literals.push(LitStr::new(separator, namespace.span()));
                 literals.push(rest.lit());
                 literals
             }

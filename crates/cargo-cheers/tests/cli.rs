@@ -59,6 +59,30 @@ pub fn page(title: &str, greeting_box: impl Render) -> impl Render {
 }
 "#;
 
+static SVG_IN_FILE: &str = r#"
+use cheers::prelude::*;
+
+fn sprite() -> impl Render {
+    svg!{svg viewBox="0 0 16 16" xmlns:sprite="urn:cheers:test" xml:lang="en"{defs{symbol id="icon-check" viewBox="0 0 16 16"{path d="M0 0";}}}}
+}
+"#;
+
+static SVG_OUT_FILE: &str = r#"
+use cheers::prelude::*;
+
+fn sprite() -> impl Render {
+    svg! {
+        svg viewBox="0 0 16 16" xmlns:sprite="urn:cheers:test" xml:lang="en" {
+            defs {
+                symbol id="icon-check" viewBox="0 0 16 16" {
+                    path d="M0 0";
+                }
+            }
+        }
+    }
+}
+"#;
+
 #[test]
 fn format_file_from_argument() -> Result<()> {
     let file = assert_fs::NamedTempFile::new("sample.rs")?;
@@ -130,6 +154,20 @@ fn format_file_from_stdin() -> Result<()> {
     cmd.assert()
         .success()
         .stdout(predicate::str::diff(OUT_FILE));
+
+    Ok(())
+}
+
+#[test]
+fn format_svg_macro_by_default() -> Result<()> {
+    let file = assert_fs::NamedTempFile::new("sprite.rs")?;
+    file.write_str(SVG_IN_FILE)?;
+
+    let mut cmd = cargo::cargo_bin_cmd!("cargo-cheers");
+    cmd.arg("fmt").arg(file.path());
+
+    cmd.assert().success();
+    assert_eq!(std::fs::read_to_string(&file)?, SVG_OUT_FILE);
 
     Ok(())
 }

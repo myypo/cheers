@@ -90,9 +90,6 @@ macro_rules! define_void_elements {
     }
 }
 
-#[cfg(feature = "mathml")]
-pub use super::mathml::elements::*;
-
 define_elements! {
     /// The root of an HTML document.
     html
@@ -919,7 +916,61 @@ define_elements! {
         /// Vertical dimension
         height
     }
+
+    /// The root of an SVG document, or an inline SVG fragment embedded in an
+    /// HTML document.
+    ///
+    /// For standalone SVG documents, prefer the dedicated
+    /// [`svg!`](::cheers::prelude::svg) macro.
+    svg {
+        /// The displayed width of the SVG viewport.
+        width
+
+        /// The displayed height of the SVG viewport.
+        height
+
+        /// The x coordinate of the SVG viewport.
+        x
+
+        /// The y coordinate of the SVG viewport.
+        y
+
+        /// The SVG viewport coordinates.
+        viewBox
+
+        /// How the SVG fragment should preserve its aspect ratio.
+        preserveAspectRatio
+
+        /// The XML namespace for the SVG element.
+        xmlns
+    }
+
 }
+
+#[cfg(feature = "mathml")]
+#[expect(
+    non_camel_case_types,
+    reason = "camel case types will be interpreted as components"
+)]
+#[derive(::core::fmt::Debug, ::core::clone::Clone, ::core::marker::Copy)]
+pub struct math;
+
+#[cfg(feature = "mathml")]
+#[allow(non_upper_case_globals)]
+impl math {
+    /// Specifies the display rendering mode.
+    pub const display: crate::validation::Attribute = crate::validation::Attribute;
+    /// The XML namespace for the MathML element.
+    pub const xmlns: crate::validation::Attribute = crate::validation::Attribute;
+}
+
+#[cfg(feature = "mathml")]
+impl crate::validation::Element for math {
+    type Kind = crate::validation::Normal;
+}
+
+#[cfg(feature = "mathml")]
+impl crate::validation::attributes::GlobalAttributes for math {}
 
 define_void_elements! {
     /// Either a hyperlink with some text and a corresponding area on an image

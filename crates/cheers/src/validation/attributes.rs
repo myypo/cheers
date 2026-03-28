@@ -930,3 +930,89 @@ pub trait DataAttributes: GlobalAttributes {
 }
 
 impl<T: GlobalAttributes> DataAttributes for T {}
+
+#[expect(missing_docs)]
+pub trait SvgGlobalAttributes: Element {
+    const id: Attribute = Attribute;
+
+    const class: Attribute = Attribute;
+
+    const style: Attribute = Attribute;
+
+    const tabindex: Attribute = Attribute;
+
+    const autofocus: Attribute = Attribute;
+
+    const lang: Attribute = Attribute;
+
+    const xml: AttributeNamespace = AttributeNamespace;
+
+    const xmlns: AttributeNamespace = AttributeNamespace;
+
+    const required_extensions: Attribute = Attribute;
+
+    const system_language: Attribute = Attribute;
+
+    const alignment_baseline: Attribute = Attribute;
+    const baseline_shift: Attribute = Attribute;
+    const clip: Attribute = Attribute;
+    const clip_path: Attribute = Attribute;
+    const clip_rule: Attribute = Attribute;
+    const color: Attribute = Attribute;
+    const color_interpolation: Attribute = Attribute;
+    const color_interpolation_filters: Attribute = Attribute;
+    const cursor: Attribute = Attribute;
+    const d: Attribute = Attribute;
+    const direction: Attribute = Attribute;
+    const display: Attribute = Attribute;
+    const dominant_baseline: Attribute = Attribute;
+    const enable_background: Attribute = Attribute;
+    const fill: Attribute = Attribute;
+    const fill_opacity: Attribute = Attribute;
+    const fill_rule: Attribute = Attribute;
+    const filter: Attribute = Attribute;
+    const flood_color: Attribute = Attribute;
+    const flood_opacity: Attribute = Attribute;
+    const font_family: Attribute = Attribute;
+    const font_size: Attribute = Attribute;
+    const font_size_adjust: Attribute = Attribute;
+    const font_stretch: Attribute = Attribute;
+    const font_style: Attribute = Attribute;
+    const font_variant: Attribute = Attribute;
+    const font_weight: Attribute = Attribute;
+    const glyph_orientation_horizontal: Attribute = Attribute;
+    const glyph_orientation_vertical: Attribute = Attribute;
+    const image_rendering: Attribute = Attribute;
+    const kerning: Attribute = Attribute;
+    const letter_spacing: Attribute = Attribute;
+    const lighting_color: Attribute = Attribute;
+    const marker_end: Attribute = Attribute;
+    const marker_mid: Attribute = Attribute;
+    const marker_start: Attribute = Attribute;
+    const mask: Attribute = Attribute;
+    const opacity: Attribute = Attribute;
+    const overflow: Attribute = Attribute;
+    const paint_order: Attribute = Attribute;
+    const pointer_events: Attribute = Attribute;
+    const shape_rendering: Attribute = Attribute;
+    const stop_color: Attribute = Attribute;
+    const stop_opacity: Attribute = Attribute;
+    const stroke: Attribute = Attribute;
+    const stroke_dasharray: Attribute = Attribute;
+    const stroke_dashoffset: Attribute = Attribute;
+    const stroke_linecap: Attribute = Attribute;
+    const stroke_linejoin: Attribute = Attribute;
+    const stroke_miterlimit: Attribute = Attribute;
+    const stroke_opacity: Attribute = Attribute;
+    const stroke_width: Attribute = Attribute;
+    const text_anchor: Attribute = Attribute;
+    const text_decoration: Attribute = Attribute;
+    const text_rendering: Attribute = Attribute;
+    const transform: Attribute = Attribute;
+    const transform_origin: Attribute = Attribute;
+    const unicode_bidi: Attribute = Attribute;
+    const vector_effect: Attribute = Attribute;
+    const visibility: Attribute = Attribute;
+    const word_spacing: Attribute = Attribute;
+    const writing_mode: Attribute = Attribute;
+}

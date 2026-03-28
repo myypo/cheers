@@ -23,6 +23,9 @@ impl Default for FormatOptions {
                 String::from("html"),
                 String::from("html_borrow"),
                 String::from("html_static"),
+                String::from("svg"),
+                String::from("svg_borrow"),
+                String::from("svg_static"),
             ],
         }
     }

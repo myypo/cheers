@@ -10,8 +10,8 @@ pub mod router;
 
 #[doc(hidden)]
 /// Re-exported for macro expansions such as `html!`, `html_borrow!`, `html_static!`,
-/// `attribute!`, `attribute_borrow!`, and `attribute_static!`. Not part of the stable
-/// public API.
+/// `svg!`, `svg_borrow!`, `svg_static!`, `attribute!`, `attribute_borrow!`, and
+/// `attribute_static!`. Not part of the stable public API.
 pub mod validation;
 #[doc(hidden)]
 /// Support module for generated code from `#[derive(Refs)]`, `ids!`, `signals!`,
@@ -38,11 +38,11 @@ pub mod __internal {
 pub mod macros {
     pub use macros::{
         attribute, attribute_borrow, attribute_static, form_names, html_borrow, html_static, ids,
-        signals,
+        signals, svg_borrow, svg_static,
     };
 }
 pub mod prelude {
-    pub use macros::{Refs, action, form_names, html, ids, signals};
+    pub use macros::{Refs, action, form_names, html, ids, signals, svg};
 
     pub use crate::{
         context::{AttributeValue, Element},

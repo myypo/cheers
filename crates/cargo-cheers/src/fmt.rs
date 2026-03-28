@@ -20,7 +20,7 @@ pub struct FmtArgs {
     #[arg(short, long, default_value = "false")]
     stdin: bool,
 
-    /// Comma-separated list of macro names (overriding html and maud::html)
+    /// Comma-separated list of macro names to format (overriding the default Cheers markup macros)
     #[arg(short, long, value_delimiter = ',', default_value = None)]
     macro_names: Option<Vec<String>>,
 

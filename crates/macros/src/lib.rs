@@ -5,13 +5,47 @@ mod action;
 mod refs;
 mod shared;
 
-use ast::{AttributeValueNode, Document, Nodes};
+use ast::{
+    AttributeValueNode, Document, Nodes,
+    generate::{NodeFlavour, XmlFlavour},
+};
 use syn::{ItemStruct, parse_macro_input};
 
 use crate::{
     action::ActionArgs,
     shared::{MaybeItemFn, generate_field_bindings},
 };
+
+fn expand_document_lazy(
+    tokens: proc_macro::TokenStream,
+    move_: bool,
+    flavour: NodeFlavour,
+) -> proc_macro::TokenStream {
+    ast::generate::lazy_with_flavour::<Document>(tokens.into(), move_, flavour)
+        .unwrap_or_else(|err| err.to_compile_error())
+        .into()
+}
+
+fn expand_document_literal(
+    tokens: proc_macro::TokenStream,
+    flavour: NodeFlavour,
+) -> proc_macro::TokenStream {
+    ast::generate::literal_with_flavour::<Document>(tokens.into(), flavour)
+        .unwrap_or_else(|err| err.to_compile_error())
+        .into()
+}
+
+fn expand_attribute_lazy(tokens: proc_macro::TokenStream, move_: bool) -> proc_macro::TokenStream {
+    ast::generate::lazy::<Nodes<AttributeValueNode>>(tokens.into(), move_)
+        .unwrap_or_else(|err| err.to_compile_error())
+        .into()
+}
+
+fn expand_attribute_literal(tokens: proc_macro::TokenStream) -> proc_macro::TokenStream {
+    ast::generate::literal::<Nodes<AttributeValueNode>>(tokens.into())
+        .unwrap_or_else(|err| err.to_compile_error())
+        .into()
+}
 
 #[proc_macro_derive(Refs, attributes(id, signal, form, form_derive))]
 /// Derives id, signal, and form helpers for a component struct.
@@ -134,23 +168,65 @@ pub fn refs_derive(item: proc_macro::TokenStream) -> proc_macro::TokenStream {
 /// assert_eq!(page.render().into_inner(), "<section><h1>Hello</h1><p>Ferris</p></section>");
 /// ```
 pub fn html(tokens: proc_macro::TokenStream) -> proc_macro::TokenStream {
-    ast::generate::lazy::<Document>(tokens.into(), true)
-        .unwrap_or_else(|err| err.to_compile_error())
-        .into()
+    expand_document_lazy(tokens, true, NodeFlavour::Html)
 }
 
 #[proc_macro]
 pub fn html_borrow(tokens: proc_macro::TokenStream) -> proc_macro::TokenStream {
-    ast::generate::lazy::<Document>(tokens.into(), false)
-        .unwrap_or_else(|err| err.to_compile_error())
-        .into()
+    expand_document_lazy(tokens, false, NodeFlavour::Html)
 }
 
 #[proc_macro]
 pub fn html_static(tokens: proc_macro::TokenStream) -> proc_macro::TokenStream {
-    ast::generate::literal::<Document>(tokens.into())
-        .unwrap_or_else(|err| err.to_compile_error())
-        .into()
+    expand_document_literal(tokens, NodeFlavour::Html)
+}
+
+#[proc_macro]
+/// Builds a lazily rendered SVG fragment or document.
+///
+/// Use `svg!` when generating standalone SVG, such as sprite bundles served as
+/// `image/svg+xml`. Unlike [`html!`], this macro starts in SVG/XML mode from
+/// the root, validates elements against the SVG validation table, and renders
+/// childless SVG elements with XML-style self-closing syntax (`/>`).
+///
+/// To embed inline SVG inside HTML, prefer [`html!`] and a normal `<svg>`
+/// element. Cheers will switch into SVG validation automatically inside that
+/// subtree.
+///
+/// # Example
+///
+/// ```ignore
+/// use cheers::prelude::*;
+///
+/// let sprite = svg! {
+///     svg viewBox="0 0 16 16" xml:lang="en" {
+///         defs {
+///             symbol id="icon-check" viewBox="0 0 16 16" {
+///                 path d="M6.5 11.2 3.3 8l-1.1 1.1 4.3 4.3L14 5.9l-1.1-1.1z";
+///             }
+///         }
+///     }
+/// };
+///
+/// assert!(sprite.render().into_inner().contains("<symbol id=\"icon-check\""));
+/// ```
+pub fn svg(tokens: proc_macro::TokenStream) -> proc_macro::TokenStream {
+    expand_document_lazy(tokens, true, NodeFlavour::Xml(XmlFlavour::Svg))
+}
+
+#[proc_macro]
+/// Like [`svg!`], but borrows captured values instead of moving them.
+pub fn svg_borrow(tokens: proc_macro::TokenStream) -> proc_macro::TokenStream {
+    expand_document_lazy(tokens, false, NodeFlavour::Xml(XmlFlavour::Svg))
+}
+
+#[proc_macro]
+/// Builds a static SVG fragment or document.
+///
+/// This variant accepts only static content and returns a `Raw<&'static str>`,
+/// which can be used in `const` contexts.
+pub fn svg_static(tokens: proc_macro::TokenStream) -> proc_macro::TokenStream {
+    expand_document_literal(tokens, NodeFlavour::Xml(XmlFlavour::Svg))
 }
 
 #[proc_macro]
@@ -174,23 +250,17 @@ pub fn html_static(tokens: proc_macro::TokenStream) -> proc_macro::TokenStream {
 /// assert_eq!(page.render().into_inner(), r#"<button class="btn btn-primary">Save</button>"#);
 /// ```
 pub fn attribute(tokens: proc_macro::TokenStream) -> proc_macro::TokenStream {
-    ast::generate::lazy::<Nodes<AttributeValueNode>>(tokens.into(), true)
-        .unwrap_or_else(|err| err.to_compile_error())
-        .into()
+    expand_attribute_lazy(tokens, true)
 }
 
 #[proc_macro]
 pub fn attribute_borrow(tokens: proc_macro::TokenStream) -> proc_macro::TokenStream {
-    ast::generate::lazy::<Nodes<AttributeValueNode>>(tokens.into(), false)
-        .unwrap_or_else(|err| err.to_compile_error())
-        .into()
+    expand_attribute_lazy(tokens, false)
 }
 
 #[proc_macro]
 pub fn attribute_static(tokens: proc_macro::TokenStream) -> proc_macro::TokenStream {
-    ast::generate::literal::<Nodes<AttributeValueNode>>(tokens.into())
-        .unwrap_or_else(|err| err.to_compile_error())
-        .into()
+    expand_attribute_literal(tokens)
 }
 
 #[proc_macro_attribute]
