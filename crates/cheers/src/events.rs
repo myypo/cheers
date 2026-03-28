@@ -224,7 +224,7 @@ mod patch_elements {
             let new = selector.into();
             self.selector = Some(match self.selector {
                 Some(mut existing) => {
-                    existing.push_str(",");
+                    existing.push(',');
                     existing.push_str(&new);
                     existing
                 }

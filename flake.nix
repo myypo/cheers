@@ -5,7 +5,7 @@
 
     nixpkgs.url = "nixpkgs/nixos-unstable";
 
-    pre-commit-hooks.url = "github:myypo/git-hooks.nix";
+    pre-commit-hooks.url = "github:cachix/git-hooks.nix";
     pre-commit-hooks.inputs.nixpkgs.follows = "nixpkgs";
   };
 
@@ -18,27 +18,23 @@
             "x86_64-linux"
           ];
         in
-        (
-          f:
-          inputs.nixpkgs.lib.genAttrs supportedSystems (
-            system:
-            f {
-              self = inputs.self;
-              pkgs =
-                let
-                  overlays = [ ];
-                in
-                import inputs.nixpkgs { inherit overlays system; };
-              pre-commit-hooks = inputs.pre-commit-hooks.lib.${system}.run;
-              pre-commit-check = inputs.self.checks.${system}.pre-commit-check;
-            }
-          )
+        f:
+        inputs.nixpkgs.lib.genAttrs supportedSystems (
+          system:
+          let
+            overlays = [ ];
+            pkgs = import inputs.nixpkgs { inherit overlays system; };
+            pre-commit-hooks = inputs.pre-commit-hooks.lib.${system}.run;
+          in
+          f {
+            inherit pkgs pre-commit-hooks;
+            inherit (inputs.self.checks.${system}) pre-commit-check;
+          }
         );
     in
     {
       devShells = forEachSupportedSystem (
         {
-          self,
           pkgs,
           pre-commit-check,
           ...
@@ -59,6 +55,7 @@
               rustc
               cargo-deny
               cargo-machete
+              cargo-nextest
               rust-analyzer
 
               inputs.self.packages.${pkgs.stdenv.hostPlatform.system}.default
@@ -73,22 +70,24 @@
       checks = forEachSupportedSystem (
         { pkgs, pre-commit-hooks, ... }:
         let
-          testHooks = builtins.listToAttrs (
-            builtins.map
-              (flags: {
-                name = "tests-(${flags})";
-                value = {
-                  enable = true;
-                  name = "Unit and integration tests (${flags})";
-                  entry = "${pkgs.cargo}/bin/cargo test --workspace ${flags}";
-                  pass_filenames = false;
-                };
-              })
-              [
-                ""
-                "--release"
-              ]
-          );
+          testHooks = {
+            nextest = {
+              enable = true;
+              raw.priority = 41;
+              name = "nextest";
+              entry = "${pkgs.cargo}/bin/cargo nextest run --workspace";
+              pass_filenames = false;
+              extraPackages = [ pkgs.cargo-nextest ];
+            };
+            nextest-release = {
+              enable = true;
+              raw.priority = 42;
+              name = "nextest (--release)";
+              entry = "${pkgs.cargo}/bin/cargo nextest run --workspace --release";
+              pass_filenames = false;
+              extraPackages = [ pkgs.cargo-nextest ];
+            };
+          };
         in
         {
           pre-commit-check =
@@ -100,22 +99,107 @@
             in
             pre-commit-hooks {
               src = ./.;
+              package = pkgs.prek;
               inherit default_stages;
+              excludes = [
+                "(^|/)\\.direnv/"
+              ];
               hooks = testHooks // {
-                nixfmt-rfc-style.enable = true;
+                nixfmt = {
+                  enable = true;
+                  raw.priority = 0;
+                };
+                cargo-machete = {
+                  enable = true;
+                  raw.priority = 10;
+                  name = "cargo-machete";
+                  entry = ''
+                    sh -eu -c '${pkgs.cargo}/bin/cargo metadata --no-deps --format-version 1 \
+                      | ${pkgs.jq}/bin/jq -r ".packages[] | select(.name != \"workspace-hack\") | .manifest_path" \
+                      | while IFS= read -r manifest; do
+                          ${pkgs.cargo-machete}/bin/cargo-machete --with-metadata --fix "$manifest";
+                        done'
+                  '';
+                  always_run = true;
+                  pass_filenames = false;
+                };
+                taplo = {
+                  enable = true;
+                  raw.priority = 12;
+                };
                 typos = {
                   enable = true;
+                  raw.priority = 20;
                   stages = default_stages ++ [ "commit-msg" ];
                 };
-                taplo.enable = true;
-                actionlint.enable = true;
+                actionlint = {
+                  enable = true;
+                  raw.priority = 30;
+                };
+                check-added-large-files = {
+                  enable = true;
+                  raw.priority = 30;
+                };
+                check-case-conflicts = {
+                  enable = true;
+                  raw.priority = 30;
+                  stages = [
+                    "pre-commit"
+                    "pre-push"
+                    "manual"
+                  ];
+                };
+                check-merge-conflicts = {
+                  enable = true;
+                  raw.priority = 30;
+                  stages = [
+                    "pre-commit"
+                    "pre-push"
+                    "manual"
+                  ];
+                };
+                cargo-deny = {
+                  enable = true;
+                  raw.priority = 30;
+                  name = "cargo-deny";
+                  entry = "${pkgs.cargo-deny}/bin/cargo-deny check";
+                  files = "(^|/)(Cargo\\.toml|Cargo\\.lock|deny\\.toml)$";
+                  pass_filenames = false;
+                };
+                deadnix = {
+                  enable = true;
+                  raw.priority = 30;
+                };
+                gitleaks = {
+                  enable = true;
+                  raw.priority = 30;
+                  name = "gitleaks";
+                  package = pkgs.gitleaks;
+                  entry = "${pkgs.gitleaks}/bin/gitleaks git --staged --no-banner --verbose";
+                  always_run = true;
+                  pass_filenames = false;
+                  stages = [ "pre-commit" ];
+                };
+                statix = {
+                  enable = true;
+                  raw.priority = 30;
+                  settings.ignore = [
+                    ".direnv/**"
+                  ];
+                };
                 clippy = {
                   enable = true;
-                  settings.allFeatures = true;
-                  settings.denyWarnings = true;
-                  settings.extraArgs = "--keep-going";
+                  raw.priority = 40;
+                  settings = {
+                    allFeatures = true;
+                    denyWarnings = true;
+                    extraArgs = "--keep-going";
+                  };
                 };
-                rustfmt.enable = true;
+                rustfmt = {
+                  enable = true;
+                  raw.priority = 0;
+                };
               };
               settings = {
                 rust.check.cargoDeps = pkgs.rustPlatform.importCargoLock {
@@ -134,7 +218,7 @@
             src = ./.;
             cargoBuildFlags = [ "-p=cargo-cheers" ];
 
-            cargoHash = "sha256-CuCi0Ma/C7m1PWr951UkJRfwDQju6IKoRBcj7Notsbs=";
+            cargoHash = "sha256-MGqJKbrqgTM+qbd0gMmFayUW8YnoQ4qgRDj8bEt6kxE=";
 
             doCheck = false;
           };
