@@ -178,7 +178,10 @@
                   entry = "${pkgs.gitleaks}/bin/gitleaks git --staged --no-banner --verbose";
                   always_run = true;
                   pass_filenames = false;
-                  stages = [ "pre-commit" ];
+                  stages = [
+                    "pre-commit"
+                    "manual"
+                  ];
                 };
                 statix = {
                   enable = true;

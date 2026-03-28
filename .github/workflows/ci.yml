@@ -16,7 +16,8 @@ jobs:
           extra_nix_config: |
             trusted-public-keys = cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY= nix-community.cachix.org-1:mB9FSh9qf2dCimDSUo8Zy7bkq5CX+/rkCWyvRCYg3Fs=
             substituters = https://cache.nixos.org https://nix-community.cachix.org
-      - run: nix flake check
+      - name: Run manual hook checks
+        run: nix develop --command prek run --config .pre-commit-config.yaml --all-files --stage manual --skip cargo-deny
 
   cargo-deny:
     runs-on: ubuntu-latest
@@ -24,10 +25,10 @@ jobs:
       matrix:
         checks:
           - advisories
-          - bans licenses sources
+          - "bans licenses sources"
 
     steps:
-    - uses: actions/checkout@v4
-    - uses: EmbarkStudios/cargo-deny-action@v2
-      with:
-        command: check ${{ matrix.checks }}
+      - uses: actions/checkout@v4
+      - uses: EmbarkStudios/cargo-deny-action@v2
+        with:
+          command: check ${{ matrix.checks }}
