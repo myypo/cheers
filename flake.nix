@@ -181,6 +181,95 @@
                   enable = true;
                   raw.priority = 0;
                 };
+                commitlint =
+                  let
+                    config = pkgs.writeText "commitlint.config.json" (
+                      builtins.toJSON {
+                        rules = {
+                          "body-leading-blank" = [
+                            1
+                            "always"
+                          ];
+                          "body-max-line-length" = [
+                            2
+                            "always"
+                            100
+                          ];
+                          "footer-leading-blank" = [
+                            1
+                            "always"
+                          ];
+                          "footer-max-line-length" = [
+                            2
+                            "always"
+                            100
+                          ];
+                          "header-max-length" = [
+                            2
+                            "always"
+                            100
+                          ];
+                          "header-trim" = [
+                            2
+                            "always"
+                          ];
+                          "subject-case" = [
+                            2
+                            "never"
+                            [
+                              "sentence-case"
+                              "start-case"
+                              "pascal-case"
+                              "upper-case"
+                            ]
+                          ];
+                          "subject-empty" = [
+                            2
+                            "never"
+                          ];
+                          "subject-full-stop" = [
+                            2
+                            "never"
+                            "."
+                          ];
+                          "type-case" = [
+                            2
+                            "always"
+                            "lower-case"
+                          ];
+                          "type-empty" = [
+                            2
+                            "never"
+                          ];
+                          "type-enum" = [
+                            2
+                            "always"
+                            [
+                              "build"
+                              "chore"
+                              "ci"
+                              "docs"
+                              "feat"
+                              "fix"
+                              "perf"
+                              "refactor"
+                              "revert"
+                              "style"
+                              "test"
+                            ]
+                          ];
+                        };
+                      }
+                    );
+                  in
+                  {
+                    enable = true;
+                    name = "commitlint";
+                    entry = "${pkgs.commitlint}/bin/commitlint --from origin/main --to HEAD --config ${config}";
+                    raw.priority = 0;
+                    pass_filenames = false;
+                    always_run = true;
+                  };
                 cargo-machete = {
                   enable = true;
                   raw.priority = 10;
