@@ -1,0 +1,56 @@
+[workspace]
+repo_url = "https://github.com/myypo/cheers"
+# First publish remains manual. CI publishing is enabled later via crates.io trusted
+# publishing and the RELEASE_PLZ_ENABLE_PUBLISH repository variable.
+# Opt in only the publishable crates we want release-plz to manage.
+release = false
+# Only publish from merges of the generated release PR.
+release_always = false
+dependencies_update = false
+# CI doesn't install cargo-semver-checks yet.
+semver_check = false
+# Maintain a single repo-level changelog from the main package entry.
+changelog_update = false
+# Create a single repo-facing tag and GitHub release instead of one per crate.
+git_tag_enable = false
+git_release_enable = false
+
+[[package]]
+name = "cheers"
+release = true
+changelog_update = true
+changelog_path = "./CHANGELOG.md"
+changelog_include = [
+  "cheers-ast",
+  "cheers-bundle",
+  "cheers-macros",
+  "cheers-fmt",
+  "cargo-cheers",
+]
+git_tag_enable = true
+git_tag_name = "v{{ version }}"
+git_release_enable = true
+git_release_name = "v{{ version }}"
+git_release_type = "auto"
+# Disable GitHub Latest until the first stable release.
+git_release_latest = false
+
+[[package]]
+name = "cheers-ast"
+release = true
+
+[[package]]
+name = "cheers-bundle"
+release = true
+
+[[package]]
+name = "cheers-macros"
+release = true
+
+[[package]]
+name = "cheers-fmt"
+release = true
+
+[[package]]
+name = "cargo-cheers"
+release = true
