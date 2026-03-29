@@ -123,40 +123,6 @@
               cargo test --doc -p cheers --all-features
             '';
           };
-          testHooks = {
-            readme-sync = {
-              enable = true;
-              raw.priority = 11;
-              name = "README example sync";
-              entry = "${readme-sync-check}/bin/readme-sync-check";
-              pass_filenames = false;
-              always_run = true;
-            };
-            nextest = {
-              enable = true;
-              raw.priority = 41;
-              name = "nextest";
-              entry = "${pkgs.cargo}/bin/cargo nextest run --workspace";
-              pass_filenames = false;
-              extraPackages = [ pkgs.cargo-nextest ];
-            };
-            readme-doctests = {
-              enable = true;
-              raw.priority = 43;
-              name = "README doctests";
-              entry = "${readme-doctest-check}/bin/readme-doctest-check";
-              pass_filenames = false;
-              always_run = true;
-            };
-            nextest-release = {
-              enable = true;
-              raw.priority = 44;
-              name = "nextest (--release)";
-              entry = "${pkgs.cargo}/bin/cargo nextest run --workspace --release";
-              pass_filenames = false;
-              extraPackages = [ pkgs.cargo-nextest ];
-            };
-          };
         in
         {
           pre-commit-check =
@@ -173,7 +139,11 @@
               excludes = [
                 "(^|/)\\.direnv/"
               ];
-              hooks = testHooks // {
+              hooks = {
+                rustfmt = {
+                  enable = true;
+                  raw.priority = 0;
+                };
                 nixfmt = {
                   enable = true;
                   raw.priority = 0;
@@ -267,9 +237,17 @@
                     pass_filenames = false;
                     always_run = true;
                   };
+                readme-sync = {
+                  enable = true;
+                  raw.priority = 30;
+                  name = "README example sync";
+                  entry = "${readme-sync-check}/bin/readme-sync-check";
+                  pass_filenames = false;
+                  always_run = true;
+                };
                 cargo-machete = {
                   enable = true;
-                  raw.priority = 10;
+                  raw.priority = 30;
                   name = "cargo-machete";
                   entry = ''
                     sh -eu -c '${pkgs.cargo}/bin/cargo metadata --no-deps --format-version 1 \
@@ -283,11 +261,11 @@
                 };
                 taplo = {
                   enable = true;
-                  raw.priority = 12;
+                  raw.priority = 30;
                 };
                 typos = {
                   enable = true;
-                  raw.priority = 20;
+                  raw.priority = 30;
                   stages = default_stages ++ [ "commit-msg" ];
                 };
                 actionlint = {
@@ -357,9 +335,29 @@
                     extraArgs = "--keep-going";
                   };
                 };
-                rustfmt = {
+                nextest = {
                   enable = true;
-                  raw.priority = 0;
+                  raw.priority = 41;
+                  name = "nextest";
+                  entry = "${pkgs.cargo}/bin/cargo nextest run --workspace";
+                  pass_filenames = false;
+                  extraPackages = [ pkgs.cargo-nextest ];
+                };
+                readme-doctests = {
+                  enable = true;
+                  raw.priority = 41;
+                  name = "README doctests";
+                  entry = "${readme-doctest-check}/bin/readme-doctest-check";
+                  pass_filenames = false;
+                  always_run = true;
+                };
+                nextest-release = {
+                  enable = true;
+                  raw.priority = 44;
+                  name = "nextest (--release)";
+                  entry = "${pkgs.cargo}/bin/cargo nextest run --workspace --release";
+                  pass_filenames = false;
+                  extraPackages = [ pkgs.cargo-nextest ];
                 };
               };
               settings = {
