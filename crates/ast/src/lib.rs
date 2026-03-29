@@ -880,7 +880,7 @@ mod tests {
 
     #[test]
     fn data_attribute_recovers_missing_name_without_placeholder() {
-        let attr = parse_str::<Attribute>("!").unwrap();
+        let attr = parse_str::<Attribute>("!").expect("expected attribute to parse");
 
         let Attribute::Data(data) = attr else {
             panic!("expected data attribute");
@@ -894,7 +894,7 @@ mod tests {
 
     #[test]
     fn data_attribute_recovers_invalid_payload() {
-        let attr = parse_str::<Attribute>("!on:click()").unwrap();
+        let attr = parse_str::<Attribute>("!on:click()").expect("expected attribute to parse");
 
         let Attribute::Data(data) = attr else {
             panic!("expected data attribute");
@@ -913,7 +913,7 @@ mod tests {
 
     #[test]
     fn data_attribute_flags_remain_distinct_from_recovery() {
-        let attr = parse_str::<Attribute>("!ignore").unwrap();
+        let attr = parse_str::<Attribute>("!ignore").expect("expected attribute to parse");
 
         let Attribute::Data(data) = attr else {
             panic!("expected data attribute");

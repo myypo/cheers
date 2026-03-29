@@ -12,7 +12,7 @@ use syn::{
 
 use crate::{
     cheers::{IdField, filter_outer_attrs, to_owned_type},
-    shared::filter_generics,
+    shared::{filter_generics, parse_named_type},
 };
 
 struct OuterSignalArgs {
@@ -22,14 +22,10 @@ struct OuterSignalArgs {
 
 impl Parse for OuterSignalArgs {
     fn parse(input: ParseStream) -> syn::Result<Self> {
-        let name = input.parse()?;
-        input.parse::<Token![:]>().map_err(|_| {
-            Error::new_spanned(
-                &name,
-                r#"expected a colon and type after signal name, like #[signal(name: Type)]"#,
-            )
-        })?;
-        let ty: Type = input.parse()?;
+        let (name, ty) = parse_named_type(
+            input,
+            r#"expected a colon and type after signal name, like #[signal(name: Type)]"#,
+        )?;
 
         Ok(Self { name, ty })
     }

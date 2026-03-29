@@ -2,7 +2,7 @@
 
 /// A marker trait to represent the context that the value is being rendered to.
 ///
-/// This can be either [`Node`] or an [`AttributeValue`]. A [`Node`]
+/// This can be either [`Element`] or an [`AttributeValue`]. An [`Element`]
 /// represents an HTML node, while an [`AttributeValue`] represents an attribute
 /// value which will eventually be surrounded by double quotes.
 ///
@@ -13,8 +13,8 @@ pub trait Context: sealed::Sealed {}
 
 /// A marker type to represent a complete element node.
 ///
-/// All types and traits that are generic over [`Context`] use [`Node`]
-/// as the default for the generic type parameter.
+/// All types and traits that are generic over the `Context` trait use
+/// [`Element`] as the default for the generic type parameter.
 ///
 /// Traits and types with this marker type expect complete HTML nodes. If
 /// rendering string-like types, the value/implementation must escape `&` to

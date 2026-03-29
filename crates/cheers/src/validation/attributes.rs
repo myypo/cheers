@@ -829,7 +829,7 @@ pub mod data {
         pub const languagechange: Attribute = Attribute;
 
         // Toggle Events
-        /// Fired when the open/closed state of a <details> element is toggled.
+        /// Fired when the open/closed state of a `<details>` element is toggled.
         pub const toggle: Attribute = Attribute;
 
         // Popover Events
@@ -837,11 +837,11 @@ pub mod data {
         pub const beforetoggle: Attribute = Attribute;
 
         // HTML Element Events
-        /// Fired when the nodes in a <slot> element change.
+        /// Fired when the nodes in a `<slot>` element change.
         pub const slotchange: Attribute = Attribute;
-        /// Fired when a <dialog> element is canceled (e.g., via ESC key).
+        /// Fired when a `<dialog>` element is canceled (e.g., via ESC key).
         pub const cancel: Attribute = Attribute;
-        /// Fired when a <dialog> element is closed.
+        /// Fired when a `<dialog>` element is closed.
         pub const close: Attribute = Attribute;
 
         // Fullscreen Events
@@ -862,7 +862,7 @@ pub mod data {
         // Selection Events
         /// Fired when the user starts selecting text.
         pub const selectstart: Attribute = Attribute;
-        /// Fired when the text selection in a <textarea> or <input> element has
+        /// Fired when the text selection in a `<textarea>` or `<input>` element has
         /// changed.
         pub const selectionchange: Attribute = Attribute;
 

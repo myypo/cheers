@@ -1,16 +1,17 @@
 [package]
-name = "bundle"
+name = "cheers-bundle"
 version.workspace = true
 authors.workspace = true
 edition.workspace = true
-description.workspace = true
+rust-version.workspace = true
+description = "Internal JavaScript and CSS bundling support crate for Cheers."
+documentation = "https://docs.rs/cheers-bundle"
 readme.workspace = true
 homepage.workspace = true
 repository.workspace = true
 license.workspace = true
 keywords.workspace = true
 categories.workspace = true
-publish = false
 
 [dependencies]
 swc_common.workspace = true

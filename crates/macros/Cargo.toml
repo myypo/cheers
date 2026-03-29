@@ -1,16 +1,17 @@
 [package]
-name = "macros"
+name = "cheers-macros"
 version.workspace = true
 authors.workspace = true
 edition.workspace = true
-description.workspace = true
+rust-version.workspace = true
+description = "Procedural macros for Cheers."
+documentation = "https://docs.rs/cheers-macros"
 readme.workspace = true
 homepage.workspace = true
 repository.workspace = true
 license.workspace = true
 keywords.workspace = true
 categories.workspace = true
-publish = false
 
 [lib]
 proc-macro = true

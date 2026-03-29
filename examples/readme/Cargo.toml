@@ -1,5 +1,5 @@
 [package]
-name = "cheers-example-realtime"
+name = "cheers-example-readme"
 edition.workspace = true
 license.workspace = true
 publish = false
@@ -8,6 +8,5 @@ version.workspace = true
 
 [dependencies]
 cheers.workspace = true
-axum = "0.8"
-tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
-rand = "0.8"
+axum.workspace = true
+tokio = { workspace = true, features = ["macros", "rt-multi-thread", "net"] }

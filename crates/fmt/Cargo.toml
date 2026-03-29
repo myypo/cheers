@@ -1,9 +1,11 @@
 [package]
-name = "fmt"
+name = "cheers-fmt"
 version.workspace = true
 authors.workspace = true
 edition.workspace = true
-description.workspace = true
+rust-version.workspace = true
+description = "Formatter support crate for cargo-cheers."
+documentation = "https://docs.rs/cheers-fmt"
 readme.workspace = true
 homepage.workspace = true
 repository.workspace = true

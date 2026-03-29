@@ -1,8 +1,8 @@
 use anyhow::Result;
-use assert_cmd::cargo;
-use assert_fs::prelude::*;
-use predicates::prelude::*;
-use pretty_assertions::assert_eq;
+
+mod shared;
+
+use shared::{assert_formatted_file, assert_formatted_stdin};
 
 static IN_FILE: &str = r#"use maud::{DOCTYPE, Markup, html};
 
@@ -53,35 +53,10 @@ pub fn page(title: &str, greeting_box: Markup) -> Markup {
 
 #[test]
 fn execute_rustfmt_on_files() -> Result<()> {
-    dbg!(&IN_FILE);
-    let file = assert_fs::NamedTempFile::new("sample.rs")?;
-    file.write_str(IN_FILE)?;
-
-    // When
-    let mut cmd = cargo::cargo_bin_cmd!("cargo-cheers");
-    cmd.arg("fmt").arg("--rustfmt").arg(file.path());
-
-    // Then
-    cmd.assert().success();
-    assert_eq!(std::fs::read_to_string(&file)?, OUT_FILE);
-
-    Ok(())
+    assert_formatted_file("sample.rs", IN_FILE, OUT_FILE, &["--rustfmt"])
 }
 
 #[test]
 fn execute_rustfmt_on_stdin() -> Result<()> {
-    // Given
-    let file = assert_fs::NamedTempFile::new("stdin")?;
-    file.write_str(IN_FILE)?;
-
-    // When
-    let mut cmd = cargo::cargo_bin_cmd!("cargo-cheers");
-    cmd.arg("fmt").arg("--rustfmt").arg("-s").pipe_stdin(file)?;
-
-    // Then
-    cmd.assert()
-        .success()
-        .stdout(predicate::str::diff(OUT_FILE));
-
-    Ok(())
+    assert_formatted_stdin(IN_FILE, OUT_FILE, &["--rustfmt"])
 }

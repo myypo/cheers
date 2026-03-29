@@ -50,17 +50,21 @@ mod tests {
         let request = axum::http::Request::builder()
             .uri(ROUTE)
             .body(Body::empty())
-            .unwrap();
+            .expect("request should build");
 
-        let response = app.clone().oneshot(request).await.unwrap();
+        let response = app
+            .clone()
+            .oneshot(request)
+            .await
+            .expect("router should return a response");
 
         assert_eq!(response.status(), StatusCode::OK);
 
         let got = axum::body::to_bytes(response.into_body(), usize::MAX)
             .await
             .map(|b| String::from_utf8(b.into()))
-            .unwrap()
-            .unwrap();
+            .expect("response body should be readable")
+            .expect("response body should be valid UTF-8");
         assert_eq!(got, RESPONSE);
     }
 
@@ -71,29 +75,45 @@ mod tests {
         let request = axum::http::Request::builder()
             .uri(format!("{ROUTE}/"))
             .body(Body::empty())
-            .unwrap();
+            .expect("request should build");
 
-        let response = app.clone().oneshot(request).await.unwrap();
+        let response = app
+            .clone()
+            .oneshot(request)
+            .await
+            .expect("router should return a response");
 
         assert_eq!(response.status(), StatusCode::PERMANENT_REDIRECT);
-        assert_eq!(response.headers().get("location").unwrap(), ROUTE);
+        assert_eq!(
+            response
+                .headers()
+                .get("location")
+                .expect("redirect response should set location header"),
+            ROUTE
+        );
     }
 
     #[tokio::test]
     async fn can_access_root() {
         let app = app();
 
-        let request = axum::http::Request::builder().body(Body::empty()).unwrap();
+        let request = axum::http::Request::builder()
+            .body(Body::empty())
+            .expect("request should build");
 
-        let response = app.clone().oneshot(request).await.unwrap();
+        let response = app
+            .clone()
+            .oneshot(request)
+            .await
+            .expect("router should return a response");
 
         assert_eq!(response.status(), StatusCode::OK);
 
         let got = axum::body::to_bytes(response.into_body(), usize::MAX)
             .await
             .map(|b| String::from_utf8(b.into()))
-            .unwrap()
-            .unwrap();
+            .expect("response body should be readable")
+            .expect("response body should be valid UTF-8");
         assert_eq!(got, ROOT_RESPONSE);
     }
 }

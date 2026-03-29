@@ -1,8 +1,11 @@
 use anyhow::Result;
 use assert_cmd::cargo;
 use assert_fs::prelude::*;
-use predicates::prelude::*;
-use pretty_assertions::assert_eq;
+
+mod shared;
+use shared::{
+    assert_file_contents, assert_formatted_file, assert_formatted_stdin, write_named_temp_file,
+};
 
 static IN_FILE: &str = r#"
 use cheers::prelude::*;
@@ -85,27 +88,14 @@ fn sprite() -> impl Render {
 
 #[test]
 fn format_file_from_argument() -> Result<()> {
-    let file = assert_fs::NamedTempFile::new("sample.rs")?;
-    file.write_str(IN_FILE)?;
-
-    // When
-    let mut cmd = cargo::cargo_bin_cmd!("cargo-cheers");
-    cmd.arg("fmt").arg(file.path());
-
-    // Then
-    cmd.assert().success();
-    assert_eq!(std::fs::read_to_string(&file)?, OUT_FILE);
-
-    Ok(())
+    assert_formatted_file("sample.rs", IN_FILE, OUT_FILE, &[])
 }
 
 #[test]
 fn format_multiple_files_from_argument() -> Result<()> {
     // Given
-    let file_1 = assert_fs::NamedTempFile::new("sample_1.rs")?;
-    file_1.write_str(IN_FILE)?;
-    let file_2 = assert_fs::NamedTempFile::new("sample_2.rs")?;
-    file_2.write_str(IN_FILE)?;
+    let file_1 = write_named_temp_file("sample_1.rs", IN_FILE)?;
+    let file_2 = write_named_temp_file("sample_2.rs", IN_FILE)?;
 
     // When
     let mut cmd = cargo::cargo_bin_cmd!("cargo-cheers");
@@ -113,8 +103,8 @@ fn format_multiple_files_from_argument() -> Result<()> {
 
     // Then
     cmd.assert().success();
-    assert_eq!(std::fs::read_to_string(&file_1)?, OUT_FILE);
-    assert_eq!(std::fs::read_to_string(&file_2)?, OUT_FILE);
+    assert_file_contents(file_1.path(), OUT_FILE)?;
+    assert_file_contents(file_2.path(), OUT_FILE)?;
 
     Ok(())
 }
@@ -134,42 +124,20 @@ fn format_dir_from_argument() -> Result<()> {
 
     // Then
     cmd.assert().success();
-    assert_eq!(std::fs::read_to_string(&file_1)?, OUT_FILE);
-    assert_eq!(std::fs::read_to_string(&file_2)?, OUT_FILE);
+    assert_file_contents(file_1.path(), OUT_FILE)?;
+    assert_file_contents(file_2.path(), OUT_FILE)?;
 
     Ok(())
 }
 
 #[test]
 fn format_file_from_stdin() -> Result<()> {
-    // Given
-    let file = assert_fs::NamedTempFile::new("stdin")?;
-    file.write_str(IN_FILE)?;
-
-    // When
-    let mut cmd = cargo::cargo_bin_cmd!("cargo-cheers");
-    cmd.arg("fmt").arg("-s").pipe_stdin(file)?;
-
-    // Then
-    cmd.assert()
-        .success()
-        .stdout(predicate::str::diff(OUT_FILE));
-
-    Ok(())
+    assert_formatted_stdin(IN_FILE, OUT_FILE, &[])
 }
 
 #[test]
 fn format_svg_macro_by_default() -> Result<()> {
-    let file = assert_fs::NamedTempFile::new("sprite.rs")?;
-    file.write_str(SVG_IN_FILE)?;
-
-    let mut cmd = cargo::cargo_bin_cmd!("cargo-cheers");
-    cmd.arg("fmt").arg(file.path());
-
-    cmd.assert().success();
-    assert_eq!(std::fs::read_to_string(&file)?, SVG_OUT_FILE);
-
-    Ok(())
+    assert_formatted_file("sprite.rs", SVG_IN_FILE, SVG_OUT_FILE, &[])
 }
 
 static CUSTOM_MACRO_IN_FILE: &str = r#"
@@ -228,55 +196,31 @@ pub fn page(title: &str, greeting_box: impl Render) -> impl Render {
 
 #[test]
 fn format_file_with_custom_macro_names() -> Result<()> {
-    let file = assert_fs::NamedTempFile::new("sample.rs")?;
-    file.write_str(CUSTOM_MACRO_IN_FILE)?;
-
-    let mut cmd = cargo::cargo_bin_cmd!("cargo-cheers");
-    cmd.arg("fmt")
-        .arg("--macro-names")
-        .arg("custom,module::custom")
-        .arg(file.path());
-
-    cmd.assert().success();
-    assert_eq!(std::fs::read_to_string(&file)?, CUSTOM_MACRO_OUT_FILE);
-
-    Ok(())
+    assert_formatted_file(
+        "sample.rs",
+        CUSTOM_MACRO_IN_FILE,
+        CUSTOM_MACRO_OUT_FILE,
+        &["--macro-names", "custom,module::custom"],
+    )
 }
 
 #[test]
 fn format_stdin_with_custom_macro_names() -> Result<()> {
-    let file = assert_fs::NamedTempFile::new("stdin")?;
-    file.write_str(CUSTOM_MACRO_IN_FILE)?;
-
-    let mut cmd = cargo::cargo_bin_cmd!("cargo-cheers");
-    cmd.arg("fmt")
-        .arg("-s")
-        .arg("--macro-names")
-        .arg("custom,module::custom")
-        .pipe_stdin(file)?;
-
-    cmd.assert()
-        .success()
-        .stdout(predicate::str::diff(CUSTOM_MACRO_OUT_FILE));
-
-    Ok(())
+    assert_formatted_stdin(
+        CUSTOM_MACRO_IN_FILE,
+        CUSTOM_MACRO_OUT_FILE,
+        &["--macro-names", "custom,module::custom"],
+    )
 }
 
 #[test]
 fn format_file_with_custom_macro_names_short_arg() -> Result<()> {
-    let file = assert_fs::NamedTempFile::new("sample.rs")?;
-    file.write_str(CUSTOM_MACRO_IN_FILE)?;
-
-    let mut cmd = cargo::cargo_bin_cmd!("cargo-cheers");
-    cmd.arg("fmt")
-        .arg("-m")
-        .arg("custom,module::custom")
-        .arg(file.path());
-
-    cmd.assert().success();
-    assert_eq!(std::fs::read_to_string(&file)?, CUSTOM_MACRO_OUT_FILE);
-
-    Ok(())
+    assert_formatted_file(
+        "sample.rs",
+        CUSTOM_MACRO_IN_FILE,
+        CUSTOM_MACRO_OUT_FILE,
+        &["-m", "custom,module::custom"],
+    )
 }
 
 static LONG_LINE_IN_FILE: &str = r#"
@@ -315,59 +259,29 @@ fn test() -> impl Render {
 
 #[test]
 fn format_file_with_short_line_length() -> Result<()> {
-    let file = assert_fs::NamedTempFile::new("sample.rs")?;
-    file.write_str(LONG_LINE_IN_FILE)?;
-
-    let mut cmd = cargo::cargo_bin_cmd!("cargo-cheers");
-    cmd.arg("fmt")
-        .arg("--line-length")
-        .arg("50")
-        .arg(file.path());
-
-    cmd.assert().success();
-    assert_eq!(
-        std::fs::read_to_string(&file)?,
-        LONG_LINE_OUT_FILE_SHORT_LENGTH
-    );
-
-    Ok(())
+    assert_formatted_file(
+        "sample.rs",
+        LONG_LINE_IN_FILE,
+        LONG_LINE_OUT_FILE_SHORT_LENGTH,
+        &["--line-length", "50"],
+    )
 }
 
 #[test]
 fn format_file_with_long_line_length() -> Result<()> {
-    let file = assert_fs::NamedTempFile::new("sample.rs")?;
-    file.write_str(LONG_LINE_IN_FILE)?;
-
-    let mut cmd = cargo::cargo_bin_cmd!("cargo-cheers");
-    cmd.arg("fmt")
-        .arg("--line-length")
-        .arg("200")
-        .arg(file.path());
-
-    cmd.assert().success();
-    assert_eq!(
-        std::fs::read_to_string(&file)?,
-        LONG_LINE_OUT_FILE_LONG_LENGTH
-    );
-
-    Ok(())
+    assert_formatted_file(
+        "sample.rs",
+        LONG_LINE_IN_FILE,
+        LONG_LINE_OUT_FILE_LONG_LENGTH,
+        &["--line-length", "200"],
+    )
 }
 
 #[test]
 fn format_stdin_with_line_length() -> Result<()> {
-    let file = assert_fs::NamedTempFile::new("stdin")?;
-    file.write_str(LONG_LINE_IN_FILE)?;
-
-    let mut cmd = cargo::cargo_bin_cmd!("cargo-cheers");
-    cmd.arg("fmt")
-        .arg("-s")
-        .arg("--line-length")
-        .arg("50")
-        .pipe_stdin(file)?;
-
-    cmd.assert()
-        .success()
-        .stdout(predicate::str::diff(LONG_LINE_OUT_FILE_SHORT_LENGTH));
-
-    Ok(())
+    assert_formatted_stdin(
+        LONG_LINE_IN_FILE,
+        LONG_LINE_OUT_FILE_SHORT_LENGTH,
+        &["--line-length", "50"],
+    )
 }

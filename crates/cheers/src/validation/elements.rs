@@ -1,8 +1,9 @@
 //! All built-in elements.
 //!
-//! This module can be overridden in your own crate to add custom HTML elements.
-//! See the documentation for [`define_elements!`] or [`GlobalAttributes`] for
-//! more information.
+//! This module defines the built-in HTML element validation table used by Cheers.
+//! At the moment, downstream crates cannot override it without modifying Cheers.
+//! See the documentation for `define_validation_elements!` or [`GlobalAttributes`]
+//! for more information.
 //!
 //! [`GlobalAttributes`]: crate::validation::attributes::GlobalAttributes
 

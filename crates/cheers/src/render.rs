@@ -225,7 +225,7 @@ impl<C: Context> Buffer<C> {
         unsafe { &mut *ptr::from_mut(string).cast::<Self>() }
     }
 
-    /// Converts this into an [`&mut AttributeBuffer`](AttributeBuffer).
+    /// Converts this into a `&mut Buffer<AttributeValue>`.
     #[inline]
     pub fn as_attribute_buffer(&mut self) -> &mut AttributeBuffer {
         // SAFETY:
@@ -260,7 +260,7 @@ impl<C: Context> Buffer<C> {
     /// complete HTML nodes. If rendering string-like types, the pushed contents
     /// must escape `&` to `&amp;`, `<` to `&lt;`, and `>` to `&gt;`.
     ///
-    /// For [`Buffer<AttributeValue>`] (a.k.a. [`AttributeBuffer`]) writes, the
+    /// For `Buffer<AttributeValue>` writes, the
     /// caller must push attribute values which will eventually be surrounded by
     /// double quotes. The pushed contents must escape `&` to `&amp;`, `<` to
     /// `&lt;`, `>` to `&gt;`, and `"` to `&quot;`.

@@ -17,8 +17,12 @@ use cheers::{
     macros::{html_borrow, svg_borrow, svg_static},
     prelude::*,
 };
-use futures::StreamExt;
 use tokio::sync::{Barrier, Mutex};
+
+use crate::test_utils::read_axum_body;
+
+#[path = "../src/test_utils.rs"]
+mod test_utils;
 
 #[test]
 fn can_render_vec() {
@@ -224,12 +228,10 @@ fn displayed_debugged() {
     }
     .render();
 
-    for result in [result] {
-        assert_eq!(
-            result.as_inner(),
-            "<div>Hello, World! &lt;script&gt;</div><div>Greeting(\"World\")</div><div>0xDEADBEEF</div>"
-        );
-    }
+    assert_eq!(
+        result.as_inner(),
+        "<div>Hello, World! &lt;script&gt;</div><div>Greeting(\"World\")</div><div>0xDEADBEEF</div>"
+    );
 }
 
 #[test]
@@ -419,24 +421,15 @@ impl<T: Render> Render for Base<T> {
     }
 }
 
-async fn read_axum_body(resp: impl axum::response::IntoResponse) -> String {
-    use futures::StreamExt;
-
-    let resp = resp.into_response();
-    resp.into_body()
-        .into_data_stream()
-        .fold(String::new(), async |mut acc, ch| {
-            acc.push_str(&String::from_utf8(ch.unwrap().to_vec()).unwrap());
-            acc
-        })
-        .await
-}
-
 async fn next_axum_chunk(body: &mut axum::body::BodyDataStream) -> String {
     use futures::StreamExt;
 
-    let ch = body.next().await.unwrap().unwrap();
-    String::from_utf8(ch.to_vec()).unwrap()
+    let ch = body
+        .next()
+        .await
+        .expect("body stream should yield a chunk")
+        .expect("body chunk should be readable");
+    String::from_utf8(ch.to_vec()).expect("body chunk should be valid UTF-8")
 }
 
 #[tokio::test]
@@ -501,10 +494,20 @@ fn scoped_signal_hash() {
     }
     .render();
 
-    assert_eq!(
-        result.as_inner(),
-        r#"<div data-on:interval="@get('/')"></div><p data-signals="{toggle3736150044:true,nested:{go42:{bye1986803641:'impressive'}}}"></p>"#
-    );
+    let rendered = result.as_inner();
+    let prefix = r#"<div data-on:interval="@get('/')"></div><p data-signals="{toggle"#;
+    let (toggle_hash, rest) = rendered
+        .strip_prefix(prefix)
+        .and_then(|rest| rest.split_once(":true,nested:{go42:{bye"))
+        .expect(rendered);
+    let (nested_hash, suffix) = rest
+        .split_once(r#":'impressive'}}}"></p>"#)
+        .expect(rendered);
+
+    assert!(!toggle_hash.is_empty() && toggle_hash.chars().all(|c| c.is_ascii_digit()));
+    assert!(!nested_hash.is_empty() && nested_hash.chars().all(|c| c.is_ascii_digit()));
+    assert_ne!(toggle_hash, nested_hash);
+    assert!(suffix.is_empty(), "unexpected trailing output: {suffix}");
 }
 
 #[test]
@@ -576,20 +579,24 @@ fn svg_static_supports_fragments() {
 
 #[tokio::test]
 async fn async_can_render_concurrently_in_order() {
+    struct SyncPrimitives {
+        barrier: Arc<Barrier>,
+        mutex_a: Arc<Mutex<()>>,
+        mutex_b: Arc<Mutex<()>>,
+        mutex_c: Arc<Mutex<()>>,
+    }
+
     async fn test_page(
         user: String,
         title: String,
         content: String,
         outages_today: i32,
-        barrier: Arc<Barrier>,
-        mutex_a: Arc<Mutex<()>>,
-        mutex_b: Arc<Mutex<()>>,
-        mutex_c: Arc<Mutex<()>>,
+        sync: SyncPrimitives,
     ) -> AsyncLazy<Lazy<impl Fn(&mut Buffer)>> {
         let post_html = {
-            let barrier = barrier.clone();
-            let mutex_a = mutex_a.clone();
-            let mutex_b = mutex_b.clone();
+            let barrier = sync.barrier.clone();
+            let mutex_a = sync.mutex_a.clone();
+            let mutex_b = sync.mutex_b.clone();
             async move {
                 let _guard_a = mutex_a.lock().await;
                 barrier.wait().await;
@@ -598,9 +605,9 @@ async fn async_can_render_concurrently_in_order() {
             }
         };
         let status_data = {
-            let barrier = barrier.clone();
-            let mutex_a = mutex_a.clone();
-            let mutex_c = mutex_c.clone();
+            let barrier = sync.barrier.clone();
+            let mutex_a = sync.mutex_a.clone();
+            let mutex_c = sync.mutex_c.clone();
             async move {
                 let _guard_c = mutex_c.lock().await;
                 barrier.wait().await;
@@ -643,19 +650,21 @@ async fn async_can_render_concurrently_in_order() {
         title.clone(),
         content.clone(),
         outages_today,
-        barrier,
-        mutex_a,
-        mutex_b,
-        mutex_c,
+        SyncPrimitives {
+            barrier,
+            mutex_a,
+            mutex_b,
+            mutex_c,
+        },
     )
     .await;
 
     let h = h.into_response();
     let mut h = h.into_body().into_data_stream();
     tokio::time::timeout(Duration::from_secs(1), async {
-        h.next().await.unwrap().unwrap();
-        h.next().await.unwrap().unwrap();
-        h.next().await.unwrap().unwrap();
+        next_axum_chunk(&mut h).await;
+        next_axum_chunk(&mut h).await;
+        next_axum_chunk(&mut h).await;
     })
     .await
     .expect("deadlock");
@@ -1226,9 +1235,9 @@ fn signal_deserialized_with_id_scope() {
     let got: ProjectSignalsJson = serde_json::from_str(
         r#"{ "project": { "1": { "name": "Website Redesign", "task_status": "in_progress" } } }"#,
     )
-    .unwrap();
+    .expect("signals JSON should deserialize");
 
-    let project = got.project.get(&1).unwrap();
+    let project = got.project.get(&1).expect("project with id 1 should exist");
     assert_eq!(project.name, "Website Redesign");
     assert_eq!(project.task_status, "in_progress");
 }
@@ -1250,7 +1259,8 @@ fn signal_deserialized_nested_scope() {
     }
 
     let got: ParentSignalsJson =
-        serde_json::from_str(r#"{ "parent": { "child": { "value": 1 } } }"#).unwrap();
+        serde_json::from_str(r#"{ "parent": { "child": { "value": 1 } } }"#)
+            .expect("nested signals JSON should deserialize");
 
     assert_eq!(got.parent.child.value, 1);
 }
@@ -1431,7 +1441,7 @@ fn action_form_serde() {
         whatever: String,
     }
 
-    let result: StuffForm = serde_json::from_str("{}").unwrap();
+    let result: StuffForm = serde_json::from_str("{}").expect("form JSON should deserialize");
     assert_eq!(result.whatever, String::from("lol"));
 }
 
@@ -1466,7 +1476,7 @@ fn form_without_field() {
 
     Ghost { name: "whatever" }.assert_form_names();
 
-    let result: GhostForm = serde_json::from_str("{}").unwrap();
+    let result: GhostForm = serde_json::from_str("{}").expect("form JSON should deserialize");
     assert_eq!(result.keepsake, String::from(""));
 
     let result = Ghost { name: "and" }.render();

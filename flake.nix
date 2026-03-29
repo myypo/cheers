@@ -70,7 +70,71 @@
       checks = forEachSupportedSystem (
         { pkgs, pre-commit-hooks, ... }:
         let
+          readme-sync-check = pkgs.writeShellApplication {
+            name = "readme-sync-check";
+            runtimeInputs = [ pkgs.python3 ];
+            text = ''
+              python3 - <<'PY'
+              from pathlib import Path
+              import sys
+
+              root = Path.cwd()
+              readme = root / "README.md"
+              example = root / "examples/readme/src/main.rs"
+              start_marker = "<!-- readme-app:start -->"
+              end_marker = "<!-- readme-app:end -->"
+
+              readme_text = readme.read_text(encoding="utf-8")
+
+              if start_marker not in readme_text or end_marker not in readme_text:
+                  print(
+                      f"missing README markers {start_marker!r} / {end_marker!r}",
+                      file=sys.stderr,
+                  )
+                  raise SystemExit(1)
+
+              before, rest = readme_text.split(start_marker, maxsplit=1)
+              _, after = rest.split(end_marker, maxsplit=1)
+              example_text = example.read_text(encoding="utf-8").rstrip()
+              generated = (
+                  f"{start_marker}\n"
+                  f"```rust no_run\n"
+                  f"{example_text}\n"
+                  f"```\n"
+                  f"{end_marker}"
+              )
+              updated = before + generated + after
+
+              if readme_text != updated:
+                  print(
+                      "README example is out of sync with examples/readme/src/main.rs.",
+                      file=sys.stderr,
+                  )
+                  raise SystemExit(1)
+
+              print("README example is in sync")
+              PY
+            '';
+          };
+          readme-doctest-check = pkgs.writeShellApplication {
+            name = "readme-doctest-check";
+            runtimeInputs = [
+              pkgs.cargo
+              pkgs.rustc
+            ];
+            text = ''
+              cargo test --doc -p cheers --all-features
+            '';
+          };
           testHooks = {
+            readme-sync = {
+              enable = true;
+              raw.priority = 11;
+              name = "README example sync";
+              entry = "${readme-sync-check}/bin/readme-sync-check";
+              pass_filenames = false;
+              always_run = true;
+            };
             nextest = {
               enable = true;
               raw.priority = 41;
@@ -79,9 +143,17 @@
               pass_filenames = false;
               extraPackages = [ pkgs.cargo-nextest ];
             };
+            readme-doctests = {
+              enable = true;
+              raw.priority = 43;
+              name = "README doctests";
+              entry = "${readme-doctest-check}/bin/readme-doctest-check";
+              pass_filenames = false;
+              always_run = true;
+            };
             nextest-release = {
               enable = true;
-              raw.priority = 42;
+              raw.priority = 44;
               name = "nextest (--release)";
               entry = "${pkgs.cargo}/bin/cargo nextest run --workspace --release";
               pass_filenames = false;
@@ -221,7 +293,7 @@
             src = ./.;
             cargoBuildFlags = [ "-p=cargo-cheers" ];
 
-            cargoHash = "sha256-MGqJKbrqgTM+qbd0gMmFayUW8YnoQ4qgRDj8bEt6kxE=";
+            cargoHash = "sha256-YtJvvr6hgHjBIuTqyzbNAP0vVeqB/l9FM6A4kKyNT5E=";
 
             doCheck = false;
           };

@@ -1,18 +1,19 @@
 [workspace]
-members = ["crates/*", "examples/realtime"]
+members = ["crates/*", "examples/realtime", "examples/readme"]
 resolver = "3"
 
 [workspace.package]
-version = "0.0.0"
+version = "0.1.0-alpha.1"
 authors = ["Mykyta Polchanov <nikirsmcgl@gmail.com>"]
 edition = "2024"
+rust-version = "1.85"
 description = "Fullstack hypermedia framework"
 readme = "README.md"
 homepage = "https://github.com/myypo/cheers"
 repository = "https://github.com/myypo/cheers"
 license = "MIT"
 keywords = ["hypermedia", "web", "data-star"]
-categories = ["Web programming"]
+categories = ["web-programming"]
 
 [workspace.dependencies]
 serde = { version = "1", features = ["derive"] }
@@ -70,12 +71,12 @@ anyhow = "1"
 walkdir = "2"
 
 # Workspace crates
-bundle = { path = "./crates/bundle" }
-cheers = { path = "./crates/cheers" }
-ast = { path = "./crates/ast" }
-macros = { path = "./crates/macros" }
-fmt = { path = "./crates/fmt" }
-cli = { path = "./crates/cli" }
+bundle = { package = "cheers-bundle", path = "./crates/bundle", version = "=0.1.0-alpha.1" }
+cheers = { path = "./crates/cheers", version = "=0.1.0-alpha.1" }
+ast = { package = "cheers-ast", path = "./crates/ast", version = "=0.1.0-alpha.1" }
+macros = { package = "cheers-macros", path = "./crates/macros", version = "=0.1.0-alpha.1" }
+fmt = { package = "cheers-fmt", path = "./crates/fmt", version = "=0.1.0-alpha.1" }
+cli = { package = "cargo-cheers", path = "./crates/cargo-cheers", version = "=0.1.0-alpha.1" }
 
 [workspace.lints.clippy]
 unwrap_used = "deny"

@@ -1,5 +1,9 @@
 extern crate self as cheers;
 
+#[cfg(doctest)]
+#[doc = include_str!("../../../README.md")]
+mod readme_doctests {}
+
 pub mod components;
 mod context;
 mod events;

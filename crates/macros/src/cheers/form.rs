@@ -9,7 +9,7 @@ use syn::{
 
 use crate::{
     cheers::{filter_outer_attrs, to_owned_type},
-    shared::filter_generics,
+    shared::{filter_generics, parse_named_type},
 };
 
 struct FormArgs {
@@ -20,17 +20,14 @@ struct FormArgs {
 
 impl Parse for FormArgs {
     fn parse(input: ParseStream) -> syn::Result<Self> {
-        let name = input.parse()?;
-        input.parse::<Token![:]>().map_err(|_| {
-            Error::new_spanned(
-                &name,
-                r#"expected a colon and type after form field name, like #[form(name: Type)]"#,
-            )
-        })?;
+        let (name, ty) = parse_named_type(
+            input,
+            r#"expected a colon and type after form field name, like #[form(name: Type)]"#,
+        )?;
 
         Ok(Self {
             name,
-            ty: input.parse()?,
+            ty,
             attrs: if input.peek(Token![,]) {
                 input.parse::<Token![,]>()?;
                 Some(input.parse()?)

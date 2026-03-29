@@ -54,6 +54,19 @@ impl ToTokens for MaybeItemFn {
     }
 }
 
+pub fn parse_named_type(
+    input: ParseStream<'_>,
+    missing_type_error: &'static str,
+) -> syn::Result<(Ident, Type)> {
+    let name = input.parse()?;
+    input
+        .parse::<Token![:]>()
+        .map_err(|_| syn::Error::new_spanned(&name, missing_type_error))?;
+    let ty = input.parse()?;
+
+    Ok((name, ty))
+}
+
 fn collect_used_generic_names<'a>(types: impl IntoIterator<Item = &'a Type>) -> BTreeSet<String> {
     struct Visitor {
         used: BTreeSet<String>,

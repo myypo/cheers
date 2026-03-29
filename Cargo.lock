@@ -170,18 +170,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "ast"
-version = "0.0.0"
-dependencies = [
- "base64",
- "html-escape",
- "proc-macro2",
- "quote",
- "rustc-hash",
- "syn 2.0.114",
-]
-
-[[package]]
 name = "ast_node"
 version = "5.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -388,24 +376,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "bundle"
-version = "0.0.0"
-dependencies = [
- "anyhow",
- "swc_bundler",
- "swc_common",
- "swc_ecma_ast",
- "swc_ecma_codegen",
- "swc_ecma_loader",
- "swc_ecma_minifier",
- "swc_ecma_parser",
- "swc_ecma_transforms_base",
- "swc_ecma_transforms_typescript",
- "swc_ecma_visit",
- "walkdir",
-]
-
-[[package]]
 name = "bytecheck"
 version = "0.6.12"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -445,13 +415,13 @@ dependencies = [
 
 [[package]]
 name = "cargo-cheers"
-version = "0.0.0"
+version = "0.1.0-alpha.1"
 dependencies = [
  "anyhow",
  "assert_cmd",
  "assert_fs",
+ "cheers-fmt",
  "clap",
- "fmt",
  "glob",
  "predicates",
  "pretty_assertions",
@@ -486,18 +456,18 @@ checksum = "9330f8b2ff13f34540b44e946ef35111825727b38d33286ef986142615121801"
 
 [[package]]
 name = "cheers"
-version = "0.0.0"
+version = "0.1.0-alpha.1"
 dependencies = [
  "async-compression",
  "axum",
  "base64",
- "bundle",
+ "cheers-bundle",
+ "cheers-macros",
  "futures",
  "html-escape",
  "inventory",
  "itoa",
  "lightningcss",
- "macros",
  "notify",
  "serde",
  "serde_json",
@@ -507,6 +477,79 @@ dependencies = [
  "tower",
  "tracing",
  "zmij",
+]
+
+[[package]]
+name = "cheers-ast"
+version = "0.1.0-alpha.1"
+dependencies = [
+ "base64",
+ "html-escape",
+ "proc-macro2",
+ "quote",
+ "rustc-hash",
+ "syn 2.0.114",
+]
+
+[[package]]
+name = "cheers-bundle"
+version = "0.1.0-alpha.1"
+dependencies = [
+ "anyhow",
+ "swc_bundler",
+ "swc_common",
+ "swc_ecma_ast",
+ "swc_ecma_codegen",
+ "swc_ecma_loader",
+ "swc_ecma_minifier",
+ "swc_ecma_parser",
+ "swc_ecma_transforms_base",
+ "swc_ecma_transforms_typescript",
+ "swc_ecma_visit",
+ "walkdir",
+]
+
+[[package]]
+name = "cheers-example-readme"
+version = "0.1.0-alpha.1"
+dependencies = [
+ "axum",
+ "cheers",
+ "tokio",
+]
+
+[[package]]
+name = "cheers-example-realtime"
+version = "0.1.0-alpha.1"
+dependencies = [
+ "axum",
+ "cheers",
+ "rand",
+ "tokio",
+]
+
+[[package]]
+name = "cheers-fmt"
+version = "0.1.0-alpha.1"
+dependencies = [
+ "anyhow",
+ "cheers-ast",
+ "crop",
+ "pretty_assertions",
+ "prettyplease",
+ "proc-macro2",
+ "quote",
+ "syn 2.0.114",
+]
+
+[[package]]
+name = "cheers-macros"
+version = "0.1.0-alpha.1"
+dependencies = [
+ "cheers-ast",
+ "proc-macro2",
+ "quote",
+ "syn 2.0.114",
 ]
 
 [[package]]
@@ -875,20 +918,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b09cf3155332e944990140d967ff5eceb70df778b34f77d8075db46e4704e6d8"
 dependencies = [
  "num-traits",
-]
-
-[[package]]
-name = "fmt"
-version = "0.0.0"
-dependencies = [
- "anyhow",
- "ast",
- "crop",
- "pretty_assertions",
- "prettyplease",
- "proc-macro2",
- "quote",
- "syn 2.0.114",
 ]
 
 [[package]]
@@ -1557,16 +1586,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "macros"
-version = "0.0.0"
-dependencies = [
- "ast",
- "proc-macro2",
- "quote",
- "syn 2.0.114",
-]
-
-[[package]]
 name = "matches"
 version = "0.1.10"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2093,16 +2112,6 @@ checksum = "22e18b0f0062d30d4230b2e85ff77fdfe4326feb054b9783a3460d8435c8ab91"
 dependencies = [
  "crossbeam-deque",
  "crossbeam-utils",
-]
-
-[[package]]
-name = "realtime"
-version = "0.0.0"
-dependencies = [
- "axum",
- "cheers",
- "rand",
- "tokio",
 ]
 
 [[package]]

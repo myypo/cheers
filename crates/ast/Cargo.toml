@@ -1,16 +1,17 @@
 [package]
-name = "ast"
+name = "cheers-ast"
 version.workspace = true
 authors.workspace = true
 edition.workspace = true
-description.workspace = true
+rust-version.workspace = true
+description = "Internal AST support crate for cheers."
+documentation = "https://docs.rs/cheers-ast"
 readme.workspace = true
 homepage.workspace = true
 repository.workspace = true
 license.workspace = true
 keywords.workspace = true
 categories.workspace = true
-publish = false
 
 [dependencies]
 html-escape.workspace = true

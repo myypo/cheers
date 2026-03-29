@@ -124,6 +124,32 @@ fn sanitize_axum_sse_data(data: String) -> String {
 
 const DATASTAR_PATCH_ELEMENTS: &str = "datastar-patch-elements";
 
+#[cfg(test)]
+fn sse_response(event: impl Into<Event> + Send + 'static) -> Response {
+    let (tx, rx) = events();
+    tokio::spawn(async move {
+        tx.send(event).expect("event receiver should still be open");
+    });
+    rx.into_response()
+}
+
+#[cfg(test)]
+async fn read_sse_body(event: impl Into<Event> + Send + 'static) -> String {
+    use crate::test_utils::read_axum_body;
+
+    let response = sse_response(event);
+    assert_eq!(response.status(), axum::http::StatusCode::OK);
+    assert_eq!(
+        response
+            .headers()
+            .get("content-type")
+            .expect("stream response should set content-type header"),
+        "text/event-stream"
+    );
+
+    read_axum_body(response).await
+}
+
 pub use patch_elements::{PatchElements, PatchElementsMode};
 
 mod patch_elements {
@@ -383,10 +409,8 @@ mod patch_elements {
 
     #[cfg(test)]
     mod tests {
-        use axum::http::StatusCode;
-
+        use super::super::read_sse_body;
         use super::*;
-        use crate::test_utils::read_axum_body;
 
         #[tokio::test]
         async fn streams_patch_elements_without_elements() {
@@ -394,16 +418,7 @@ mod patch_elements {
                 .mode(PatchElementsMode::Remove)
                 .selector("#foo");
 
-            let (tx, rx) = events();
-            tokio::spawn(async move {
-                tx.send(patch).unwrap();
-            });
-
-            let rx = rx.into_response();
-            assert_eq!(rx.status(), StatusCode::OK);
-            let headers = rx.headers();
-            assert_eq!(headers.get("content-type").unwrap(), "text/event-stream");
-            let body = read_axum_body(rx).await;
+            let body = read_sse_body(patch).await;
             assert_eq!(
                 body,
                 "event: datastar-patch-elements
@@ -430,16 +445,7 @@ data: selector #foo\n\n"
                 .mode(PatchElementsMode::Append)
                 .use_view_transition();
 
-            let (tx, rx) = events();
-            tokio::spawn(async move {
-                tx.send(patch).unwrap();
-            });
-
-            let rx = rx.into_response();
-            assert_eq!(rx.status(), StatusCode::OK);
-            let headers = rx.headers();
-            assert_eq!(headers.get("content-type").unwrap(), "text/event-stream");
-            let body = read_axum_body(rx).await;
+            let body = read_sse_body(patch).await;
             assert_eq!(
                 body,
                 format!(
@@ -455,7 +461,7 @@ data: elements {content}\n\n"
         async fn works_with_multiine_elements() {
             struct Home;
 
-            impl<'a> Render for Home {
+            impl Render for Home {
                 fn render_to(&self, buffer: &mut Buffer<crate::context::Element>) {
                     "Home of me\n\nHere we go".render_to(buffer);
                 }
@@ -465,16 +471,7 @@ data: elements {content}\n\n"
                 .element(Home)
                 .mode(PatchElementsMode::Inner);
 
-            let (tx, rx) = events();
-            tokio::spawn(async move {
-                tx.send(patch).unwrap();
-            });
-
-            let rx = rx.into_response();
-            assert_eq!(rx.status(), StatusCode::OK);
-            let headers = rx.headers();
-            assert_eq!(headers.get("content-type").unwrap(), "text/event-stream");
-            let body = read_axum_body(rx).await;
+            let body = read_sse_body(patch).await;
             assert_eq!(
                 body,
                 format!(
@@ -556,6 +553,7 @@ mod js_script {
     mod tests {
         use macros::Cheers;
 
+        use super::super::read_sse_body;
         use super::*;
         use crate::test_utils::read_axum_body;
 
@@ -567,7 +565,12 @@ mod js_script {
             let rx = script.into_response();
 
             let headers = rx.headers();
-            assert_eq!(headers.get("content-type").unwrap(), "text/javascript");
+            assert_eq!(
+                headers
+                    .get("content-type")
+                    .expect("script response should set content-type header"),
+                "text/javascript"
+            );
 
             let rx = read_axum_body(rx).await;
             assert_eq!(rx, s);
@@ -578,14 +581,9 @@ mod js_script {
             let s = r#"history.pushState({}, "", "456");"#.to_owned();
 
             let script = JsScript::new(r#"history.pushState({}, "", "456");"#);
-            let (tx, rx) = events();
-            tokio::spawn(async move {
-                tx.send(script).unwrap();
-            });
-
-            let rx = read_axum_body(rx).await;
+            let body = read_sse_body(script).await;
             assert_eq!(
-                rx,
+                body,
                 format!(
                     "event: datastar-patch-elements
 data: mode append
@@ -600,14 +598,9 @@ data: elements <script data-init=\"el.remove()\">{s}</script>\n\n"
             let s = r#"history.pushState({}, "", "456");"#.to_owned();
 
             let script = JsScript::new(r#"history.pushState({}, "", "456");"#).persist();
-            let (tx, rx) = events();
-            tokio::spawn(async move {
-                tx.send(script).unwrap();
-            });
-
-            let rx = read_axum_body(rx).await;
+            let body = read_sse_body(script).await;
             assert_eq!(
-                rx,
+                body,
                 format!(
                     "event: datastar-patch-elements
 data: mode append
@@ -621,14 +614,9 @@ data: elements <script>{s}</script>\n\n"
         async fn works_with_multiline_scripts_in_sse() {
             let script = JsScript::new("console.log('hi');\nconsole.log('there');");
 
-            let (tx, rx) = events();
-            tokio::spawn(async move {
-                tx.send(script).unwrap();
-            });
-
-            let rx = read_axum_body(rx).await;
+            let body = read_sse_body(script).await;
             assert_eq!(
-                rx,
+                body,
                 format!(
                     "event: datastar-patch-elements
 data: mode append
@@ -652,12 +640,7 @@ data: elements console.log('there');</script>\n\n"
                 .id(Row::id(1))
                 .mode(PatchElementsMode::Outer);
 
-            let (tx, rx) = events();
-            tokio::spawn(async move {
-                tx.send(patch).unwrap();
-            });
-
-            let body = read_axum_body(rx.into_response()).await;
+            let body = read_sse_body(patch).await;
             assert!(body.contains("selector #row-1"));
         }
 
@@ -668,12 +651,7 @@ data: elements console.log('there');</script>\n\n"
                 .id(Row::id(2))
                 .mode(PatchElementsMode::Outer);
 
-            let (tx, rx) = events();
-            tokio::spawn(async move {
-                tx.send(patch).unwrap();
-            });
-
-            let body = read_axum_body(rx.into_response()).await;
+            let body = read_sse_body(patch).await;
             assert!(body.contains("selector #row-1,#row-2"));
         }
 
@@ -684,12 +662,7 @@ data: elements console.log('there');</script>\n\n"
                 .selector("#sidebar")
                 .mode(PatchElementsMode::Inner);
 
-            let (tx, rx) = events();
-            tokio::spawn(async move {
-                tx.send(patch).unwrap();
-            });
-
-            let body = read_axum_body(rx.into_response()).await;
+            let body = read_sse_body(patch).await;
             assert!(body.contains("selector .card,#sidebar"));
         }
 
@@ -700,12 +673,7 @@ data: elements console.log('there');</script>\n\n"
                 .selector(".highlight")
                 .mode(PatchElementsMode::Outer);
 
-            let (tx, rx) = events();
-            tokio::spawn(async move {
-                tx.send(patch).unwrap();
-            });
-
-            let body = read_axum_body(rx.into_response()).await;
+            let body = read_sse_body(patch).await;
             assert!(body.contains("selector #row-1,.highlight"));
         }
 
@@ -713,12 +681,7 @@ data: elements console.log('there');</script>\n\n"
         async fn later_selector_call_overwrites_earlier_one() {
             let patch = PatchElements::new().id(Row::id(1)).selector(".override");
 
-            let (tx, rx) = events();
-            tokio::spawn(async move {
-                tx.send(patch).unwrap();
-            });
-
-            let body = read_axum_body(rx.into_response()).await;
+            let body = read_sse_body(patch).await;
             assert!(body.contains("selector #row-1,.override"));
         }
     }
