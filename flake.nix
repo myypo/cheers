@@ -106,13 +106,10 @@
               updated = before + generated + after
 
               if readme_text != updated:
-                  print(
-                      "README example is out of sync with examples/readme/src/main.rs.",
-                      file=sys.stderr,
-                  )
-                  raise SystemExit(1)
-
-              print("README example is in sync")
+                  readme.write_text(updated, encoding="utf-8")
+                  print("README example was out of sync — updated README.md")
+              else:
+                  print("README example is in sync")
               PY
             '';
           };

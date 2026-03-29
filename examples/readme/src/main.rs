@@ -1,6 +1,8 @@
+use std::time::Duration;
+
 use axum::{
     Router,
-    extract::{Form, Path, State},
+    extract::{Form, State},
     routing::get,
 };
 use cheers::{
@@ -12,41 +14,55 @@ use cheers::{
 struct Ctx;
 
 #[derive(Cheers)]
-struct Profile {
-    #[id]
-    id: u32,
-    #[signal]
-    saving: bool,
-    #[form]
+struct Dwarf {
     name: String,
 }
 
-impl Render for Profile {
+impl Render for Dwarf {
+    fn render_to(&self, buffer: &mut Buffer<Element>) {
+        html! {
+            p {
+                "Engraved name: "
+                strong { (self.name) }
+            }
+        }
+        .render_to(buffer);
+    }
+}
+
+#[derive(Cheers)]
+#[form(name: String)]
+struct DwarfList {
+    dwarfs: Vec<Dwarf>,
+}
+
+impl Render for DwarfList {
     fn render_to(&self, buffer: &mut Buffer<Element>) {
         ids!(id);
-        signals!(signal_saving);
         form_names!(form_name);
 
-        let save_action = SaveProfileAction {
-            profile_id: self.id,
-        };
+        let signal_forging: Signal<bool> = scoped_signal!("forging");
 
         html! {
-            section id=id !signals(signal_saving: self.saving) {
-                h2 { "Edit profile" }
-                form !on:submit(save_action) {
+            section {
+                h2 { "Add Dwarf Record" }
+                form {
                     label {
-                        "Name"
-                        input name=(form_name) value=(self.name);
+                        "Dwarf Name"
+                        input name=form_name;
                     }
-                    button type="submit" !indicator(signal_saving) {
-                        "Save"
-                    }
+                    button
+                        type="submit"
+                        !on:click((ForgeRecordAction {}))
+                        !indicator(signal_forging)
+                        !attr("disabled": signal_forging)
+                    { "Engrave" }
                 }
-                p !show(signal_saving) { "Saving..." }
-                p {
-                    "Saved name: "
-                    strong { (self.name) }
+                h2 { "Dwarf List" }
+                ul id=id {
+                    @for d in &self.dwarfs {
+                        li { (d) }
+                    }
                 }
             }
         }
@@ -54,12 +70,11 @@ impl Render for Profile {
     }
 }
 
-async fn home_page(_: State<Ctx>) -> AsyncLazy<impl Render> {
-    let profile = async {
-        Profile {
-            id: 1,
-            saving: false,
-            name: String::from("Ferris"),
+async fn hall_of_ancestors(_: State<Ctx>) -> AsyncLazy<impl Render> {
+    let thorin = async {
+        tokio::time::sleep(Duration::from_millis(300)).await;
+        Dwarf {
+            name: String::from("Thorin Ironmantle"),
         }
     };
 
@@ -68,12 +83,12 @@ async fn home_page(_: State<Ctx>) -> AsyncLazy<impl Render> {
         html {
             body {
                 main {
-                    h1 { "Cheers" }
+                    h1 { "⛏ The Deep Halls" }
                     @async {
-                        @let profile = profile.await;
-                        Profile id=(profile.id) saving=(profile.saving) name=(profile.name);
+                        @let dwarfs = vec![thorin.await];
+                        DwarfList dwarfs;
                     } @else {
-                        p { "Loading profile..." }
+                        p { "Consulting the elder runes..." }
                     }
                 }
                 Scripts;
@@ -83,28 +98,24 @@ async fn home_page(_: State<Ctx>) -> AsyncLazy<impl Render> {
 }
 
 #[action(POST)]
-async fn save_profile(
-    Path(profile_id): Path<u32>,
-    _: State<Ctx>,
-    Form(form): Form<ProfileForm>,
-) -> PatchElements {
-    let updated = Profile {
-        id: profile_id,
-        saving: false,
-        name: form.name,
-    };
+async fn forge_record(_: State<Ctx>, Form(form): Form<DwarfListForm>) -> PatchElements {
+    tokio::time::sleep(Duration::from_millis(500)).await;
+
+    let new_record = Dwarf { name: form.name };
 
     PatchElements::new()
-        .id(Profile::id(profile_id))
-        .mode(PatchElementsMode::Outer)
-        .element(updated)
+        .id(DwarfList::id())
+        .mode(PatchElementsMode::Append)
+        .element(html! {
+            li { (new_record) }
+        })
 }
 
 cheers::app!(Ctx);
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let app = app(Router::new().route("/", get(home_page)))?.with_state(Ctx);
+    let app = app(Router::new().route("/", get(hall_of_ancestors)))?.with_state(Ctx);
 
     let listener = tokio::net::TcpListener::bind("127.0.0.1:3000").await?;
     axum::serve(listener, app).await?;
