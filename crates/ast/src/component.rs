@@ -173,10 +173,10 @@ impl Generate for Component {
     const CONTEXT: Context = Context::Element;
 
     fn generate(&mut self, g: &mut Generator) {
-        let tokens = if self.dotdot.is_some() {
-            self.generate_dotdot_tokens(g)
-        } else {
+        let tokens = if self.default_attrs.is_some() && self.dotdot.is_none() {
             self.generate_prop_builder_tokens(g)
+        } else {
+            self.generate_dotdot_tokens(g)
         };
 
         g.push_expr(Paren::default(), Self::CONTEXT, &tokens);

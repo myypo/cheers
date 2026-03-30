@@ -118,7 +118,7 @@ Usage:
 
 ```rust
 html! {
-    Card title="Welcome" {
+    Card title="Welcome" () {
         "Body"
     }
 
@@ -128,11 +128,11 @@ html! {
 }
 ```
 
-If a component has only defaulted props, it can be used without `()` and overridden only when needed:
+Optional props are opt-in at the call site: use a trailing `(...)` group. Use `()` when you want defaults without overriding any optional props. This syntax is mutually exclusive with `..` defaults syntax.
 
 ```rust
 html! {
-    Badge;
+    Badge ();
     Badge (kind="warning");
 }
 ```

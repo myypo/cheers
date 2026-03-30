@@ -125,10 +125,19 @@ impl Parse for Component {
         }
 
         let default_attrs = if input.peek(Paren) {
-            Some(input.parse()?)
+            Some(input.parse::<ComponentDefaultAttributes>()?)
         } else {
             None
         };
+
+        let dotdot = input.parse::<Option<Token![..]>>()?;
+
+        if let (Some(_), Some(dotdot)) = (&default_attrs, &dotdot) {
+            return Err(Error::new_spanned(
+                dotdot,
+                "component optional props `(...)` cannot be combined with `..`",
+            ));
+        }
 
         ensure_unique_component_attrs(&attrs, default_attrs.as_ref())?;
 
@@ -136,8 +145,28 @@ impl Parse for Component {
             name,
             attrs,
             default_attrs,
-            dotdot: input.parse()?,
+            dotdot,
             body: input.parse()?,
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use syn::parse_str;
+
+    use crate::Component;
+
+    #[test]
+    fn component_rejects_optional_props_with_dotdot() {
+        let err = match parse_str::<Component>("Badge () ..;") {
+            Ok(_) => panic!("expected parse error"),
+            Err(err) => err,
+        };
+
+        assert_eq!(
+            err.to_string(),
+            "component optional props `(...)` cannot be combined with `..`"
+        );
     }
 }

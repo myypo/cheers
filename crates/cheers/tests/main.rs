@@ -197,6 +197,38 @@ fn component() {
 }
 
 #[test]
+fn component_without_cheers_derive() {
+    struct Card<'a, R> {
+        title: &'a str,
+        children: R,
+    }
+
+    impl<'a, R: Render> Render for Card<'a, R> {
+        fn render_to(&self, buffer: &mut Buffer<Element>) {
+            html! {
+                section {
+                    h2 { (self.title) }
+                    div { (self.children) }
+                }
+            }
+            .render_to(buffer);
+        }
+    }
+
+    let result = html! {
+        Card title="Welcome" {
+            span { "Hello" }
+        }
+    }
+    .render();
+
+    assert_eq!(
+        result.as_inner(),
+        r#"<section><h2>Welcome</h2><div><span>Hello</span></div></section>"#
+    );
+}
+
+#[test]
 fn unindent() {
     let result = html! {
         div title="multiline\ntitle" { "in\n    out\nin" }
@@ -709,7 +741,7 @@ fn component_dotdot_default() {
     }
 
     let result = html! {
-        Feedback text=("Great") ..;
+        Feedback text="Great" ..;
     }
     .render();
 
@@ -736,7 +768,7 @@ fn component_default_prop_without_override() {
     }
 
     let result = html! {
-        Feedback text="Great";
+        Feedback text="Great" ();
     }
     .render();
 
@@ -915,7 +947,7 @@ fn component_default_only_props() {
     }
 
     let default_result = html! {
-        Badge;
+        Badge ();
     }
     .render();
 

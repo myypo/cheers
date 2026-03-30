@@ -93,6 +93,9 @@ fn expand_attribute_literal(tokens: proc_macro::TokenStream) -> proc_macro::Toke
 /// - `#[form(name: Type)]` on the struct adds an extra field to the generated form type.
 /// - `#[form_derive(...)]` adds derives to the generated `...Form` type.
 /// - `#[prop(default(...))]` marks a component field as optional when used from `html!`.
+///   Optional props are provided through a trailing `(prop=value)` group; use `()` to opt into
+///   defaults without overriding any optional props. This syntax cannot be combined with `..`
+///   defaults syntax.
 ///
 /// # Example
 ///
