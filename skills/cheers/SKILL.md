@@ -228,15 +228,20 @@ Good fits:
 Example:
 
 ```rust
-let fetching: Signal<bool> = scoped_signal!("spinner.fetching");
+impl Render for Projects {
+    fn render_to(&self, buffer: &mut Buffer<Element>) {
+        scoped_signal!(signal_fetching: bool);
 
-html! {
-    button !on:click("@get('/items')") !indicator(fetching) { "Refresh" }
-    div !show(fetching) { "Loading..." }
+        html! {
+            button !on:click("@get('/items')") !indicator(signal_fetching) { "Refresh" }
+            div !show(signal_fetching) { "Loading..." }
+        }
+        .render_to(buffer);
+    }
 }
 ```
 
-Do **not** treat scoped signals as stable external names. Their generated path includes call-site-derived data.
+Do **not** treat scoped signals as stable external names. Their generated path includes component-instance and call-site-derived data.
 
 ## Forms
 

@@ -484,30 +484,48 @@ async fn page_async_block_is_streamed() {
     assert!(got.contains("<div>Here!</div>"), "{got}");
 }
 
+#[derive(Cheers)]
+struct ScopedSignalProbe {
+    #[id]
+    id: u32,
+}
+
+impl ScopedSignalProbe {
+    fn render_signals(&self) -> String {
+        scoped_signal!(signal_toggle);
+        scoped_signal!(signal_typed: bool);
+        html! {
+            div !on:interval("@get('/')") {}
+            p !signals(signal_toggle: true, signal_typed: false) {}
+        }
+        .render()
+        .into_inner()
+    }
+}
+
 #[test]
 fn scoped_signal_hash() {
-    let toggle: Signal<bool> = scoped_signal!("toggle");
-    let nested: Signal<&'static str> = scoped_signal!("nested", "go42", "bye");
-    let result = html! {
-        div !on:interval("@get('/')") {}
-        p !signals(toggle: true, nested: "'impressive'") {}
-    }
-    .render();
+    let first_rendered = ScopedSignalProbe { id: 7 }.render_signals();
+    let second_rendered = ScopedSignalProbe { id: 8 }.render_signals();
 
-    let rendered = result.as_inner();
-    let prefix = r#"<div data-on:interval="@get('/')"></div><p data-signals="{toggle"#;
-    let (toggle_hash, rest) = rendered
+    let prefix = r#"<div data-on:interval="@get('/')"></div><p data-signals="{signal_toggle"#;
+    let (first_toggle_hash, rest) = first_rendered
         .strip_prefix(prefix)
-        .and_then(|rest| rest.split_once(":true,nested:{go42:{bye"))
-        .expect(rendered);
-    let (nested_hash, suffix) = rest
-        .split_once(r#":'impressive'}}}"></p>"#)
-        .expect(rendered);
+        .and_then(|rest| rest.split_once(":true,signal_typed"))
+        .expect(&first_rendered);
+    let (first_typed_hash, suffix) = rest.split_once(r#":false}"></p>"#).expect(&first_rendered);
 
-    assert!(!toggle_hash.is_empty() && toggle_hash.chars().all(|c| c.is_ascii_digit()));
-    assert!(!nested_hash.is_empty() && nested_hash.chars().all(|c| c.is_ascii_digit()));
-    assert_ne!(toggle_hash, nested_hash);
+    assert!(!first_toggle_hash.is_empty() && first_toggle_hash.chars().all(|c| c.is_ascii_digit()));
+    assert!(!first_typed_hash.is_empty() && first_typed_hash.chars().all(|c| c.is_ascii_digit()));
+    assert_ne!(first_toggle_hash, first_typed_hash);
     assert!(suffix.is_empty(), "unexpected trailing output: {suffix}");
+
+    let (second_toggle_hash, _) = second_rendered
+        .strip_prefix(prefix)
+        .and_then(|rest| rest.split_once(":true,signal_typed"))
+        .expect(&second_rendered);
+
+    assert_ne!(first_toggle_hash, second_toggle_hash);
 }
 
 #[test]

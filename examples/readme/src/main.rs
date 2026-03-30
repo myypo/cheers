@@ -41,7 +41,7 @@ impl Render for DwarfList {
         ids!(id);
         form_names!(form_name);
 
-        let signal_forging: Signal<bool> = scoped_signal!("forging");
+        scoped_signal!(signal_forging: bool);
 
         html! {
             section {

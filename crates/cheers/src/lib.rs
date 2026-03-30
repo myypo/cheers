@@ -47,12 +47,14 @@ pub mod __internal {
 
 pub mod macros {
     pub use macros::{
-        attribute, attribute_borrow, attribute_static, form_names, html_borrow, html_static, ids,
-        signals, svg_borrow, svg_static,
+        attribute_borrow, attribute_static, html_borrow, html_static, svg_borrow, svg_static,
     };
 }
+
 pub mod prelude {
-    pub use macros::{Cheers, action, form_names, html, ids, signals, svg};
+    pub use macros::{
+        Cheers, action, attribute, form_names, html, ids, scoped_signal, signals, svg,
+    };
 
     pub use crate::{
         context::{AttributeValue, Element},
@@ -63,7 +65,6 @@ pub mod prelude {
         reference::{ElementId, FormName, Signal},
         render::{Buffer, Lazy, LazyAttribute, Render, RenderExt as _},
         response::AsyncLazy,
-        scoped_signal,
     };
 }
 pub use render::{Raw, RawAttribute, Rendered};

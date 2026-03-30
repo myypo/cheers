@@ -3,6 +3,7 @@
 
 mod action;
 mod cheers;
+mod scoped_signal;
 mod shared;
 
 use ast::{
@@ -263,6 +264,44 @@ pub fn attribute_borrow(tokens: proc_macro::TokenStream) -> proc_macro::TokenStr
 #[proc_macro]
 pub fn attribute_static(tokens: proc_macro::TokenStream) -> proc_macro::TokenStream {
     expand_attribute_literal(tokens)
+}
+
+#[proc_macro]
+/// Creates a component-local signal whose name is scoped to the current component instance and call site.
+///
+/// Use this when defining local state inside a component method, not when referencing a
+/// component signal from outside. Scoped signals are intentionally internal to the component
+/// that creates them.
+///
+/// This is useful for component-local UI state such as loading spinners.
+///
+/// The type hint is optional.
+///
+/// ```ignore
+/// use cheers::prelude::*;
+///
+/// #[derive(Cheers)]
+/// struct Projects {
+///     #[id]
+///     id: u64,
+/// }
+///
+/// impl Render for Projects {
+///     fn render_to(&self, buffer: &mut Buffer<Element>) {
+///         scoped_signal!(signal_fetching: bool);
+///         scoped_signal!(signal_busy);
+///
+///         html! {
+///             button !on:click("@get('/items')") !indicator(signal_fetching) { "Refresh" }
+///             div !show(signal_fetching) { "Loading..." }
+///             p !signals(signal_busy: true) {}
+///         }
+///         .render_to(buffer);
+///     }
+/// }
+/// ```
+pub fn scoped_signal(tokens: proc_macro::TokenStream) -> proc_macro::TokenStream {
+    scoped_signal::expand(tokens)
 }
 
 #[proc_macro_attribute]

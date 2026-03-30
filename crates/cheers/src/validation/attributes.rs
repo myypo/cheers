@@ -186,10 +186,22 @@ pub mod data {
     ///
     /// ```
     /// # use cheers::prelude::*;
-    /// # let foo: Signal<&str> = scoped_signal!("foo");
+    /// # #[derive(Cheers)]
+    /// # #[signal(foo: String)]
+    /// # struct Example {
+    /// #     #[id]
+    /// #     id: u8,
+    /// # }
+    /// # impl Render for Example {
+    /// #     fn render_to(&self, buffer: &mut Buffer<Element>) {
+    /// #         signals!(signal_foo);
     /// html! {
-    ///     div !attr("title": foo) {}
-    /// };
+    ///     div !attr("title": signal_foo) {}
+    /// }
+    /// #         .render_to(buffer);
+    /// #     }
+    /// # }
+    /// # let _ = Example { id: 0 }.render();
     /// ```
     pub const attr: Attribute = Attribute;
 
@@ -209,10 +221,22 @@ pub mod data {
     ///
     /// ```
     /// # use cheers::prelude::*;
-    /// # let foo: Signal<String> = scoped_signal!("foo");
+    /// # #[derive(Cheers)]
+    /// # #[signal(foo: String)]
+    /// # struct Example {
+    /// #     #[id]
+    /// #     id: u8,
+    /// # }
+    /// # impl Render for Example {
+    /// #     fn render_to(&self, buffer: &mut Buffer<Element>) {
+    /// #         signals!(signal_foo);
     /// html! {
-    ///     input !bind(foo);
-    /// };
+    ///     input !bind(signal_foo);
+    /// }
+    /// #         .render_to(buffer);
+    /// #     }
+    /// # }
+    /// # let _ = Example { id: 0 }.render();
     /// ```
     ///
     /// The initial value of the signal is set to the value of the element,
@@ -220,10 +244,22 @@ pub mod data {
     ///
     /// ```
     /// # use cheers::prelude::*;
-    /// # let foo: Signal<String> = scoped_signal!("foo");
+    /// # #[derive(Cheers)]
+    /// # #[signal(foo: String)]
+    /// # struct Example {
+    /// #     #[id]
+    /// #     id: u8,
+    /// # }
+    /// # impl Render for Example {
+    /// #     fn render_to(&self, buffer: &mut Buffer<Element>) {
+    /// #         signals!(signal_foo);
     /// html! {
-    ///     input !bind(foo) value="bar";
-    /// };
+    ///     input !bind(signal_foo) value="bar";
+    /// }
+    /// #         .render_to(buffer);
+    /// #     }
+    /// # }
+    /// # let _ = Example { id: 0 }.render();
     /// ```
     ///
     /// # Predefined Signal Types
@@ -234,14 +270,26 @@ pub mod data {
     ///
     /// ```
     /// # use cheers::prelude::*;
-    /// # let foo: Signal<i32> = scoped_signal!("foo");
+    /// # #[derive(Cheers)]
+    /// # #[signal(foo: i32)]
+    /// # struct Example {
+    /// #     #[id]
+    /// #     id: u8,
+    /// # }
+    /// # impl Render for Example {
+    /// #     fn render_to(&self, buffer: &mut Buffer<Element>) {
+    /// #         signals!(signal_foo);
     /// html! {
-    ///     div !signals(foo: 0) {
-    ///         select !bind(foo) {
+    ///     div !signals(signal_foo: 0) {
+    ///         select !bind(signal_foo) {
     ///             option value="10" { "10" }
     ///         }
     ///     }
-    /// };
+    /// }
+    /// #         .render_to(buffer);
+    /// #     }
+    /// # }
+    /// # let _ = Example { id: 0 }.render();
     /// ```
     ///
     /// In the same way, you can assign multiple input values to a single signal
@@ -249,13 +297,24 @@ pub mod data {
     ///
     /// ```
     /// # use cheers::prelude::*;
-    /// # let foo: Signal<&str> = scoped_signal!("foo");
+    /// # #[derive(Cheers)]
+    /// # struct Example {
+    /// #     #[id]
+    /// #     id: u8,
+    /// # }
+    /// # impl Render for Example {
+    /// #     fn render_to(&self, buffer: &mut Buffer<Element>) {
+    /// #         scoped_signal!(signal_foo: &str);
     /// html! {
-    ///     div !signals(foo: "[]") {
-    ///         input !bind(foo) type="checkbox" value="bar";
-    ///         input !bind(foo) type="checkbox" value="baz";
+    ///     div !signals(signal_foo: "[]") {
+    ///         input !bind(signal_foo) type="checkbox" value="bar";
+    ///         input !bind(signal_foo) type="checkbox" value="baz";
     ///     }
-    /// };
+    /// }
+    /// #         .render_to(buffer);
+    /// #     }
+    /// # }
+    /// # let _ = Example { id: 0 }.render();
     /// ```
     ///
     /// # File Uploads
@@ -265,10 +324,22 @@ pub mod data {
     ///
     /// ```
     /// # use cheers::prelude::*;
-    /// # let files: Signal<()> = scoped_signal!("files");
+    /// # #[derive(Cheers)]
+    /// # #[signal(files: ())]
+    /// # struct Example {
+    /// #     #[id]
+    /// #     id: u8,
+    /// # }
+    /// # impl Render for Example {
+    /// #     fn render_to(&self, buffer: &mut Buffer<Element>) {
+    /// #         signals!(signal_files);
     /// html! {
-    ///     input type="file" !bind(files) multiple;
-    /// };
+    ///     input type="file" !bind(signal_files) multiple;
+    /// }
+    /// #         .render_to(buffer);
+    /// #     }
+    /// # }
+    /// # let _ = Example { id: 0 }.render();
     /// ```
     ///
     /// The resulting signal is in the format `{ name: string, contents: string,
@@ -284,10 +355,22 @@ pub mod data {
     ///
     /// ```
     /// # use cheers::prelude::*;
-    /// # let is_hidden: Signal<bool> = scoped_signal!("isHidden");
+    /// # #[derive(Cheers)]
+    /// # #[signal(is_hidden: bool)]
+    /// # struct Example {
+    /// #     #[id]
+    /// #     id: u8,
+    /// # }
+    /// # impl Render for Example {
+    /// #     fn render_to(&self, buffer: &mut Buffer<Element>) {
+    /// #         signals!(signal_is_hidden);
     /// html! {
-    ///     div !class({ "{hidden: " (is_hidden) "}" }) {}
-    /// };
+    ///     div !class({ "{hidden: " (signal_is_hidden) "}" }) {}
+    /// }
+    /// #         .render_to(buffer);
+    /// #     }
+    /// # }
+    /// # let _ = Example { id: 0 }.render();
     /// ```
     pub const class: Attribute = Attribute;
 
@@ -300,13 +383,25 @@ pub mod data {
     ///
     /// ```
     /// # use cheers::prelude::*;
-    /// # let foo: Signal<i32> = scoped_signal!("foo");
-    /// # let bar: Signal<i32> = scoped_signal!("bar");
-    /// # let total: Signal<i32> = scoped_signal!("total");
+    /// # #[derive(Cheers)]
+    /// # #[signal(foo: i32)]
+    /// # #[signal(bar: i32)]
+    /// # #[signal(total: i32)]
+    /// # struct Example {
+    /// #     #[id]
+    /// #     id: u8,
+    /// # }
+    /// # impl Render for Example {
+    /// #     fn render_to(&self, buffer: &mut Buffer<Element>) {
+    /// #         signals!(signal_foo, signal_bar, signal_total);
     /// html! {
-    ///     div !computed(total: { (foo) " + " (bar) }) {}
-    ///     div !text(total) {}
-    /// };
+    ///     div !computed(signal_total: { (signal_foo) " + " (signal_bar) }) {}
+    ///     div !text(signal_total) {}
+    /// }
+    /// #         .render_to(buffer);
+    /// #     }
+    /// # }
+    /// # let _ = Example { id: 0 }.render();
     /// ```
     ///
     /// Computed signals are useful for memoizing expressions containing other
@@ -328,11 +423,23 @@ pub mod data {
     ///
     /// ```
     /// # use cheers::prelude::*;
-    /// # let foo: Signal<i32> = scoped_signal!("foo");
-    /// # let bar: Signal<i32> = scoped_signal!("bar");
+    /// # #[derive(Cheers)]
+    /// # #[signal(foo: i32)]
+    /// # #[signal(bar: i32)]
+    /// # struct Example {
+    /// #     #[id]
+    /// #     id: u8,
+    /// # }
+    /// # impl Render for Example {
+    /// #     fn render_to(&self, buffer: &mut Buffer<Element>) {
+    /// #         signals!(signal_foo, signal_bar);
     /// html! {
-    ///     div !effect({ (foo) " = " (bar) " + 1" }) {}
-    /// };
+    ///     div !effect({ (signal_foo) " = " (signal_bar) " + 1" }) {}
+    /// }
+    /// #         .render_to(buffer);
+    /// #     }
+    /// # }
+    /// # let _ = Example { id: 0 }.render();
     /// ```
     pub const effect: Attribute = Attribute;
 
@@ -386,11 +493,22 @@ pub mod data {
     ///
     /// ```
     /// # use cheers::prelude::*;
-    /// # let fetching: Signal<bool> = scoped_signal!("fetching");
+    /// # #[derive(Cheers)]
+    /// # struct Example {
+    /// #     #[id]
+    /// #     id: u8,
+    /// # }
+    /// # impl Render for Example {
+    /// #     fn render_to(&self, buffer: &mut Buffer<Element>) {
+    /// #         scoped_signal!(signal_fetching: bool);
     /// html! {
-    ///     button !on:click("@get('/endpoint')") !indicator(fetching) {}
-    ///     div !show(fetching) { "Loading..." }
-    /// };
+    ///     button !on:click("@get('/endpoint')") !indicator(signal_fetching) {}
+    ///     div !show(signal_fetching) { "Loading..." }
+    /// }
+    /// #         .render_to(buffer);
+    /// #     }
+    /// # }
+    /// # let _ = Example { id: 0 }.render();
     /// ```
     pub const indicator: Attribute = Attribute;
 
@@ -404,10 +522,22 @@ pub mod data {
     ///
     /// ```
     /// # use cheers::prelude::*;
-    /// # let count: Signal<i32> = scoped_signal!("count");
+    /// # #[derive(Cheers)]
+    /// # #[signal(count: i32)]
+    /// # struct Example {
+    /// #     #[id]
+    /// #     id: u8,
+    /// # }
+    /// # impl Render for Example {
+    /// #     fn render_to(&self, buffer: &mut Buffer<Element>) {
+    /// #         signals!(signal_count);
     /// html! {
-    ///     div !init({ (count) " = 1" }) {}
-    /// };
+    ///     div !init({ (signal_count) " = 1" }) {}
+    /// }
+    /// #         .render_to(buffer);
+    /// #     }
+    /// # }
+    /// # let _ = Example { id: 0 }.render();
     /// ```
     pub const init: Attribute = Attribute;
 
@@ -448,10 +578,22 @@ pub mod data {
     ///
     /// ```
     /// # use cheers::prelude::*;
-    /// # let foo: Signal<()> = scoped_signal!("foo");
+    /// # #[derive(Cheers)]
+    /// # #[signal(foo: ())]
+    /// # struct Example {
+    /// #     #[id]
+    /// #     id: u8,
+    /// # }
+    /// # impl Render for Example {
+    /// #     fn render_to(&self, buffer: &mut Buffer<Element>) {
+    /// #         signals!(signal_foo);
     /// html! {
-    ///     div !ref(foo) {}
-    /// };
+    ///     div !ref(signal_foo) {}
+    /// }
+    /// #         .render_to(buffer);
+    /// #     }
+    /// # }
+    /// # let _ = Example { id: 0 }.render();
     /// ```
     pub const r#ref: Attribute = Attribute;
 
@@ -465,10 +607,22 @@ pub mod data {
     ///
     /// ```
     /// # use cheers::prelude::*;
-    /// # let foo: Signal<bool> = scoped_signal!("foo");
+    /// # #[derive(Cheers)]
+    /// # #[signal(foo: bool)]
+    /// # struct Example {
+    /// #     #[id]
+    /// #     id: u8,
+    /// # }
+    /// # impl Render for Example {
+    /// #     fn render_to(&self, buffer: &mut Buffer<Element>) {
+    /// #         signals!(signal_foo);
     /// html! {
-    ///     div !show(foo) {}
-    /// };
+    ///     div !show(signal_foo) {}
+    /// }
+    /// #         .render_to(buffer);
+    /// #     }
+    /// # }
+    /// # let _ = Example { id: 0 }.render();
     /// ```
     pub const show: Attribute = Attribute;
 
@@ -481,10 +635,22 @@ pub mod data {
     ///
     /// ```
     /// # use cheers::prelude::*;
-    /// # let foo: Signal<i32> = scoped_signal!("foo");
+    /// # #[derive(Cheers)]
+    /// # #[signal(foo: i32)]
+    /// # struct Example {
+    /// #     #[id]
+    /// #     id: u8,
+    /// # }
+    /// # impl Render for Example {
+    /// #     fn render_to(&self, buffer: &mut Buffer<Element>) {
+    /// #         signals!(signal_foo);
     /// html! {
-    ///     div !signals(foo: 1) {}
-    /// };
+    ///     div !signals(signal_foo: 1) {}
+    /// }
+    /// #         .render_to(buffer);
+    /// #     }
+    /// # }
+    /// # let _ = Example { id: 0 }.render();
     /// ```
     pub const signals: Attribute = Attribute;
 
@@ -495,10 +661,22 @@ pub mod data {
     ///
     /// ```
     /// # use cheers::prelude::*;
-    /// # let using_red: Signal<bool> = scoped_signal!("usingRed");
+    /// # #[derive(Cheers)]
+    /// # #[signal(using_red: bool)]
+    /// # struct Example {
+    /// #     #[id]
+    /// #     id: u8,
+    /// # }
+    /// # impl Render for Example {
+    /// #     fn render_to(&self, buffer: &mut Buffer<Element>) {
+    /// #         signals!(signal_using_red);
     /// html! {
-    ///     div !style("background-color": { (using_red) " ? 'red' : 'blue'" }) {}
-    /// };
+    ///     div !style("background-color": { (signal_using_red) " ? 'red' : 'blue'" }) {}
+    /// }
+    /// #         .render_to(buffer);
+    /// #     }
+    /// # }
+    /// # let _ = Example { id: 0 }.render();
     /// ```
     pub const style: Attribute = Attribute;
 
@@ -508,12 +686,24 @@ pub mod data {
     ///
     /// ```
     /// # use cheers::prelude::*;
-    /// # let foo: Signal<i32> = scoped_signal!("foo");
+    /// # #[derive(Cheers)]
+    /// # #[signal(foo: i32)]
+    /// # struct Example {
+    /// #     #[id]
+    /// #     id: u8,
+    /// # }
+    /// # impl Render for Example {
+    /// #     fn render_to(&self, buffer: &mut Buffer<Element>) {
+    /// #         signals!(signal_foo);
     /// html! {
-    ///     div !text(foo) {}
+    ///     div !text(signal_foo) {}
     ///     // or with a complex expression
-    ///     div !text({ "'Value: ' + (" (foo) " * 2)" }) {}
-    /// };
+    ///     div !text({ "'Value: ' + (" (signal_foo) " * 2)" }) {}
+    /// }
+    /// #         .render_to(buffer);
+    /// #     }
+    /// # }
+    /// # let _ = Example { id: 0 }.render();
     /// ```
     pub const text: Attribute = Attribute;
 
@@ -873,10 +1063,22 @@ pub mod data {
         ///
         /// ```
         /// # use cheers::prelude::*;
-        /// # let intersected: Signal<bool> = scoped_signal!("intersected");
+        /// # #[derive(Cheers)]
+        /// # #[signal(intersected: bool)]
+        /// # struct Example {
+        /// #     #[id]
+        /// #     id: u8,
+        /// # }
+        /// # impl Render for Example {
+        /// #     fn render_to(&self, buffer: &mut Buffer<Element>) {
+        /// #         signals!(signal_intersected);
         /// html! {
-        ///     div !on:intersect({ (intersected) " = true" }) {}
-        /// };
+        ///     div !on:intersect({ (signal_intersected) " = true" }) {}
+        /// }
+        /// #         .render_to(buffer);
+        /// #     }
+        /// # }
+        /// # let _ = Example { id: 0 }.render();
         /// ```
         pub const intersect: Attribute = Attribute;
 
@@ -886,10 +1088,22 @@ pub mod data {
         ///
         /// ```
         /// # use cheers::prelude::*;
-        /// # let count: Signal<i32> = scoped_signal!("count");
+        /// # #[derive(Cheers)]
+        /// # #[signal(count: i32)]
+        /// # struct Example {
+        /// #     #[id]
+        /// #     id: u8,
+        /// # }
+        /// # impl Render for Example {
+        /// #     fn render_to(&self, buffer: &mut Buffer<Element>) {
+        /// #         signals!(signal_count);
         /// html! {
-        ///     div !on:interval({ (count) "++" }) {}
-        /// };
+        ///     div !on:interval({ (signal_count) "++" }) {}
+        /// }
+        /// #         .render_to(buffer);
+        /// #     }
+        /// # }
+        /// # let _ = Example { id: 0 }.render();
         /// ```
         pub const interval: Attribute = Attribute;
 
