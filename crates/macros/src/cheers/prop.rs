@@ -421,6 +421,7 @@ pub(crate) fn generate_prop_impl(item: &mut ItemStruct) -> Result<TokenStream, E
 
             #[doc(hidden)]
             #[must_use]
+            #[allow(clippy::too_many_arguments)]
             #vis fn __cheers_props(#(#required_param_entries),*) -> #builder_ident #ty_generics {
                 Self::__cheers_props_from_required(#required_ident {
                     #(#required_fields_from_wrappers,)*

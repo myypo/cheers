@@ -409,8 +409,7 @@ mod patch_elements {
 
     #[cfg(test)]
     mod tests {
-        use super::super::read_sse_body;
-        use super::*;
+        use super::{super::read_sse_body, *};
 
         #[tokio::test]
         async fn streams_patch_elements_without_elements() {
@@ -553,8 +552,7 @@ mod js_script {
     mod tests {
         use macros::Cheers;
 
-        use super::super::read_sse_body;
-        use super::*;
+        use super::{super::read_sse_body, *};
         use crate::test_utils::read_axum_body;
 
         #[tokio::test]
