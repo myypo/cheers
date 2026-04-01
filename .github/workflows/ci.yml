@@ -9,8 +9,8 @@ jobs:
     runs-on: ubuntu-latest
     if: github.event.pull_request.draft == false
     steps:
-      - uses: actions/checkout@v4
-      - uses: cachix/install-nix-action@v31
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: cachix/install-nix-action@96951a368ba55167b55f1c916f7d416bac6505fe # v31.10.3
         with:
           github_access_token: ${{ secrets.GITHUB_TOKEN }}
           extra_nix_config: |
@@ -28,7 +28,7 @@ jobs:
           - "bans licenses sources"
 
     steps:
-      - uses: actions/checkout@v4
-      - uses: EmbarkStudios/cargo-deny-action@v2
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: EmbarkStudios/cargo-deny-action@3fd3802e88374d3fe9159b834c7714ec57d6c979 # v2.0.15
         with:
           command: check ${{ matrix.checks }}
