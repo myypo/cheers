@@ -197,6 +197,67 @@ mod test {
     );
 
     test_default!(
+        component_with_nested_markup_macro_expression_attribute,
+        r#"
+        html! {
+            ExampleComponent
+                content=(html_borrow! {
+                    input
+                        name=name
+                        value=(&value)
+                        !on:change((&handler));
+                })
+                fallback=(render_value(name, handler.clone()))
+                ();
+        }
+        "#,
+        r#"
+        html! {
+            ExampleComponent
+                content=(
+                    html_borrow! {
+                        input name=name value=(&value) !on:change((&handler));
+                    }
+                )
+                fallback=(render_value(name, handler.clone()))
+                ();
+        }
+        "#
+    );
+
+    test_default!(
+        component_with_non_cheers_nested_macro_expression_attribute_is_preserved_verbatim,
+        r#"
+        html! {
+            ExampleComponent
+                content=(custom_markup! {
+                    input
+                        name=name
+                        value=(&value)
+                        !on:change((&handler));
+                })
+                fallback=(render_value(name, handler.clone()))
+                ();
+        }
+        "#,
+        r#"
+        html! {
+            ExampleComponent
+                content=(
+                    custom_markup! {
+                        input
+                            name=name
+                            value=(&value)
+                            !on:change((&handler));
+                    }
+                )
+                fallback=(render_value(name, handler.clone()))
+                ();
+        }
+        "#
+    );
+
+    test_default!(
         component_with_default_override_group,
         r#"
         html! { Card title="Welcome"(author="me") { "Content" } }

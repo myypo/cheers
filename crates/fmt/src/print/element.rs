@@ -799,6 +799,33 @@ mod test {
         "#
     );
 
+    test_default!(
+        multiline_attribute_toggle_unknown_macro_is_preserved_verbatim,
+        r#"
+        html! {
+            input checked[custom_toggle! {
+                input
+                    name=name
+                    value=(&value)
+                    !on:change((&handler));
+            }];
+        }
+        "#,
+        r#"
+        html! {
+            input
+                checked[
+                    custom_toggle! {
+                        input
+                            name=name
+                            value=(&value)
+                            !on:change((&handler));
+                    }
+                ];
+        }
+        "#
+    );
+
     test_small_line!(
         short_element_name_multiple_long_attributes,
         r#"
