@@ -61,7 +61,7 @@ pub mod prelude {
         events::{
             Event, EventReceiver, EventSender, JsScript, PatchElements, PatchElementsMode, events,
         },
-        include_css,
+        include_css, include_svg_sprite,
         reference::{ElementId, FormName, Signal},
         render::{Buffer, Lazy, LazyAttribute, Render, RenderExt as _},
         response::AsyncLazy,

@@ -1,7 +1,7 @@
 #![allow(non_upper_case_globals)]
 #[cfg(feature = "mathml")]
 pub use super::mathml::MathMlGlobalAttributes;
-use crate::validation::{Attribute, AttributeNamespace, Element};
+use crate::validation::{Attribute, Element};
 
 pub trait GlobalAttributes: Element {
     /// Used as a guide for creating a keyboard shortcut that activates or
@@ -1193,9 +1193,9 @@ pub trait SvgGlobalAttributes: Element {
 
     const lang: Attribute = Attribute;
 
-    const xml: AttributeNamespace = AttributeNamespace;
+    const xml: Attribute = Attribute;
 
-    const xmlns: AttributeNamespace = AttributeNamespace;
+    const xmlns: Attribute = Attribute;
 
     const required_extensions: Attribute = Attribute;
 

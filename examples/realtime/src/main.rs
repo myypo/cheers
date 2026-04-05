@@ -6,7 +6,7 @@ use axum::{
     routing::get,
 };
 use cheers::{
-    components::{Css, Doctype, Scripts},
+    components::{CssStylesheet, Doctype, Scripts, SvgSymbol},
     prelude::*,
 };
 use rand::Rng;
@@ -28,7 +28,7 @@ impl<T: Render> Render for Base<T> {
             Doctype;
             html {
                 head {
-                    Css;
+                    CssStylesheet;
                 }
                 body {
                     main { (self.children) }
@@ -60,7 +60,7 @@ impl<'a> Render for Stock<'a> {
         let dollar_price = format!("${:.2}", self.price_cents as f64 / 100.0);
         html! {
             section id=id {
-                h3 { (self.name) }
+                h3 { (SvgSymbol("icon-stock")) " " (self.name) }
                 button !on:click(increment_action) {
                     "Price: "
                     span !signals(signal_price_cents: self.price_cents) { (dollar_price) }
@@ -152,6 +152,16 @@ cheers::app!(Ctx);
 async fn main() {
     tokio::spawn(async {
         include_css!("./main.css");
+        include_svg_sprite! {
+            svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" {
+                symbol id="icon-stock" viewBox="0 0 16 16" {
+                    path d="M2 13h12v1H2z";
+                    path d="M3 11V6h2v5z";
+                    path d="M7 11V3h2v8z";
+                    path d="M11 11V8h2v3z";
+                }
+            }
+        }
 
         let stocks_tx = tokio::sync::broadcast::channel(16).0;
         let stocks = Box::leak(Box::new(Mutex::new(BTreeMap::from([

@@ -347,11 +347,7 @@ impl AttributeName {
         match self {
             Self::Unchecked(_) => None,
             Self::Namespace { namespace, rest } => Some(AttributeNameCheck::new(
-                if !data && (namespace == &"xml" || namespace == &"xmlns") {
-                    AttributeNameCheckKind::NamespaceOnly(namespace.clone())
-                } else {
-                    AttributeNameCheckKind::Namespace(namespace.clone())
-                },
+                AttributeNameCheckKind::Namespace(namespace.clone()),
                 rest.clone(),
                 data,
             )),

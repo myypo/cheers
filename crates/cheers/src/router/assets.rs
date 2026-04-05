@@ -16,8 +16,6 @@ use lightningcss::{
 
 use crate::router::Error;
 
-const DATASTAR_URL: &str = "/assets/datastar.js";
-
 fn assets_headers(content_type: &'static str) -> HeaderMap {
     let mut headers = HeaderMap::new();
     headers.insert(header::CONTENT_TYPE, HeaderValue::from_static(content_type));
@@ -40,6 +38,11 @@ where
 {
     #[cfg(not(debug_assertions))]
     let stylesheet = CSS_BUNDLER.bundle()?;
+
+    #[cfg(not(debug_assertions))]
+    let sprite_sheet = SVG_SPRITE_BUNDLER.bundle()?;
+
+    let css_path = css_path();
 
     let css_handler = || async move {
         #[cfg(debug_assertions)]
@@ -96,9 +99,50 @@ import '@plugins/watchers/patchSignals'
         (StatusCode::OK, headers, bundle).into_response()
     };
 
-    Ok(Router::new()
-        .route(css_url(), get(css_handler))
-        .route(DATASTAR_URL, get(datastar_handler)))
+    let mut router = Router::new()
+        .route(css_path, get(css_handler))
+        .route("/assets/datastar.js", get(datastar_handler));
+
+    #[cfg(debug_assertions)]
+    if SVG_SPRITE_BUNDLER.has_registrations() {
+        let svg_handler = || async move {
+            match SVG_SPRITE_BUNDLER.bundle() {
+                Ok(Some(sprite_sheet)) => {
+                    let headers = assets_headers("image/svg+xml");
+                    (StatusCode::OK, headers, sprite_sheet).into_response()
+                }
+                Ok(None) => (
+                    StatusCode::NOT_FOUND,
+                    [(header::CONTENT_TYPE, "text/plain")],
+                    "SVG sprite sheet is not registered".to_owned(),
+                )
+                    .into_response(),
+                Err(e) => (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    [(header::CONTENT_TYPE, "text/plain")],
+                    format!("Error bundling SVG sprite sheet in dev mode: {e}"),
+                )
+                    .into_response(),
+            }
+        };
+
+        router = router.route(svg_sprite_path(), get(svg_handler));
+    }
+
+    #[cfg(not(debug_assertions))]
+    if let Some(sprite_sheet) = sprite_sheet {
+        let svg_handler = move || {
+            let sprite_sheet = sprite_sheet.clone();
+            async move {
+                let headers = assets_headers("image/svg+xml");
+                (StatusCode::OK, headers, sprite_sheet).into_response()
+            }
+        };
+
+        router = router.route(svg_sprite_path(), get(svg_handler));
+    }
+
+    Ok(router)
 }
 
 pub struct CssBundler(Mutex<Vec<String>>);
@@ -114,15 +158,46 @@ fn printer_options<'a>() -> PrinterOptions<'a> {
     }
 }
 
-static CSS_URL: OnceLock<String> = OnceLock::new();
+static CSS_PATH: OnceLock<String> = OnceLock::new();
+static SVG_SPRITE_PATH: OnceLock<String> = OnceLock::new();
 
-pub(crate) fn css_url() -> &'static str {
+fn css_path() -> &'static str {
     if cfg!(debug_assertions) {
-        CSS_URL.get_or_init(|| "/assets/bundle.css".to_owned())
+        "/assets/bundle.css"
     } else {
-        CSS_URL
+        CSS_PATH
         .get()
-        .expect("CSS has to be bundled. Make sure you are calling `serve_crabstar_application` somewhere in your app.")
+        .expect("CSS has to be bundled. Make sure you are calling `cheers::app!(...)` and `app(...)` somewhere in your app.")
+    }
+}
+
+pub(crate) fn css_url() -> String {
+    public_asset_url(css_path())
+}
+
+fn public_asset_url(path: &str) -> String {
+    format!("/cheers{path}")
+}
+
+fn svg_sprite_path() -> &'static str {
+    if cfg!(debug_assertions) {
+        "/assets/sprite.svg"
+    } else {
+        SVG_SPRITE_PATH
+            .get()
+            .expect("SVG sprite sheet has to be bundled. Make sure you are calling `include_svg_sprite!` before building the Cheers router.")
+    }
+}
+
+pub(crate) fn svg_sprite_url() -> String {
+    if cfg!(debug_assertions) {
+        assert!(
+            SVG_SPRITE_BUNDLER.has_registrations(),
+            "SVG sprite sheet has to be registered. Make sure you are calling `include_svg_sprite!` before using `svg_sprite_url()`."
+        );
+        public_asset_url(svg_sprite_path())
+    } else {
+        public_asset_url(svg_sprite_path())
     }
 }
 
@@ -166,6 +241,62 @@ fn make_single_stylesheet<'a>(
     Ok(stylesheets.join("\n"))
 }
 
+fn make_svg_path(contents: &str) -> String {
+    if cfg!(debug_assertions) {
+        "/assets/sprite.svg".to_owned()
+    } else {
+        let mut hasher = DefaultHasher::new();
+        contents.hash(&mut hasher);
+        use base64::Engine;
+        let hash =
+            base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(hasher.finish().to_le_bytes());
+
+        format!("/assets/{hash}.svg")
+    }
+}
+
+pub struct SvgSpriteBundler(Mutex<Vec<String>>);
+
+impl SvgSpriteBundler {
+    #[doc(hidden)]
+    pub fn __add(&self, s: String) {
+        let mut this = self.0.lock().expect("unlock SVG sprite bundler");
+        this.push(s);
+    }
+
+    fn has_registrations(&self) -> bool {
+        !self.0.lock().expect("unlock SVG sprite bundler").is_empty()
+    }
+
+    pub(crate) fn bundle(&self) -> Result<Option<String>, Error> {
+        let this = self
+            .0
+            .lock()
+            .map_err(|e| Error::Bundling(format!("unlock SVG sprite bundler: {e}")))?;
+
+        let Some(sprite) = this.first() else {
+            return Ok(None);
+        };
+
+        if this.iter().skip(1).any(|other| other != sprite) {
+            return Err(Error::Bundling(
+                "only a single global SVG sprite sheet is supported right now; consolidate your `include_svg_sprite!` calls into one sheet".to_owned(),
+            ));
+        }
+
+        let path = make_svg_path(sprite);
+        if cfg!(debug_assertions) {
+            let _ = SVG_SPRITE_PATH.set(path.clone());
+        } else {
+            SVG_SPRITE_PATH
+                .set(path.clone())
+                .map_err(|e| Error::Bundling(format!("setting static SVG_SPRITE_PATH: {e}")))?;
+        }
+
+        Ok(Some(sprite.clone()))
+    }
+}
+
 impl CssBundler {
     #[doc(hidden)]
     /// Used by the `include_css!` macro to register stylesheet inputs for bundling.
@@ -192,20 +323,24 @@ impl CssBundler {
 
         let stylesheet = make_single_stylesheet(this.iter().map(|s| s.as_str()))?;
 
-        let url = make_css_url(&stylesheet);
+        let path = make_css_url(&stylesheet);
         if cfg!(debug_assertions) {
-            let _ = CSS_URL.set(url.clone());
+            let _ = CSS_PATH.set(path.clone());
         } else {
-            CSS_URL
-                .set(url.clone())
-                .map_err(|e| Error::Bundling(format!("setting static CSS_URL: {e}")))?;
+            CSS_PATH
+                .set(path.clone())
+                .map_err(|e| Error::Bundling(format!("setting static CSS_PATH: {e}")))?;
         }
 
         Ok(stylesheet)
     }
 }
 
+#[doc(hidden)]
 pub static CSS_BUNDLER: LazyLock<CssBundler> = LazyLock::new(|| CssBundler(Mutex::new(Vec::new())));
+#[doc(hidden)]
+pub static SVG_SPRITE_BUNDLER: LazyLock<SvgSpriteBundler> =
+    LazyLock::new(|| SvgSpriteBundler(Mutex::new(Vec::new())));
 
 #[macro_export]
 macro_rules! include_css {
@@ -249,6 +384,41 @@ macro_rules! include_css {
     };
 }
 
+/// Registers the single global SVG sprite sheet.
+///
+/// # Example
+///
+/// ```
+/// use cheers::{components::SvgSymbol, prelude::*};
+///
+/// include_svg_sprite! {
+///     svg viewBox="0 0 16 16" {
+///         symbol id="icon-check" viewBox="0 0 16 16" {
+///             path d="M6.5 11.2 3.3 8l-1.1 1.1 4.3 4.3L14 5.9l-1.1-1.1z";
+///         }
+///     }
+/// }
+///
+/// let rendered = html! {
+///     svg {
+///         use href=(SvgSymbol("icon-check"));
+///     }
+/// }
+/// .render()
+/// .into_inner();
+///
+/// assert!(rendered.contains("#icon-check"));
+/// ```
+#[macro_export]
+macro_rules! include_svg_sprite {
+    ($($svg:tt)*) => {
+        ($crate::router::SVG_SPRITE_BUNDLER).__add({
+            let __sprite = $crate::macros::svg_static! { $($svg)* };
+            $crate::prelude::Render::render(&__sprite).into_inner()
+        });
+    };
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -260,7 +430,7 @@ mod tests {
         let got = make_css_url("body { height: 100vh; }");
         assert_eq!(got, want);
         let want = css_url();
-        assert_eq!(got, want);
+        assert_eq!(want, "/cheers/assets/bundle.css");
     }
 
     #[cfg(not(debug_assertions))]

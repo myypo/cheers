@@ -122,7 +122,3 @@ mod sealed {
 /// A standard attribute.
 #[derive(Debug, Clone, Copy)]
 pub struct Attribute;
-
-/// An attribute namespace.
-#[derive(Debug, Clone, Copy)]
-pub struct AttributeNamespace;

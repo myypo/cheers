@@ -649,17 +649,6 @@ impl AttributeNameCheck {
                     }
                 }
             }
-            AttributeNameCheckKind::NamespaceOnly(namespace) => {
-                if self.data {
-                    quote! {
-                        let _: ::cheers::validation::AttributeNamespace = ::cheers::validation::data::#namespace::Namespace;
-                    }
-                } else {
-                    quote! {
-                        let _: ::cheers::validation::AttributeNamespace = <#el>::#namespace;
-                    }
-                }
-            }
         }
     }
 }
@@ -667,7 +656,6 @@ impl AttributeNameCheck {
 pub enum AttributeNameCheckKind {
     Normal,
     Namespace(UnquotedName),
-    NamespaceOnly(UnquotedName),
 }
 
 pub struct AnyBlock {

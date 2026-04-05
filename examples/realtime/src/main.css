@@ -1,3 +1,10 @@
 h3 {
 	color: darkslategrey;
 }
+
+h3 svg {
+	width: 1em;
+	height: 1em;
+	vertical-align: -0.125em;
+	margin-right: 0.25em;
+}

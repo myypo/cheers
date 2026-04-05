@@ -9,15 +9,18 @@ use std::{
 
 use axum::{
     Form,
+    body::Body,
     extract::{FromRequest, FromRequestParts, Path},
+    http::StatusCode,
     response::IntoResponse,
 };
 use cheers::{
-    components::{Debugged, Displayed, Doctype, Scripts},
+    components::{CssStylesheet, Debugged, Displayed, Doctype, Scripts, SvgSymbol},
     macros::{html_borrow, svg_borrow, svg_static},
     prelude::*,
 };
 use tokio::sync::{Barrier, Mutex};
+use tower::ServiceExt;
 
 use crate::test_utils::read_axum_body;
 
@@ -44,6 +47,88 @@ fn can_render_vec() {
         result.as_inner(),
         "<ul><li>milk</li><li>eggs</li><li>bread</li></ul>"
     );
+}
+
+fn extract_href(rendered: &str) -> &str {
+    rendered
+        .split("href=\"")
+        .nth(1)
+        .and_then(|rest| rest.split('"').next())
+        .expect("rendered output should contain href attribute")
+}
+
+#[tokio::test]
+async fn css_component_points_to_served_bundle() {
+    let app = cheers::router::new(axum::Router::<()>::new()).expect("router should build");
+
+    let rendered = CssStylesheet.render();
+    let href = extract_href(rendered.as_inner());
+
+    assert!(href.starts_with("/cheers/assets/"));
+
+    let request = axum::http::Request::builder()
+        .uri(href)
+        .body(Body::empty())
+        .expect("request should build");
+
+    let response = app
+        .clone()
+        .oneshot(request)
+        .await
+        .expect("router should return a response");
+
+    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(response.headers()["content-type"], "text/css");
+}
+
+#[tokio::test]
+async fn serves_registered_svg_sprite_sheet() {
+    include_svg_sprite! {
+        svg viewBox="0 0 16 16" {
+            symbol id="icon-check" viewBox="0 0 16 16" {
+                path d="M6.5 11.2 3.3 8l-1.1 1.1 4.3 4.3L14 5.9l-1.1-1.1z";
+            }
+        }
+    }
+
+    let app = cheers::router::new(axum::Router::<()>::new()).expect("router should build");
+
+    let rendered = html! {
+        svg {
+            use href=(SvgSymbol("icon-check"));
+        }
+    }
+    .render();
+
+    let href = extract_href(rendered.as_inner());
+    assert!(href.starts_with("/cheers/assets/"));
+    assert!(href.ends_with("#icon-check"));
+
+    let sprite_url = href
+        .split_once('#')
+        .map(|(url, _)| url)
+        .expect("sprite symbol href should contain a fragment");
+
+    let request = axum::http::Request::builder()
+        .uri(sprite_url)
+        .body(Body::empty())
+        .expect("request should build");
+
+    let response = app
+        .clone()
+        .oneshot(request)
+        .await
+        .expect("router should return a response");
+
+    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(response.headers()["content-type"], "image/svg+xml");
+
+    let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+        .await
+        .expect("response body should be readable");
+    let body = String::from_utf8(body.into()).expect("response body should be valid UTF-8");
+
+    assert!(body.contains(r#"<symbol id="icon-check""#));
 }
 
 #[test]
@@ -365,23 +450,6 @@ fn svg_nested_children() {
 }
 
 #[test]
-fn svg_namespace_attributes() {
-    let result = html! {
-        svg viewBox="0 0 10 10" {
-            g xml:lang="en" xmlns:sprite="urn:cheers:test" {
-                circle cx="5" cy="5" r="4";
-            }
-        }
-    }
-    .render();
-
-    assert_eq!(
-        result.as_inner(),
-        r#"<svg viewBox="0 0 10 10"><g xml:lang="en" xmlns:sprite="urn:cheers:test"><circle cx="5" cy="5" r="4"/></g></svg>"#
-    );
-}
-
-#[test]
 fn svg_root_xmlns_attribute_in_html_mode() {
     let result = html! {
         svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10" {
@@ -558,26 +626,6 @@ fn scoped_signal_hash() {
         .expect(&second_rendered);
 
     assert_ne!(first_toggle_hash, second_toggle_hash);
-}
-
-#[test]
-fn svg_macro_sprite_bundle() {
-    let result = svg! {
-        svg xmlns:sprite="urn:cheers:test" xml:lang="en" viewBox="0 0 16 16" {
-            defs {
-                symbol id="icon-check" viewBox="0 0 16 16" {
-                    path d="M6.5 11.2 3.3 8l-1.1 1.1 4.3 4.3L14 5.9l-1.1-1.1z";
-                }
-            }
-            use href="#icon-check" x="0" y="0" width="16" height="16";
-        }
-    }
-    .render();
-
-    assert_eq!(
-        result.as_inner(),
-        r##"<svg xmlns:sprite="urn:cheers:test" xml:lang="en" viewBox="0 0 16 16"><defs><symbol id="icon-check" viewBox="0 0 16 16"><path d="M6.5 11.2 3.3 8l-1.1 1.1 4.3 4.3L14 5.9l-1.1-1.1z"/></symbol></defs><use href="#icon-check" x="0" y="0" width="16" height="16"/></svg>"##
-    );
 }
 
 #[test]

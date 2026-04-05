@@ -1,6 +1,7 @@
 mod assets;
-pub use assets::CSS_BUNDLER;
-pub(crate) use assets::css_url;
+#[doc(hidden)]
+pub use assets::{CSS_BUNDLER, SVG_SPRITE_BUNDLER};
+pub(crate) use assets::{css_url, svg_sprite_url};
 mod compression;
 mod live_reload;
 mod redirect_trailing_slash;

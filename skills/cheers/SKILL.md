@@ -1,6 +1,6 @@
 ---
 name: cheers
-description: "Use this skill when editing an existing cheers fullstack Rust app: `html!` markup, `Render` implementations, `#[derive(Cheers)]`, `ids!` / `signals!` / `form_names!`, `#[action]` handlers, `PatchElements`, `EventReceiver`, page-shell helpers like `Doctype` / `Css` / `Scripts`, and Datastar-powered server-driven UI updates."
+description: "Use this skill when editing an existing cheers fullstack Rust app: `html!` markup, `Render` implementations, `#[derive(Cheers)]`, `ids!` / `signals!` / `form_names!`, `#[action]` handlers, `PatchElements`, `EventReceiver`, page-shell helpers like `Doctype` / `CssStylesheet` / `Scripts`, and Datastar-powered server-driven UI updates."
 ---
 
 # Workflow
@@ -499,7 +499,7 @@ Example:
 
 ```rust
 use cheers::{
-    components::{Css, Doctype, Scripts},
+    components::{CssStylesheet, Doctype, Scripts},
     prelude::*,
 };
 
@@ -513,7 +513,7 @@ impl<T: Render> Render for Base<T> {
             Doctype;
             html {
                 head {
-                    Css;
+                    CssStylesheet;
                 }
                 body {
                     main { (self.children) }
@@ -528,7 +528,7 @@ impl<T: Render> Render for Base<T> {
 
 Use:
 - `Doctype` at the top of full-page responses
-- `Css` in the page shell, usually in `head`
+- `CssStylesheet` in the page shell, usually in `head`
 - `Scripts` in pages that rely on cheers / Datastar client behavior such as actions, signals, patches, or streaming updates
 
 Use `include_css!("./path.css")` to register stylesheet input for the cheers CSS bundler, usually near startup.
@@ -536,7 +536,7 @@ Use `include_css!("./path.css")` to register stylesheet input for the cheers CSS
 Use `cheers::app!(StateType);` to generate the `app(...)` function that wires cheers routes into the application.
 
 When touching shell or app wiring:
-1. keep `Doctype`, `Css`, and `Scripts` in a layout/base component if the app already has one
+1. keep `Doctype`, `CssStylesheet`, and `Scripts` in a layout/base component if the app already has one
 2. do not move shell concerns into leaf components unless explicitly asked
 3. treat `include_css!` as startup configuration
 4. preserve the app's existing routing and startup shape unless the task specifically changes it

@@ -3,9 +3,9 @@ use std::fmt::{Debug, Display};
 use macros::Cheers;
 
 use crate::{
-    context::Context,
+    context::{AttributeValue, Context, Element},
     render::{Buffer, Render},
-    router::css_url,
+    router::{css_url, svg_sprite_url},
 };
 
 /// Renders `<!DOCTYPE html>`.
@@ -117,13 +117,79 @@ impl Render for Scripts {
 ///
 /// This links to the framework-managed stylesheet path produced by the router.
 #[derive(Cheers)]
-pub struct Css;
+pub struct CssStylesheet;
 
-impl Render for Css {
+impl Render for CssStylesheet {
     fn render_to(&self, buffer: &mut Buffer<crate::context::Element>) {
-        let link = format!(r#"<link rel="stylesheet" href="/cheers{}">"#, css_url());
+        let link = format!(r#"<link rel="stylesheet" href="{}">"#, css_url());
         // XSS SAFETY: CSS URL is computed by us
         buffer.dangerously_get_string().push_str(&link);
+    }
+}
+
+/// A reference to a symbol inside the global Cheers SVG sprite sheet.
+///
+/// In attribute context, this renders the `href` value for a `<use>` element. In element context,
+/// it renders a minimal `<svg><use ...></use></svg>` wrapper.
+///
+/// Register the sprite sheet first with
+/// [`include_svg_sprite!`](crate::include_svg_sprite).
+///
+/// # Example
+///
+/// ```
+/// use cheers::{components::SvgSymbol, prelude::*};
+///
+/// include_svg_sprite! {
+///     svg viewBox="0 0 16 16" {
+///         symbol id="icon-check" viewBox="0 0 16 16" {
+///             path d="M6.5 11.2 3.3 8l-1.1 1.1 4.3 4.3L14 5.9l-1.1-1.1z";
+///         }
+///     }
+/// }
+///
+/// let rendered = html! {
+///     svg {
+///         use href=(SvgSymbol("icon-check"));
+///     }
+/// }
+/// .render()
+/// .into_inner();
+///
+/// assert!(rendered.contains("#icon-check"));
+///
+/// let rendered = html! {
+///     (SvgSymbol("icon-check"))
+/// }
+/// .render()
+/// .into_inner();
+///
+/// assert!(rendered.starts_with("<svg><use href=\"/cheers/assets/"));
+/// ```
+#[derive(Debug, Clone, Copy)]
+pub struct SvgSymbol<T: Display>(pub T);
+
+impl<T: Display> Render<AttributeValue> for SvgSymbol<T>
+where
+    for<'a> std::fmt::Arguments<'a>: Render<AttributeValue>,
+{
+    fn render_to(&self, buffer: &mut Buffer<AttributeValue>) {
+        format_args!("{}#{}", svg_sprite_url(), self.0).render_to(buffer);
+    }
+}
+
+impl<T: Display> Render<Element> for SvgSymbol<T>
+where
+    for<'a> std::fmt::Arguments<'a>: Render<AttributeValue>,
+{
+    fn render_to(&self, buffer: &mut Buffer<Element>) {
+        // XSS SAFETY: sprite URL is computed by us and symbol id is escaped in attribute context.
+        buffer
+            .dangerously_get_string()
+            .push_str("<svg><use href=\"");
+        format_args!("{}#{}", svg_sprite_url(), self.0).render_to(buffer.as_attribute_buffer());
+        // XSS SAFETY: static SVG wrapper
+        buffer.dangerously_get_string().push_str("\"></use></svg>");
     }
 }
 
