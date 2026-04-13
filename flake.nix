@@ -125,6 +125,8 @@
           };
         in
         {
+          default-package-build = inputs.self.packages.${pkgs.stdenv.hostPlatform.system}.default;
+
           pre-commit-check =
             let
               default_stages = [
@@ -390,7 +392,7 @@
             src = ./.;
             cargoBuildFlags = [ "-p=cargo-cheers" ];
 
-            cargoHash = "sha256-YtJvvr6hgHjBIuTqyzbNAP0vVeqB/l9FM6A4kKyNT5E=";
+            cargoHash = "sha256-qKu46vZ/m7IHJMQr2N+EFgnQzg4p3zgSbZxd4fqLqZ8=";
 
             doCheck = false;
           };

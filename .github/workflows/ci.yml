@@ -16,6 +16,10 @@ jobs:
           extra_nix_config: |
             trusted-public-keys = cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY= nix-community.cachix.org-1:mB9FSh9qf2dCimDSUo8Zy7bkq5CX+/rkCWyvRCYg3Fs=
             substituters = https://cache.nixos.org https://nix-community.cachix.org
+
+      - name: Run flake checks
+        run: nix flake check -L
+
       - name: Run flake-defined manual hook checks
         run: nix develop --command prek run --config .pre-commit-config.yaml --all-files --stage manual --skip cargo-deny
 
