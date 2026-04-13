@@ -95,7 +95,7 @@ impl<'a, 'b> Printer<'a, 'b> {
                 self.new_line(indent_level + 1);
             }
 
-            self.write("(");
+            self.write("[");
 
             for (idx, attr) in default_attrs.attrs.into_iter().enumerate() {
                 if idx > 0 {
@@ -105,7 +105,7 @@ impl<'a, 'b> Printer<'a, 'b> {
                 self.print_component_attr(attr, attr_indent_level);
             }
 
-            self.write(")");
+            self.write("]");
         }
 
         if dotdot.is_some() {
@@ -208,7 +208,7 @@ mod test {
                         !on:change((&handler));
                 })
                 fallback=(render_value(name, handler.clone()))
-                ();
+                [];
         }
         "#,
         r#"
@@ -220,7 +220,7 @@ mod test {
                     }
                 )
                 fallback=(render_value(name, handler.clone()))
-                ();
+                [];
         }
         "#
     );
@@ -237,7 +237,7 @@ mod test {
                         !on:change((&handler));
                 })
                 fallback=(render_value(name, handler.clone()))
-                ();
+                [];
         }
         "#,
         r#"
@@ -252,7 +252,7 @@ mod test {
                     }
                 )
                 fallback=(render_value(name, handler.clone()))
-                ();
+                [];
         }
         "#
     );
@@ -260,11 +260,11 @@ mod test {
     test_default!(
         component_with_default_override_group,
         r#"
-        html! { Card title="Welcome"(author="me") { "Content" } }
+        html! { Card title="Welcome"[author="me"] { "Content" } }
         "#,
         r#"
         html! {
-            Card title="Welcome" (author="me") { "Content" }
+            Card title="Welcome" [author="me"] { "Content" }
         }
         "#
     );
@@ -336,14 +336,14 @@ mod test {
         component_wrapping_default_override_group,
         r#"
         html! {
-        MyComponent very_long_attribute_name="value"(another_long_attr="data") { "Content" }
+        MyComponent very_long_attribute_name="value"[another_long_attr="data"] { "Content" }
         }
         "#,
         r#"
         html! {
             MyComponent
                 very_long_attribute_name="value"
-                (another_long_attr="data")
+                [another_long_attr="data"]
             { "Content" }
         }
         "#

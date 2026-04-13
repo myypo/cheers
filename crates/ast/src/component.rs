@@ -5,7 +5,7 @@ use syn::{
     ext::IdentExt,
     parse::{Parse, ParseStream},
     spanned::Spanned,
-    token::{Brace, Paren},
+    token::{Brace, Bracket, Paren},
 };
 
 use super::{ElementBody, Generate, Generator, Literal, ParenExpr};
@@ -184,7 +184,7 @@ impl Generate for Component {
 }
 
 pub struct ComponentDefaultAttributes {
-    pub paren_token: Paren,
+    pub bracket_token: Bracket,
     pub attrs: Vec<ComponentAttribute>,
 }
 
@@ -193,7 +193,7 @@ impl Parse for ComponentDefaultAttributes {
         let content;
 
         Ok(Self {
-            paren_token: syn::parenthesized!(content in input),
+            bracket_token: syn::bracketed!(content in input),
             attrs: {
                 let mut attrs = Vec::new();
 

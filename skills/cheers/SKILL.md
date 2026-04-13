@@ -87,7 +87,7 @@ Rules:
 - fields with `#[prop(default(...))]` are optional
 - other non-`children` fields are required
 - `children` stays special and still comes from the component body
-- optional/defaulted prop overrides go in a grouped `(...)` section
+- optional/defaulted prop overrides go in a grouped `[...]` section
 
 Example:
 
@@ -118,22 +118,22 @@ Usage:
 
 ```rust
 html! {
-    Card title="Welcome" () {
+    Card title="Welcome" [] {
         "Body"
     }
 
-    Card title="Welcome" (author="myypo") {
+    Card title="Welcome" [author="myypo"] {
         "Body"
     }
 }
 ```
 
-Optional props are opt-in at the call site: use a trailing `(...)` group. Use `()` when you want defaults without overriding any optional props. This syntax is mutually exclusive with `..` defaults syntax.
+Optional props are opt-in at the call site: use a trailing `[...]` group. Use `[]` when you want defaults without overriding any optional props. This syntax is mutually exclusive with `..` defaults syntax.
 
 ```rust
 html! {
-    Badge ();
-    Badge (kind="warning");
+    Badge [];
+    Badge [kind="warning"];
 }
 ```
 

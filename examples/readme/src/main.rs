@@ -91,7 +91,7 @@ async fn hall_of_ancestors(_: State<Ctx>) -> AsyncLazy<impl Render> {
                         p { "Consulting the elder runes..." }
                     }
                 }
-                Scripts ();
+                Scripts;
             }
         }
     }

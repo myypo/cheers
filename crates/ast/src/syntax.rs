@@ -4,7 +4,7 @@ use syn::{
     Error, Ident, LitBool, LitChar, LitFloat, LitInt, LitStr, Token, braced,
     ext::IdentExt,
     parse::{Parse, ParseStream},
-    token::{Brace, Paren},
+    token::{Brace, Bracket, Paren},
 };
 
 use crate::{
@@ -116,7 +116,7 @@ impl Parse for Component {
         let name = input.parse()?;
         let mut attrs = Vec::new();
 
-        while !(input.peek(Paren)
+        while !(input.peek(Bracket)
             || input.peek(Token![..])
             || input.peek(Token![;])
             || input.peek(Brace))
@@ -124,7 +124,7 @@ impl Parse for Component {
             attrs.push(input.parse()?);
         }
 
-        let default_attrs = if input.peek(Paren) {
+        let default_attrs = if input.peek(Bracket) {
             Some(input.parse::<ComponentDefaultAttributes>()?)
         } else {
             None
@@ -135,7 +135,7 @@ impl Parse for Component {
         if let (Some(_), Some(dotdot)) = (&default_attrs, &dotdot) {
             return Err(Error::new_spanned(
                 dotdot,
-                "component optional props `(...)` cannot be combined with `..`",
+                "component optional props `[...]` cannot be combined with `..`",
             ));
         }
 
@@ -159,14 +159,14 @@ mod tests {
 
     #[test]
     fn component_rejects_optional_props_with_dotdot() {
-        let err = match parse_str::<Component>("Badge () ..;") {
+        let err = match parse_str::<Component>("Badge [] ..;") {
             Ok(_) => panic!("expected parse error"),
             Err(err) => err,
         };
 
         assert_eq!(
             err.to_string(),
-            "component optional props `(...)` cannot be combined with `..`"
+            "component optional props `[...]` cannot be combined with `..`"
         );
     }
 }

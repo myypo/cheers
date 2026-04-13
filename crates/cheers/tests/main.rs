@@ -549,7 +549,7 @@ impl<T: Render> Render for Base<T> {
             Doctype;
             html {
                 head {
-                    Scripts ();
+                    Scripts;
                 }
                 body {
                     main { (self.children) }
@@ -855,7 +855,7 @@ fn component_default_prop_without_override() {
     }
 
     let result = html! {
-        Feedback text="Great" ();
+        Feedback text="Great" [];
     }
     .render();
 
@@ -882,7 +882,7 @@ fn component_default_prop_with_override() {
     }
 
     let result = html! {
-        Feedback text="Great" (author="myypo");
+        Feedback text="Great" [author="myypo"];
     }
     .render();
 
@@ -913,7 +913,7 @@ fn component_default_prop_with_children() {
     }
 
     let result = html! {
-        Card title="Greetings" (kind="warning") {
+        Card title="Greetings" [kind="warning"] {
             span { "Hello" }
         }
     }
@@ -982,7 +982,7 @@ fn component_default_prop_with_filtered_where_clause() {
     }
 
     let result = html! {
-        Message value=1 (extra=(Some("bonus")));
+        Message value=1 [extra=(Some("bonus"))];
     }
     .render();
 
@@ -1009,7 +1009,7 @@ fn component_default_prop_can_use_old_builder_method_names() {
     }
 
     let result = html! {
-        BuilderNames (build="left" build_with_children="right");
+        BuilderNames [build="left" build_with_children="right"];
     }
     .render();
 
@@ -1034,12 +1034,12 @@ fn component_default_only_props() {
     }
 
     let default_result = html! {
-        Badge ();
+        Badge [];
     }
     .render();
 
     let overridden_result = html! {
-        Badge (kind="warning");
+        Badge [kind="warning"];
     }
     .render();
 

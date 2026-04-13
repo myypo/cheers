@@ -53,7 +53,7 @@ impl Render for Doctype {
 /// use cheers::{components::Scripts, prelude::*};
 ///
 /// let rendered = html! {
-///     Scripts ();
+///     Scripts;
 /// }
 /// .render()
 /// .into_inner();

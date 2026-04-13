@@ -38,7 +38,7 @@ async fn guild_hall() -> impl IntoResponse {
                         "Open ale menu"
                     }
                 }
-                Scripts ();
+                Scripts;
             }
         }
     }

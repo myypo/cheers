@@ -32,7 +32,7 @@ impl<T: Render> Render for Base<T> {
                 }
                 body {
                     main { (self.children) }
-                    Scripts ();
+                    Scripts;
                 }
             }
         }
