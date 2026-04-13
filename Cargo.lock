@@ -529,6 +529,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "cheers-example-track"
+version = "0.1.0-alpha.1"
+dependencies = [
+ "axum",
+ "cheers",
+ "serde",
+ "tokio",
+]
+
+[[package]]
 name = "cheers-fmt"
 version = "0.1.0-alpha.1"
 dependencies = [

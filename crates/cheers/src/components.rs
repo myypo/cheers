@@ -5,7 +5,7 @@ use macros::Cheers;
 use crate::{
     context::{AttributeValue, Context, Element},
     render::{Buffer, Render},
-    router::{css_url, svg_sprite_url},
+    router::{css_url, js_url, svg_sprite_url},
 };
 
 /// Renders `<!DOCTYPE html>`.
@@ -41,8 +41,9 @@ impl Render for Doctype {
 
 /// Renders the core Cheers client-side runtime scripts.
 ///
-/// This includes the streaming helper script and the `datastar.js` runtime. In debug builds it
-/// also includes the live-reload script.
+/// This includes the streaming helper script and the `datastar.js` runtime. When the router was
+/// built with a [`crate::track::TrackConfig`], the served runtime also includes the tracking
+/// plugin. In debug builds it also includes the live-reload script.
 ///
 /// Include this in pages that use Cheers client-side behaviors such as actions, signals and patching
 ///
@@ -51,21 +52,24 @@ impl Render for Doctype {
 /// ```
 /// use cheers::{components::Scripts, prelude::*};
 ///
-/// let rendered = Scripts.render().into_inner();
+/// let rendered = html! {
+///     Scripts ();
+/// }
+/// .render()
+/// .into_inner();
 ///
-/// assert!(rendered.contains("/cheers/assets/datastar.js"));
+/// assert!(rendered.contains("/cheers/assets/"));
 /// ```
-#[derive(Cheers)]
+#[derive(Cheers, Default)]
 pub struct Scripts;
 
 impl Render for Scripts {
     fn render_to(&self, buffer: &mut Buffer<crate::context::Element>) {
         // XSS SAFETY: static HTML streaming script
         buffer.dangerously_get_string().push_str("<script>function __ssrStream(key){const t=document.querySelector(`[data-ssr='${key}-t']`),s=document.querySelector(`[data-ssr='${key}']`);s.replaceWith(t.content);t.remove();document.querySelector(`[data-ssr='${key}-s']`).remove()}</script>");
-        // XSS SAFETY: static inclusion of datastar
-        buffer
-            .dangerously_get_string()
-            .push_str(r#"<script src="/cheers/assets/datastar.js"></script>"#);
+        let script = format!(r#"<script src="{}"></script>"#, js_url());
+        // XSS SAFETY: JS URL is computed by us
+        buffer.dangerously_get_string().push_str(&script);
         if cfg!(debug_assertions) {
             // XSS SAFETY: static reload script
             buffer.dangerously_get_string().push_str(

@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use anyhow::{Context, Error, anyhow, bail};
 use swc_bundler::{Bundler, Hook, Load, ModuleData, ModuleRecord};
@@ -15,7 +15,112 @@ use swc_ecma_transforms_base::fixer::fixer;
 use swc_ecma_transforms_typescript::typescript;
 use swc_ecma_visit::VisitMutWith;
 
-struct PseudoResolver {}
+#[derive(Debug, Clone)]
+pub struct VirtualModule {
+    pub specifier: String,
+    pub content: String,
+}
+
+impl VirtualModule {
+    pub fn new(specifier: impl Into<String>, content: impl Into<String>) -> Self {
+        Self {
+            specifier: specifier.into(),
+            content: content.into(),
+        }
+    }
+}
+
+struct PseudoResolver {
+    virtual_modules: HashSet<String>,
+}
+
+fn resolve_datastar_alias(module_specifier: &str) -> Option<swc_ecma_loader::resolve::Resolution> {
+    if module_specifier == "@engine" {
+        return Some(swc_ecma_loader::resolve::Resolution {
+            filename: FileName::Real("engine/engine".into()),
+            slug: None,
+        });
+    }
+
+    let resolved = if let Some(rest) = module_specifier.strip_prefix("@engine/") {
+        Some(format!("engine/{rest}"))
+    } else if let Some(rest) = module_specifier.strip_prefix("@utils/") {
+        Some(format!("utils/{rest}"))
+    } else {
+        module_specifier
+            .strip_prefix("@plugins/")
+            .map(|rest| format!("plugins/{rest}"))
+    };
+
+    resolved.map(|filename| swc_ecma_loader::resolve::Resolution {
+        filename: FileName::Real(filename.into()),
+        slug: None,
+    })
+}
+
+fn resolve_relative_specifier(base: &str, module_specifier: &str) -> Result<String, Error> {
+    let mut parts = base
+        .split('/')
+        .filter(|segment| !segment.is_empty())
+        .collect::<Vec<_>>();
+
+    let Some(_) = parts.pop() else {
+        bail!(
+            "resolve relative module specifier `{module_specifier}` from `{base}`: missing base module name"
+        );
+    };
+
+    for segment in module_specifier.split('/') {
+        match segment {
+            "" | "." => {}
+            ".." => {
+                let Some(_) = parts.pop() else {
+                    bail!(
+                        "resolve relative module specifier `{module_specifier}` from `{base}`: walked past the virtual root"
+                    );
+                };
+            }
+            _ => parts.push(segment),
+        }
+    }
+
+    if parts.is_empty() {
+        bail!(
+            "resolve relative module specifier `{module_specifier}` from `{base}`: resolved to an empty module name"
+        );
+    }
+
+    Ok(parts.join("/"))
+}
+
+fn is_relative_specifier(module_specifier: &str) -> bool {
+    module_specifier == "."
+        || module_specifier == ".."
+        || module_specifier.starts_with("./")
+        || module_specifier.starts_with("../")
+}
+
+fn normalize_virtual_specifier(
+    virtual_modules: &HashSet<String>,
+    module_specifier: &str,
+) -> Option<String> {
+    if virtual_modules.contains(module_specifier) {
+        return Some(module_specifier.to_owned());
+    }
+
+    if let Some(module_specifier) = module_specifier.strip_suffix(".ts")
+        && virtual_modules.contains(module_specifier)
+    {
+        return Some(module_specifier.to_owned());
+    }
+
+    let module_specifier_with_ts = format!("{module_specifier}.ts");
+    if virtual_modules.contains(&module_specifier_with_ts) {
+        return Some(module_specifier_with_ts);
+    }
+
+    None
+}
 
 impl Resolve for PseudoResolver {
     fn resolve(
@@ -23,55 +128,54 @@ impl Resolve for PseudoResolver {
         base: &FileName,
         module_specifier: &str,
     ) -> Result<swc_ecma_loader::resolve::Resolution, Error> {
-        if let FileName::Custom(s) = base
-            && s == "datastar-entry"
-        {
-            if let Some(rest) = module_specifier.strip_prefix("@plugins/") {
+        if let Some(resolution) = resolve_datastar_alias(module_specifier) {
+            return Ok(resolution);
+        }
+
+        if is_relative_specifier(module_specifier) {
+            let base = match base {
+                FileName::Custom(name) => name.clone(),
+                FileName::Real(path) => path.to_string_lossy().into_owned(),
+                _ => bail!("unsupported base filename type: {base}"),
+            };
+
+            let resolved = resolve_relative_specifier(&base, module_specifier)?;
+            if let Some(virtual_module) =
+                normalize_virtual_specifier(&self.virtual_modules, &resolved)
+            {
                 return Ok(swc_ecma_loader::resolve::Resolution {
-                    filename: FileName::Real(format!("plugins/{}", rest).into()),
+                    filename: FileName::Custom(virtual_module),
                     slug: None,
                 });
             }
 
+            return Ok(swc_ecma_loader::resolve::Resolution {
+                filename: FileName::Real(resolved.into()),
+                slug: None,
+            });
+        }
+
+        if let Some(virtual_module) =
+            normalize_virtual_specifier(&self.virtual_modules, module_specifier)
+        {
+            return Ok(swc_ecma_loader::resolve::Resolution {
+                filename: FileName::Custom(virtual_module),
+                slug: None,
+            });
+        }
+
+        if let FileName::Custom(_) = base {
             return Ok(swc_ecma_loader::resolve::Resolution {
                 filename: FileName::Real(module_specifier.into()),
                 slug: None,
             });
         }
 
-        if let FileName::Real(_) = base {
-            if module_specifier == "@engine" {
-                return Ok(swc_ecma_loader::resolve::Resolution {
-                    filename: FileName::Real("engine/engine".into()),
-                    slug: None,
-                });
-            }
-
-            if let Some(rest) = module_specifier.strip_prefix("@engine/") {
-                return Ok(swc_ecma_loader::resolve::Resolution {
-                    filename: FileName::Real(format!("engine/{}", rest).into()),
-                    slug: None,
-                });
-            } else if let Some(rest) = module_specifier.strip_prefix("@utils/") {
-                return Ok(swc_ecma_loader::resolve::Resolution {
-                    filename: FileName::Real(format!("utils/{}", rest).into()),
-                    slug: None,
-                });
-            } else if let Some(rest) = module_specifier.strip_prefix("@plugins/") {
-                return Ok(swc_ecma_loader::resolve::Resolution {
-                    filename: FileName::Real(format!("plugins/{}", rest).into()),
-                    slug: None,
-                });
-            };
-
-            bail!(
-                "unsupported module specifier `{}` for base filename `{}`",
-                module_specifier,
-                base
-            );
-        }
-
-        bail!("unsupported base filename type: {base}");
+        bail!(
+            "unsupported module specifier `{}` for base filename `{}`",
+            module_specifier,
+            base
+        );
     }
 }
 
@@ -85,7 +189,7 @@ impl Hook for NoopHook {
 
 struct Loader {
     cm: Lrc<SourceMap>,
-    entry_content: String,
+    virtual_modules: HashMap<String, String>,
 }
 
 include!(concat!(env!("OUT_DIR"), "/datastar_loader.rs"));
@@ -94,9 +198,14 @@ impl Load for Loader {
     fn load(&self, filename: &FileName) -> Result<ModuleData, Error> {
         let source_file = match filename {
             FileName::Real(path) => self.load_datastar_file(path),
-            FileName::Custom(name) if name == "datastar-entry" => self
-                .cm
-                .new_source_file(filename.clone().into(), self.entry_content.clone()),
+            FileName::Custom(name) => {
+                let content = self
+                    .virtual_modules
+                    .get(name)
+                    .with_context(|| format!("unknown virtual module: {name}"))?;
+                self.cm
+                    .new_source_file(filename.clone().into(), content.clone())
+            }
             _ => return Err(anyhow!("unexpected filename: {filename}")),
         };
 
@@ -126,12 +235,32 @@ impl Load for Loader {
     }
 }
 
-pub fn bundle_and_minify(entry_content: String) -> Result<String, Error> {
+pub fn bundle_and_minify(
+    entry_specifier: &str,
+    virtual_modules: impl IntoIterator<Item = VirtualModule>,
+) -> Result<String, Error> {
+    let mut modules_by_specifier = HashMap::new();
+    for module in virtual_modules {
+        if modules_by_specifier
+            .insert(module.specifier.clone(), module.content)
+            .is_some()
+        {
+            bail!("duplicate virtual module specifier `{}`", module.specifier);
+        }
+    }
+
+    if !modules_by_specifier.contains_key(entry_specifier) {
+        bail!("entry virtual module `{entry_specifier}` not found");
+    }
+
     let cm = Lrc::new(SourceMap::new(swc_common::FilePathMapping::empty()));
 
+    let resolver = PseudoResolver {
+        virtual_modules: modules_by_specifier.keys().cloned().collect(),
+    };
     let loader = Loader {
         cm: cm.clone(),
-        entry_content,
+        virtual_modules: modules_by_specifier,
     };
 
     let globals = Globals::new();
@@ -140,7 +269,7 @@ pub fn bundle_and_minify(entry_content: String) -> Result<String, Error> {
         &globals,
         cm.clone(),
         &loader,
-        CachingResolver::new(4096, PseudoResolver {}),
+        CachingResolver::new(4096, resolver),
         swc_bundler::Config {
             require: false,
             disable_inliner: false,
@@ -155,7 +284,7 @@ pub fn bundle_and_minify(entry_content: String) -> Result<String, Error> {
 
     let entries = HashMap::from([(
         "datastar".to_owned(),
-        FileName::Custom("datastar-entry".to_owned()),
+        FileName::Custom(entry_specifier.to_owned()),
     )]);
 
     let mut bundles = bundler.bundle(entries)?.into_iter();
@@ -173,7 +302,6 @@ pub fn bundle_and_minify(entry_content: String) -> Result<String, Error> {
             &MinifyOptions {
                 compress: Some(CompressOptions::default()),
                 mangle: Some(MangleOptions {
-                    props: Some(Default::default()),
                     top_level: Some(true),
                     ..Default::default()
                 }),
@@ -205,4 +333,67 @@ pub fn bundle_and_minify(entry_content: String) -> Result<String, Error> {
     }
 
     Ok(String::from_utf8_lossy(&buf).to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{VirtualModule, bundle_and_minify};
+
+    #[test]
+    fn bundles_virtual_modules_with_relative_imports() {
+        let bundle = bundle_and_minify(
+            "cheers/entry",
+            [
+                VirtualModule::new("cheers/entry", "import './dep'"),
+                VirtualModule::new("cheers/dep", "globalThis.__cheers_bundle_test = 1"),
+            ],
+        )
+        .expect("bundle should succeed");
+
+        assert!(bundle.contains("__cheers_bundle_test"), "{bundle}");
+    }
+
+    #[test]
+    fn resolves_virtual_modules_with_ts_extensions() {
+        let bundle = bundle_and_minify(
+            "cheers/entry",
+            [
+                VirtualModule::new("cheers/entry", "import './dep.ts'"),
+                VirtualModule::new("cheers/dep", "globalThis.__cheers_bundle_test_ts = 1"),
+            ],
+        )
+        .expect("bundle should succeed");
+
+        assert!(bundle.contains("__cheers_bundle_test_ts"), "{bundle}");
+    }
+
+    #[test]
+    fn preserves_http_and_json_property_names() {
+        let bundle = bundle_and_minify(
+            "cheers/entry",
+            [VirtualModule::new(
+                "cheers/entry",
+                r#"
+                const body = JSON.stringify({
+                    sent_at_ms: 1,
+                    items: [{ timestamp_ms: 2, props: { button_id: "main" } }],
+                });
+
+                fetch("/_track", {
+                    method: "POST",
+                    headers: {
+                        "content-type": "application/json",
+                    },
+                    body,
+                });
+                "#,
+            )],
+        )
+        .expect("bundle should succeed");
+
+        assert!(bundle.contains("content-type"), "{bundle}");
+        assert!(bundle.contains("sent_at_ms"), "{bundle}");
+        assert!(bundle.contains("timestamp_ms"), "{bundle}");
+        assert!(bundle.contains("props"), "{bundle}");
+    }
 }

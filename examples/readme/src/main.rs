@@ -91,7 +91,7 @@ async fn hall_of_ancestors(_: State<Ctx>) -> AsyncLazy<impl Render> {
                         p { "Consulting the elder runes..." }
                     }
                 }
-                Scripts;
+                Scripts ();
             }
         }
     }
@@ -115,9 +115,13 @@ cheers::app!(Ctx);
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let app = app(Router::new().route("/", get(hall_of_ancestors)))?.with_state(Ctx);
+    let app = app(
+        Router::new().route("/", get(hall_of_ancestors)),
+        cheers::router::Config::default(),
+    )?
+    .with_state(Ctx);
 
-    let listener = tokio::net::TcpListener::bind("127.0.0.1:3000").await?;
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:8080").await?;
     axum::serve(listener, app).await?;
     Ok(())
 }

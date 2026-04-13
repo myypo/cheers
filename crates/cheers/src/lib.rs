@@ -11,6 +11,7 @@ mod reference;
 mod render;
 mod response;
 pub mod router;
+pub mod track;
 
 #[doc(hidden)]
 /// Re-exported for macro expansions such as `html!`, `html_borrow!`, `html_static!`,
@@ -65,6 +66,7 @@ pub mod prelude {
         reference::{ElementId, FormName, Signal},
         render::{Buffer, Lazy, LazyAttribute, Render, RenderExt as _},
         response::AsyncLazy,
+        track::TrackAction,
     };
 }
 pub use render::{Raw, RawAttribute, Rendered};

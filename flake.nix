@@ -326,6 +326,19 @@
                     ".direnv/**"
                   ];
                 };
+                biome = {
+                  enable = true;
+                  excludes = [
+                    "(^|/)vendor/"
+                  ];
+                  raw.types_or = [
+                    "ts"
+                    "json"
+                    "css"
+                  ];
+                  raw.priority = 30;
+                  settings.write = true;
+                };
                 clippy = {
                   enable = true;
                   raw.priority = 40;

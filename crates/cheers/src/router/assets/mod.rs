@@ -15,6 +15,7 @@ use lightningcss::{
 };
 
 use crate::router::Error;
+use crate::track::TrackConfig;
 
 fn assets_headers(content_type: &'static str) -> HeaderMap {
     let mut headers = HeaderMap::new();
@@ -32,7 +33,45 @@ fn assets_headers(content_type: &'static str) -> HeaderMap {
     headers
 }
 
-pub fn assets_router<S>() -> Result<Router<S>, Error>
+const DATASTAR_ENTRY_MODULE: &str = "cheers/datastar-entry";
+const RUNTIME_ENTRY_MODULE: &str = "cheers/runtime-entry";
+const TRACK_CONFIG_MODULE: &str = "cheers/track-config";
+const TRACK_PLUGIN_MODULE: &str = "cheers/track-plugin";
+
+fn runtime_entry(track: bool) -> String {
+    let mut entry = String::from("import './datastar-entry';\n");
+    if track {
+        entry.push_str("import './track-plugin';\n");
+    }
+
+    entry
+}
+
+fn datastar_modules(track: Option<&TrackConfig>) -> Result<Vec<bundle::VirtualModule>, Error> {
+    let mut modules = vec![
+        bundle::VirtualModule::new(RUNTIME_ENTRY_MODULE, runtime_entry(track.is_some())),
+        bundle::VirtualModule::new(DATASTAR_ENTRY_MODULE, include_str!("datastar-entry.ts")),
+    ];
+
+    if let Some(track) = track {
+        let track_config = track
+            .javascript_module_source()
+            .map_err(|e| Error::Bundling(format!("serialize track config: {e}")))?;
+
+        modules.push(bundle::VirtualModule::new(
+            TRACK_PLUGIN_MODULE,
+            include_str!("track-plugin.ts"),
+        ));
+        modules.push(bundle::VirtualModule::new(
+            TRACK_CONFIG_MODULE,
+            track_config,
+        ));
+    }
+
+    Ok(modules)
+}
+
+pub fn assets_router<S>(track: Option<&TrackConfig>) -> Result<Router<S>, Error>
 where
     S: Clone + Send + Sync + 'static,
 {
@@ -63,36 +102,13 @@ where
         (StatusCode::OK, headers, stylesheet).into_response()
     };
 
-    let bundle: &'static str = bundle::bundle_and_minify(
-        r#"
-import '@plugins/actions/peek'
-import '@plugins/actions/setAll'
-import '@plugins/actions/toggleAll'
-import '@plugins/actions/fetch'
-import '@plugins/attributes/attr'
-import '@plugins/attributes/bind'
-import '@plugins/attributes/class'
-import '@plugins/attributes/computed'
-import '@plugins/attributes/effect'
-import '@plugins/attributes/indicator'
-import '@plugins/attributes/jsonSignals'
-import '@plugins/attributes/on'
-import '@plugins/attributes/onIntersect'
-import '@plugins/attributes/onInterval'
-import '@plugins/attributes/init'
-import '@plugins/attributes/onSignalPatch'
-import '@plugins/attributes/ref'
-import '@plugins/attributes/show'
-import '@plugins/attributes/signals'
-import '@plugins/attributes/style'
-import '@plugins/attributes/text'
-import '@plugins/watchers/patchElements'
-import '@plugins/watchers/patchSignals'
-"#
-        .to_owned(),
-    )
-    .expect("bundle")
-    .leak();
+    let datastar_modules = datastar_modules(track)?;
+
+    let js_path = make_js_path(RUNTIME_ENTRY_MODULE, &datastar_modules);
+    let bundle = bundle::bundle_and_minify(RUNTIME_ENTRY_MODULE, datastar_modules)
+        .map_err(|e| Error::Bundling(format!("bundle javascript: {e}")))?;
+    set_static_path(&JS_PATH, &js_path, "JS_PATH")?;
+    let bundle: &'static str = bundle.leak();
     let datastar_handler = move || async move {
         let headers = assets_headers("text/javascript");
 
@@ -101,7 +117,7 @@ import '@plugins/watchers/patchSignals'
 
     let mut router = Router::new()
         .route(css_path, get(css_handler))
-        .route("/assets/datastar.js", get(datastar_handler));
+        .route(js_path.as_str(), get(datastar_handler));
 
     #[cfg(debug_assertions)]
     if SVG_SPRITE_BUNDLER.has_registrations() {
@@ -159,15 +175,47 @@ fn printer_options<'a>() -> PrinterOptions<'a> {
 }
 
 static CSS_PATH: OnceLock<String> = OnceLock::new();
+static JS_PATH: OnceLock<String> = OnceLock::new();
 static SVG_SPRITE_PATH: OnceLock<String> = OnceLock::new();
+
+fn set_static_path(slot: &OnceLock<String>, path: &str, label: &str) -> Result<(), Error> {
+    if let Some(existing) = slot.get() {
+        if existing == path {
+            return Ok(());
+        }
+
+        return Err(Error::Bundling(format!(
+            "setting static {label}: already initialized to {existing}, got {path}",
+        )));
+    }
+
+    slot.set(path.to_owned())
+        .map_err(|e| Error::Bundling(format!("setting static {label}: {e}")))
+}
+
+fn js_path() -> &'static str {
+    if cfg!(debug_assertions) {
+        "/assets/datastar.js"
+    } else {
+        JS_PATH
+            .get()
+            .map(String::as_str)
+            .unwrap_or("/assets/datastar.js")
+    }
+}
+
+pub(crate) fn js_url() -> String {
+    public_asset_url(js_path())
+}
 
 fn css_path() -> &'static str {
     if cfg!(debug_assertions) {
         "/assets/bundle.css"
     } else {
         CSS_PATH
-        .get()
-        .expect("CSS has to be bundled. Make sure you are calling `cheers::app!(...)` and `app(...)` somewhere in your app.")
+            .get()
+            .map(String::as_str)
+            .unwrap_or("/assets/bundle.css")
     }
 }
 
@@ -197,6 +245,9 @@ pub(crate) fn svg_sprite_url() -> String {
         );
         public_asset_url(svg_sprite_path())
     } else {
+        if SVG_SPRITE_PATH.get().is_none() && SVG_SPRITE_BUNDLER.has_registrations() {
+            let _ = SVG_SPRITE_BUNDLER.bundle();
+        }
         public_asset_url(svg_sprite_path())
     }
 }
@@ -212,6 +263,24 @@ fn make_css_url(stylesheet: &str) -> String {
             base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(hasher.finish().to_le_bytes());
 
         format!("/assets/{hash}.css")
+    }
+}
+
+fn make_js_path(entry_specifier: &str, modules: &[bundle::VirtualModule]) -> String {
+    if cfg!(debug_assertions) {
+        "/assets/datastar.js".to_owned()
+    } else {
+        let mut hasher = DefaultHasher::new();
+        entry_specifier.hash(&mut hasher);
+        for module in modules {
+            module.specifier.hash(&mut hasher);
+            module.content.hash(&mut hasher);
+        }
+        use base64::Engine;
+        let hash =
+            base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(hasher.finish().to_le_bytes());
+
+        format!("/assets/{hash}.js")
     }
 }
 
@@ -285,13 +354,7 @@ impl SvgSpriteBundler {
         }
 
         let path = make_svg_path(sprite);
-        if cfg!(debug_assertions) {
-            let _ = SVG_SPRITE_PATH.set(path.clone());
-        } else {
-            SVG_SPRITE_PATH
-                .set(path.clone())
-                .map_err(|e| Error::Bundling(format!("setting static SVG_SPRITE_PATH: {e}")))?;
-        }
+        set_static_path(&SVG_SPRITE_PATH, &path, "SVG_SPRITE_PATH")?;
 
         Ok(Some(sprite.clone()))
     }
@@ -324,13 +387,7 @@ impl CssBundler {
         let stylesheet = make_single_stylesheet(this.iter().map(|s| s.as_str()))?;
 
         let path = make_css_url(&stylesheet);
-        if cfg!(debug_assertions) {
-            let _ = CSS_PATH.set(path.clone());
-        } else {
-            CSS_PATH
-                .set(path.clone())
-                .map_err(|e| Error::Bundling(format!("setting static CSS_PATH: {e}")))?;
-        }
+        set_static_path(&CSS_PATH, &path, "CSS_PATH")?;
 
         Ok(stylesheet)
     }
@@ -423,6 +480,58 @@ macro_rules! include_svg_sprite {
 mod tests {
     use super::*;
 
+    fn test_js_modules() -> Vec<bundle::VirtualModule> {
+        vec![bundle::VirtualModule::new(
+            RUNTIME_ENTRY_MODULE,
+            "console.log('hi');",
+        )]
+    }
+
+    #[test]
+    fn datastar_modules_skip_tracking_when_no_config_is_provided() {
+        let modules = datastar_modules(None).expect("datastar modules should build");
+        let runtime_entry = modules
+            .iter()
+            .find(|module| module.specifier == RUNTIME_ENTRY_MODULE)
+            .expect("runtime entry module should be present");
+
+        assert!(runtime_entry.content.contains("./datastar-entry"));
+        assert!(!runtime_entry.content.contains("./track-plugin"));
+        assert!(
+            modules
+                .iter()
+                .all(|module| module.specifier != TRACK_PLUGIN_MODULE)
+        );
+        assert!(
+            modules
+                .iter()
+                .all(|module| module.specifier != TRACK_CONFIG_MODULE)
+        );
+    }
+
+    #[test]
+    fn datastar_modules_include_tracking_when_config_is_provided() {
+        let track = TrackConfig::new("/_track").service("svc");
+        let modules = datastar_modules(Some(&track)).expect("datastar modules should build");
+        let runtime_entry = modules
+            .iter()
+            .find(|module| module.specifier == RUNTIME_ENTRY_MODULE)
+            .expect("runtime entry module should be present");
+        let track_config = modules
+            .iter()
+            .find(|module| module.specifier == TRACK_CONFIG_MODULE)
+            .expect("track config module should be present");
+
+        assert!(runtime_entry.content.contains("./track-plugin"));
+        assert!(
+            modules
+                .iter()
+                .any(|module| module.specifier == TRACK_PLUGIN_MODULE)
+        );
+        assert!(track_config.content.contains("/_track"));
+        assert!(track_config.content.contains("svc"));
+    }
+
     #[cfg(debug_assertions)]
     #[test]
     fn uses_hardcoded_url_for_dev_builds() {
@@ -431,6 +540,10 @@ mod tests {
         assert_eq!(got, want);
         let want = css_url();
         assert_eq!(want, "/cheers/assets/bundle.css");
+
+        let want = "/assets/datastar.js";
+        let got = make_js_path(RUNTIME_ENTRY_MODULE, &test_js_modules());
+        assert_eq!(got, want);
     }
 
     #[cfg(not(debug_assertions))]
@@ -439,6 +552,11 @@ mod tests {
         let got = make_css_url("body { color: black; }");
         let want = "/assets/LYi6t_7_fTs.css";
         assert_eq!(got, want);
+
+        let got = make_js_path(RUNTIME_ENTRY_MODULE, &test_js_modules());
+        assert!(got.starts_with("/assets/"));
+        assert!(got.ends_with(".js"));
+        assert_ne!(got, "/assets/datastar.js");
     }
 
     #[cfg(not(debug_assertions))]

@@ -32,7 +32,7 @@ impl<T: Render> Render for Base<T> {
                 }
                 body {
                     main { (self.children) }
-                    Scripts;
+                    Scripts ();
                 }
             }
         }
@@ -232,9 +232,12 @@ async fn main() {
             }
         });
 
-        let app = app(Router::new().route("/", get(home_page)))
-            .expect("create app")
-            .with_state(ctx);
+        let app = app(
+            Router::new().route("/", get(home_page)),
+            cheers::router::Config::default(),
+        )
+        .expect("create app")
+        .with_state(ctx);
 
         let listener = tokio::net::TcpListener::bind("127.0.0.1:8080")
             .await

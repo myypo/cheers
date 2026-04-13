@@ -1,7 +1,7 @@
 mod assets;
 #[doc(hidden)]
 pub use assets::{CSS_BUNDLER, SVG_SPRITE_BUNDLER};
-pub(crate) use assets::{css_url, svg_sprite_url};
+pub(crate) use assets::{css_url, js_url, svg_sprite_url};
 mod compression;
 mod live_reload;
 mod redirect_trailing_slash;
@@ -11,6 +11,7 @@ use std::fmt::Display;
 use axum::Router;
 
 use crate::router::assets::assets_router;
+use crate::track::TrackConfig;
 
 #[derive(Debug)]
 pub enum Error {
@@ -29,10 +30,24 @@ impl Display for Error {
 
 impl std::error::Error for Error {}
 
+/// Global configuration for the Cheers router and runtime assets.
+#[derive(Debug, Clone, Default)]
+pub struct Config {
+    pub track: Option<TrackConfig>,
+}
+
+impl Config {
+    pub fn track(mut self, track: TrackConfig) -> Self {
+        self.track = Some(track);
+        self
+    }
+}
+
 pub fn new<S: Clone + Send + Sync + 'static>(
     actions_and_pages: Router<S>,
+    config: Config,
 ) -> Result<Router<S>, Error> {
-    let router = assets_router()?;
+    let router = assets_router(config.track.as_ref())?;
 
     let router = router.merge(live_reload::router());
     let router = Router::new()
@@ -61,12 +76,13 @@ macro_rules! app {
 
         pub fn app(
             mut router: $crate::__internal::axum::Router<$state>,
+            config: ::cheers::router::Config,
         ) -> ::std::result::Result<$crate::__internal::axum::Router<$state>, $crate::router::Error>
         {
             for a in $crate::__internal::inventory::iter::<Action> {
                 router = (a.0)(router);
             }
-            $crate::router::new(router)
+            $crate::router::new(router, config)
         }
     };
 }

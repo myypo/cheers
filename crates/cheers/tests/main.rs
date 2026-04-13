@@ -57,9 +57,22 @@ fn extract_href(rendered: &str) -> &str {
         .expect("rendered output should contain href attribute")
 }
 
+fn extract_src(rendered: &str) -> &str {
+    rendered
+        .split("src=\"")
+        .nth(1)
+        .and_then(|rest| rest.split('"').next())
+        .expect("rendered output should contain src attribute")
+}
+
+fn cheers_router() -> axum::Router<()> {
+    cheers::router::new(axum::Router::<()>::new(), cheers::router::Config::default())
+        .expect("router should build")
+}
+
 #[tokio::test]
 async fn css_component_points_to_served_bundle() {
-    let app = cheers::router::new(axum::Router::<()>::new()).expect("router should build");
+    let app = cheers_router();
 
     let rendered = CssStylesheet.render();
     let href = extract_href(rendered.as_inner());
@@ -91,7 +104,7 @@ async fn serves_registered_svg_sprite_sheet() {
         }
     }
 
-    let app = cheers::router::new(axum::Router::<()>::new()).expect("router should build");
+    let app = cheers_router();
 
     let rendered = html! {
         svg {
@@ -129,6 +142,32 @@ async fn serves_registered_svg_sprite_sheet() {
     let body = String::from_utf8(body.into()).expect("response body should be valid UTF-8");
 
     assert!(body.contains(r#"<symbol id="icon-check""#));
+}
+
+#[tokio::test]
+async fn js_bundle_omits_track_runtime_without_tracking_config() {
+    let app = cheers_router();
+    let rendered = Scripts.render();
+    let src = extract_src(rendered.as_inner());
+
+    let request = axum::http::Request::builder()
+        .uri(src)
+        .body(Body::empty())
+        .expect("request should build");
+
+    let response = app
+        .clone()
+        .oneshot(request)
+        .await
+        .expect("router should return a response");
+
+    let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+        .await
+        .expect("response body should be readable");
+    let body = String::from_utf8(body.into()).expect("response body should be valid UTF-8");
+
+    assert!(!body.contains("traceparent"));
+    assert!(!body.contains("/_track"));
 }
 
 #[test]
@@ -510,7 +549,7 @@ impl<T: Render> Render for Base<T> {
             Doctype;
             html {
                 head {
-                    Scripts;
+                    Scripts ();
                 }
                 body {
                     main { (self.children) }
