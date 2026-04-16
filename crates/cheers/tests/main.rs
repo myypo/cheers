@@ -166,7 +166,6 @@ async fn js_bundle_omits_track_runtime_without_tracking_config() {
         .expect("response body should be readable");
     let body = String::from_utf8(body.into()).expect("response body should be valid UTF-8");
 
-    assert!(!body.contains("traceparent"));
     assert!(!body.contains("/_track"));
 }
 

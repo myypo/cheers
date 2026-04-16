@@ -3,7 +3,6 @@ use crate::prelude::*;
 use axum::{
     Json,
     extract::{FromRequest, Request},
-    http::StatusCode,
     response::{IntoResponse, Response},
 };
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
@@ -91,7 +90,6 @@ impl TrackConfig {
 ///
 /// async fn ingest(track: TrackRequest) -> StatusCode {
 ///     let _batch = track.batch;
-///     let _traceparent = track.traceparent;
 ///     StatusCode::ACCEPTED
 /// }
 ///
@@ -100,7 +98,6 @@ impl TrackConfig {
 #[derive(Debug, Clone)]
 pub struct TrackRequest<P> {
     pub batch: Batch<P>,
-    pub traceparent: String,
 }
 
 impl<S, P> FromRequest<S> for TrackRequest<P>
@@ -112,20 +109,13 @@ where
 
     async fn from_request(req: Request, state: &S) -> Result<Self, Self::Rejection> {
         let (parts, body) = req.into_parts();
-        let traceparent = parts
-            .headers
-            .get("traceparent")
-            .ok_or_else(|| StatusCode::BAD_REQUEST.into_response())?
-            .to_str()
-            .map_err(|_| StatusCode::BAD_REQUEST.into_response())?
-            .to_owned();
 
         let req = Request::from_parts(parts, body);
         let Json(batch) = Json::<Batch<P>>::from_request(req, state)
             .await
             .map_err(IntoResponse::into_response)?;
 
-        Ok(Self { batch, traceparent })
+        Ok(Self { batch })
     }
 }
 
@@ -236,7 +226,6 @@ mod tests {
     #[tokio::test]
     async fn track_request_extracts_batch_and_headers() {
         async fn handler(track: TrackRequest<()>) -> impl IntoResponse {
-            assert_eq!(track.traceparent, "00-trace-span-01");
             assert_eq!(track.batch.items.len(), 1);
             assert_eq!(
                 track.batch.items,
@@ -260,7 +249,6 @@ mod tests {
             .method("POST")
             .uri("/_track")
             .header("content-type", "application/json")
-            .header("traceparent", "00-trace-span-01")
             .body(Body::from(
                 r#"{"service":"svc","release":"1.0.0","sent_at_ms":1,"items":[{"kind":"page_view","timestamp_ms":2,"context":{"view_id":"p1","pathname":"/a"},"referrer":null,"navigation_type":"prerender"}]}"#,
             ))

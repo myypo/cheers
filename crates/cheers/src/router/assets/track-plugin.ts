@@ -242,27 +242,3 @@ if (document.readyState === "loading") {
 } else {
 	trackPageView();
 }
-
-const originalFetch = window.fetch.bind(window);
-
-function traceparent(): string {
-	const trace_id = randomHex(16);
-	const span_id = randomHex(8);
-
-	return `00-${trace_id}-${span_id}-01`;
-}
-
-window.fetch = async (input, init = {}) => {
-	const headers = new Headers(
-		input instanceof Request ? input.headers : undefined,
-	);
-	new Headers(init?.headers || {}).forEach((value, key) => {
-		headers.set(key, value);
-	});
-
-	if (!headers.has("traceparent")) {
-		headers.set("traceparent", traceparent());
-	}
-
-	return originalFetch(input, { ...init, headers });
-};
