@@ -306,6 +306,24 @@ mod test {
     );
 
     test_default!(
+        if_let_multiline_pattern,
+        r#"
+        html! { @if let some::very::very::very::very::very::very::PatternName { field_one, field_two, field_three } = expr { p { "x" } } }
+        "#,
+        r#"
+        html! {
+            @if let some::very::very::very::very::very::very::PatternName {
+                    field_one,
+                    field_two,
+                    field_three,
+                } = expr {
+                p { "x" }
+            }
+        }
+        "#
+    );
+
+    test_default!(
         control_for,
         r#"
         html!{p{"My favorite ponies are:"}ol{@for name in &names{li{(name)}}}}

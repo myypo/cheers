@@ -24,7 +24,7 @@ pub fn unparse_pat(pat: &Pat, total_indent_size: usize) -> Vec<String> {
                 .strip_prefix("let ")
                 .expect("let prefix")
                 .to_string();
-            let last_idx = unparsed.len();
+            let last_idx = unparsed.len() - 1;
             unparsed[last_idx] = unparsed[last_idx]
                 .strip_suffix(";")
                 .expect("; suffix")
