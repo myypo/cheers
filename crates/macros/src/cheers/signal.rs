@@ -308,7 +308,10 @@ pub(crate) fn generate_signal_impl(
     let signal_json_scope_struct = {
         let (scope_generics, _, scope_where_clause) = signal_json_scope_generics.split_for_impl();
         quote! {
-            #[derive(::cheers::__internal::serde::Deserialize)]
+            #[derive(
+                ::cheers::__internal::serde::Serialize,
+                ::cheers::__internal::serde::Deserialize,
+            )]
             #[serde(crate = "::cheers::__internal::serde")]
             #vis struct #signal_json_scope_ident #scope_generics #scope_where_clause {
                 #(#signal_json_scope_fields,)*
@@ -337,7 +340,10 @@ pub(crate) fn generate_signal_impl(
         let (json_generics, _, json_where_clause) = signal_json_generics.split_for_impl();
 
         quote! {
-            #[derive(::cheers::__internal::serde::Deserialize)]
+            #[derive(
+                ::cheers::__internal::serde::Serialize,
+                ::cheers::__internal::serde::Deserialize,
+            )]
             #[serde(crate = "::cheers::__internal::serde")]
             #vis struct #signal_json_ident #json_generics #json_where_clause {
                 #[serde(rename = #signal_json_component_name)]

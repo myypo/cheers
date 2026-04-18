@@ -1,6 +1,6 @@
 ---
 name: cheers
-description: "Use this skill when editing an existing cheers fullstack Rust app: `html!` markup, `Render` implementations, `#[derive(Cheers)]`, `ids!` / `signals!` / `form_names!`, `#[action]` handlers, `PatchElements`, `EventReceiver`, page-shell helpers like `Doctype` / `CssStylesheet` / `Scripts`, and Datastar-powered server-driven UI updates."
+description: "Use this skill when editing an existing cheers fullstack Rust app."
 ---
 
 # Workflow
@@ -424,13 +424,81 @@ Mode guidance:
 
 Calling `.element(...)` multiple times adds multiple rendered payloads to the same patch.
 
+## `PatchSignals`
+
+`PatchSignals` updates existing client-side signals without returning HTML.
+
+Use `PatchSignals` when:
+- many elements on the page already read from the same signal
+- you are changing small state like counters, toggles or filters
+
+Prefer `PatchElements` when:
+- markup structure changes
+- a whole component can be cleanly re-rendered
+- server-rendered HTML is simpler than coordinating signal-driven DOM behavior
+
+Builder methods:
+- `PatchSignals::new()`
+- `.set(signal, value)`
+- `.remove(signal)`
+- `.only_if_missing()`
+
+Example:
+
+```rust
+use axum::extract::Path;
+use cheers::prelude::*;
+
+#[derive(Cheers)]
+struct FaqPage<'a> {
+    questions: &'a [(&'a str, &'a str)],
+    #[signal]
+    all_open: bool,
+}
+
+impl Render for FaqPage<'_> {
+    fn render_to(&self, buffer: &mut Buffer<Element>) {
+        signals!(signal_all_open);
+
+        html! {
+            section {
+                h2 !text({ (signal_all_open) " ? 'FAQ (all open)' : 'FAQ (all closed)'" }) {}
+
+                @for (question, answer) in self.questions {
+                    details !attr("open": { (signal_all_open) " ? '' : null" }) {
+                        summary !attr("aria-expanded": { (signal_all_open) " ? 'true' : 'false'" }) {
+                            (question)
+                        }
+                        p { (answer) }
+                    }
+                }
+            }
+        }
+        .render_to(buffer);
+    }
+}
+
+#[action(PATCH)]
+async fn set_faq_expanded(Path(all_open): Path<bool>) -> PatchSignals {
+    PatchSignals::new().set(FaqPage::signal_all_open(), all_open)
+}
+```
+
+This is a good fit when one server update should fan out through many signal-driven UI reads, such as an entire `@for` loop of disclosures switching between open and closed states together.
+
+`PatchSignals::set(...)` is typed: the value should match the signal's Rust type.
+
+Practical rule:
+- if you want fine-grained server updates, model fine-grained signals
+- if you find yourself wanting to partially patch large object-shaped signals, prefer introducing smaller leaf signals or return `PatchElements` instead
+
 ## `EventReceiver` and `events()`
 
 Use `EventReceiver` for long-lived server-sent event streams or when one response needs to emit multiple UI updates.
 
 Typical pattern:
 1. create `(tx, rx)` with `events()`
-2. send initial `PatchElements` or `JsScript` events through `tx`
+2. send initial `PatchElements`, `PatchSignals`, or `JsScript` events through `tx`
 3. return `rx` from the handler
 
 You can usually send an initial burst of events before returning `rx` directly. Spawn a task only when updates need to continue after the handler returns.

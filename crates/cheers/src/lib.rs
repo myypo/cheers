@@ -60,7 +60,8 @@ pub mod prelude {
     pub use crate::{
         context::{AttributeValue, Element},
         events::{
-            Event, EventReceiver, EventSender, JsScript, PatchElements, PatchElementsMode, events,
+            Event, EventReceiver, EventSender, JsScript, PatchElements, PatchElementsMode,
+            PatchSignals, events,
         },
         include_css, include_svg_sprite,
         reference::{ElementId, FormName, Signal},
