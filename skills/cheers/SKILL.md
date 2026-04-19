@@ -599,15 +599,14 @@ Use:
 - `CssStylesheet` in the page shell, usually in `head`
 - `Scripts` in pages that rely on cheers / Datastar client behavior such as actions, signals, patches, or streaming updates
 
-Use `include_css!("./path.css")` to register stylesheet input for the cheers CSS bundler, usually near startup.
+Use `include_css!("./path.css")` to declare stylesheet input for the Cheers CSS bundler. Prefer module scope so the declaration is clearly linked into the binary. Likewise, use `include_svg_sprite! { ... }` as a declarative asset registration for the global SVG sprite sheet.
 
 Use `cheers::app!(StateType);` to generate the `app(...)` function that wires cheers routes into the application.
 
 When touching shell or app wiring:
 1. keep `Doctype`, `CssStylesheet`, and `Scripts` in a layout/base component if the app already has one
 2. do not move shell concerns into leaf components unless explicitly asked
-3. treat `include_css!` as startup configuration
-4. preserve the app's existing routing and startup shape unless the task specifically changes it
+3. preserve the app's existing routing and startup shape unless the task specifically changes it
 
 ## Datastar heuristics for cheers edits
 

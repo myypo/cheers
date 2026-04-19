@@ -136,9 +136,6 @@ impl Render for CssStylesheet {
 /// In attribute context, this renders the `href` value for a `<use>` element. In element context,
 /// it renders a minimal `<svg><use ...></use></svg>` wrapper.
 ///
-/// Register the sprite sheet first with
-/// [`include_svg_sprite!`](crate::include_svg_sprite).
-///
 /// # Example
 ///
 /// ```

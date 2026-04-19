@@ -1,6 +1,7 @@
 use std::{
     hash::{DefaultHasher, Hash, Hasher},
-    sync::{LazyLock, Mutex, OnceLock},
+    path::{Component, PathBuf},
+    sync::OnceLock,
 };
 
 use axum::{
@@ -14,6 +15,7 @@ use lightningcss::{
     stylesheet::{ParserFlags, ParserOptions, StyleSheet},
 };
 
+use crate::__internal::assets::{CssRegistration, SvgSpriteRegistration};
 use crate::router::Error;
 use crate::track::TrackConfig;
 
@@ -161,7 +163,7 @@ where
     Ok(router)
 }
 
-pub struct CssBundler(Mutex<Vec<String>>);
+pub struct CssBundler;
 
 fn printer_options<'a>() -> PrinterOptions<'a> {
     if cfg!(debug_assertions) {
@@ -231,9 +233,9 @@ fn svg_sprite_path() -> &'static str {
     if cfg!(debug_assertions) {
         "/assets/sprite.svg"
     } else {
-        SVG_SPRITE_PATH
-            .get()
-            .expect("SVG sprite sheet has to be bundled. Make sure you are calling `include_svg_sprite!` before building the Cheers router.")
+        SVG_SPRITE_PATH.get().expect(
+            "SVG sprite sheet has to be bundled. Make sure an `include_svg_sprite!` declaration is linked into the binary before building the Cheers router.",
+        )
     }
 }
 
@@ -241,7 +243,7 @@ pub(crate) fn svg_sprite_url() -> String {
     if cfg!(debug_assertions) {
         assert!(
             SVG_SPRITE_BUNDLER.has_registrations(),
-            "SVG sprite sheet has to be registered. Make sure you are calling `include_svg_sprite!` before using `svg_sprite_url()`."
+            "SVG sprite sheet has to be registered. Make sure an `include_svg_sprite!` declaration is linked into the binary before using `svg_sprite_url()`."
         );
         public_asset_url(svg_sprite_path())
     } else {
@@ -324,30 +326,48 @@ fn make_svg_path(contents: &str) -> String {
     }
 }
 
-pub struct SvgSpriteBundler(Mutex<Vec<String>>);
+pub struct SvgSpriteBundler;
 
 impl SvgSpriteBundler {
-    #[doc(hidden)]
-    pub fn __add(&self, s: String) {
-        let mut this = self.0.lock().expect("unlock SVG sprite bundler");
-        this.push(s);
+    fn has_registrations(&self) -> bool {
+        inventory::iter::<SvgSpriteRegistration>
+            .into_iter()
+            .next()
+            .is_some()
     }
 
-    fn has_registrations(&self) -> bool {
-        !self.0.lock().expect("unlock SVG sprite bundler").is_empty()
+    fn svg_sprite_registrations() -> Vec<&'static SvgSpriteRegistration> {
+        let mut registrations = inventory::iter::<SvgSpriteRegistration>
+            .into_iter()
+            .collect::<Vec<_>>();
+
+        registrations.sort_by_key(|registration| {
+            (
+                registration.location.manifest_dir,
+                registration.location.file,
+                registration.location.line,
+                registration.location.column,
+            )
+        });
+
+        registrations
     }
 
     pub(crate) fn bundle(&self) -> Result<Option<String>, Error> {
-        let this = self
-            .0
-            .lock()
-            .map_err(|e| Error::Bundling(format!("unlock SVG sprite bundler: {e}")))?;
+        let registrations = Self::svg_sprite_registrations();
 
-        let Some(sprite) = this.first() else {
+        let Some(sprite) = registrations
+            .first()
+            .map(|registration| registration.sprite)
+        else {
             return Ok(None);
         };
 
-        if this.iter().skip(1).any(|other| other != sprite) {
+        if registrations
+            .iter()
+            .skip(1)
+            .any(|other| other.sprite != sprite)
+        {
             return Err(Error::Bundling(
                 "only a single global SVG sprite sheet is supported right now; consolidate your `include_svg_sprite!` calls into one sheet".to_owned(),
             ));
@@ -356,35 +376,82 @@ impl SvgSpriteBundler {
         let path = make_svg_path(sprite);
         set_static_path(&SVG_SPRITE_PATH, &path, "SVG_SPRITE_PATH")?;
 
-        Ok(Some(sprite.clone()))
+        Ok(Some(sprite.to_owned()))
     }
 }
 
 impl CssBundler {
-    #[doc(hidden)]
-    /// Used by the `include_css!` macro to register stylesheet inputs for bundling.
-    /// Not part of the stable public API.
-    pub fn __add(&self, s: String) {
-        let mut this = self.0.lock().expect("unlock css bundler");
-        this.push(s);
+    fn css_registrations() -> Vec<&'static CssRegistration> {
+        let mut registrations = inventory::iter::<CssRegistration>
+            .into_iter()
+            .collect::<Vec<_>>();
+
+        // Bundle stylesheets in source order so the resulting CSS cascade is deterministic
+        registrations.sort_by_key(|registration| {
+            (
+                registration.location.manifest_dir,
+                registration.location.file,
+                registration.location.line,
+                registration.location.column,
+                registration.css_file,
+            )
+        });
+
+        registrations
+    }
+
+    fn css_file_path(registration: &CssRegistration) -> PathBuf {
+        let manifest_dir = PathBuf::from(registration.location.manifest_dir);
+        let mut file_path = PathBuf::from(registration.location.file);
+        file_path.pop();
+
+        let manifest_components: Vec<_> = manifest_dir
+            .components()
+            .filter_map(|component| match component {
+                Component::Normal(name) => Some(name.to_owned()),
+                _ => None,
+            })
+            .collect();
+
+        let mut filtered_path = PathBuf::new();
+        for component in file_path.components() {
+            match component {
+                Component::Normal(name) => {
+                    if !manifest_components.iter().any(|mc| mc == name) {
+                        filtered_path.push(name);
+                    }
+                }
+                _ => filtered_path.push(component.as_os_str()),
+            }
+        }
+
+        manifest_dir.join(filtered_path).join(registration.css_file)
     }
 
     pub(crate) fn bundle(&self) -> Result<String, Error> {
-        let this = self
-            .0
-            .lock()
-            .map_err(|e| Error::Bundling(format!("unlock css bundler: {e}")))?;
+        let registrations = Self::css_registrations();
 
         #[cfg(debug_assertions)]
-        let this = this
-            .iter()
-            .map(|path| {
-                std::fs::read_to_string(path)
-                    .map_err(|e| Error::Bundling(format!("open CSS file: {path}: {e}")))
-            })
-            .collect::<Result<Vec<String>, Error>>()?;
+        let stylesheet = {
+            let stylesheets = registrations
+                .iter()
+                .map(|registration| {
+                    let path = Self::css_file_path(registration);
+                    std::fs::read_to_string(&path).map_err(|e| {
+                        Error::Bundling(format!("open CSS file: {}: {e}", path.display()))
+                    })
+                })
+                .collect::<Result<Vec<String>, Error>>()?;
 
-        let stylesheet = make_single_stylesheet(this.iter().map(|s| s.as_str()))?;
+            make_single_stylesheet(stylesheets.iter().map(String::as_str))?
+        };
+
+        #[cfg(not(debug_assertions))]
+        let stylesheet = make_single_stylesheet(
+            registrations
+                .iter()
+                .map(|registration| registration.contents),
+        )?;
 
         let path = make_css_url(&stylesheet);
         set_static_path(&CSS_PATH, &path, "CSS_PATH")?;
@@ -394,54 +461,45 @@ impl CssBundler {
 }
 
 #[doc(hidden)]
-pub static CSS_BUNDLER: LazyLock<CssBundler> = LazyLock::new(|| CssBundler(Mutex::new(Vec::new())));
+pub static CSS_BUNDLER: CssBundler = CssBundler;
 #[doc(hidden)]
-pub static SVG_SPRITE_BUNDLER: LazyLock<SvgSpriteBundler> =
-    LazyLock::new(|| SvgSpriteBundler(Mutex::new(Vec::new())));
+pub static SVG_SPRITE_BUNDLER: SvgSpriteBundler = SvgSpriteBundler;
 
+/// Declares a stylesheet input for the global Cheers CSS bundle.
+///
+/// # Example
+///
+/// ```ignore
+/// use cheers::{components::CssStylesheet, prelude::*};
+///
+/// include_css!("./main.css");
+///
+/// let page = html! {
+///     html {
+///         head { CssStylesheet; }
+///         body { p class="your-class" { "Hello" } }
+///     }
+/// };
+/// ```
 #[macro_export]
 macro_rules! include_css {
     ($css_file:expr) => {
-        ($crate::router::CSS_BUNDLER).__add({
-            if cfg!(debug_assertions) {
-                let __manifest_dir = ::std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-                let mut __file_path = ::std::path::PathBuf::from(file!());
-                __file_path.pop();
-
-                let __manifest_components: Vec<_> = __manifest_dir
-                    .components()
-                    .filter_map(|c| match c {
-                        ::std::path::Component::Normal(name) => Some(name),
-                        _ => None,
-                    })
-                    .collect();
-
-                let mut __filtered_path = ::std::path::PathBuf::new();
-                for __component in __file_path.components() {
-                    match __component {
-                        ::std::path::Component::Normal(name) => {
-                            if !__manifest_components.iter().any(|&mc| mc == name) {
-                                __filtered_path.push(__component);
-                            }
-                        }
-                        _ => __filtered_path.push(__component),
-                    }
-                }
-
-                format!(
-                    "{}/{}/{}",
-                    __manifest_dir.display(),
-                    __filtered_path.display(),
-                    $css_file
-                )
-            } else {
-                include_str!($css_file).to_owned()
+        $crate::__internal::inventory::submit! {
+            $crate::__internal::assets::CssRegistration {
+                location: $crate::__internal::assets::AssetSourceLocation {
+                    manifest_dir: env!("CARGO_MANIFEST_DIR"),
+                    file: file!(),
+                    line: line!(),
+                    column: column!(),
+                },
+                css_file: $css_file,
+                contents: include_str!($css_file),
             }
-        });
+        }
     };
 }
 
-/// Registers the single global SVG sprite sheet.
+/// Declares the single global SVG sprite sheet.
 ///
 /// # Example
 ///
@@ -469,10 +527,17 @@ macro_rules! include_css {
 #[macro_export]
 macro_rules! include_svg_sprite {
     ($($svg:tt)*) => {
-        ($crate::router::SVG_SPRITE_BUNDLER).__add({
-            let __sprite = $crate::macros::svg_static! { $($svg)* };
-            $crate::prelude::Render::render(&__sprite).into_inner()
-        });
+        $crate::__internal::inventory::submit! {
+            $crate::__internal::assets::SvgSpriteRegistration {
+                location: $crate::__internal::assets::AssetSourceLocation {
+                    manifest_dir: env!("CARGO_MANIFEST_DIR"),
+                    file: file!(),
+                    line: line!(),
+                    column: column!(),
+                },
+                sprite: ($crate::macros::svg_static! { $($svg)* }).into_inner(),
+            }
+        }
     };
 }
 

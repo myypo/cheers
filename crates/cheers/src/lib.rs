@@ -39,10 +39,36 @@ pub mod __internal {
         type Fields;
     }
 
-    #[doc(hidden)]
     #[inline]
     pub fn __component_placeholder<T>() -> T {
         panic!("component placeholder should only be used for rust-analyzer expansion")
+    }
+
+    pub mod assets {
+        #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+        pub struct AssetSourceLocation {
+            pub manifest_dir: &'static str,
+            pub file: &'static str,
+            pub line: u32,
+            pub column: u32,
+        }
+
+        #[derive(Debug)]
+        pub struct CssRegistration {
+            pub location: AssetSourceLocation,
+            pub css_file: &'static str,
+            pub contents: &'static str,
+        }
+
+        inventory::collect!(CssRegistration);
+
+        #[derive(Debug)]
+        pub struct SvgSpriteRegistration {
+            pub location: AssetSourceLocation,
+            pub sprite: &'static str,
+        }
+
+        inventory::collect!(SvgSpriteRegistration);
     }
 }
 

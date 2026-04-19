@@ -148,21 +148,21 @@ async fn create_subscription(ctx: State<Ctx>) -> EventReceiver {
 
 cheers::app!(Ctx);
 
+include_css!("./main.css");
+include_svg_sprite! {
+    svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" {
+        symbol id="icon-stock" viewBox="0 0 16 16" {
+            path d="M2 13h12v1H2z";
+            path d="M3 11V6h2v5z";
+            path d="M7 11V3h2v8z";
+            path d="M11 11V8h2v3z";
+        }
+    }
+}
+
 #[tokio::main]
 async fn main() {
     tokio::spawn(async {
-        include_css!("./main.css");
-        include_svg_sprite! {
-            svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" {
-                symbol id="icon-stock" viewBox="0 0 16 16" {
-                    path d="M2 13h12v1H2z";
-                    path d="M3 11V6h2v5z";
-                    path d="M7 11V3h2v8z";
-                    path d="M11 11V8h2v3z";
-                }
-            }
-        }
-
         let stocks_tx = tokio::sync::broadcast::channel(16).0;
         let stocks = Box::leak(Box::new(Mutex::new(BTreeMap::from([
             (
