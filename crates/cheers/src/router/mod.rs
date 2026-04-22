@@ -5,6 +5,7 @@ pub(crate) use assets::{css_url, js_url, svg_sprite_url};
 mod compression;
 mod live_reload;
 mod redirect_trailing_slash;
+pub mod testing;
 
 use std::fmt::Display;
 
@@ -62,6 +63,14 @@ pub fn new<S: Clone + Send + Sync + 'static>(
     ));
 
     Ok(router)
+}
+
+/// Compile-time metadata about an action's path and HTTP method.
+///
+/// Automatically implemented by the `#[action]` macro on each generated action struct.
+pub trait ActionDef {
+    const PATH: &'static str;
+    const METHOD: axum::http::Method;
 }
 
 #[macro_export]

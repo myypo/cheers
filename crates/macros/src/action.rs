@@ -235,8 +235,11 @@ pub fn generate(args: ActionArgs, item: &mut MaybeItemFn) -> Result<TokenStream,
         path_lit_str(ident, field_args.path.iter().map(|(ident, _)| ident))
     };
 
-    let method = &args.method;
-    let method_name = LitStr::new(&method.to_string().to_lowercase(), method.span());
+    let method_ident = &args.method;
+    let method_name = LitStr::new(
+        &method_ident.to_string().to_lowercase(),
+        method_ident.span(),
+    );
     let static_path = LitStr::new(&static_part_path_str(ident), ident.span());
     let path_renders_js: Vec<_> = field_args
         .path
@@ -269,7 +272,19 @@ pub fn generate(args: ActionArgs, item: &mut MaybeItemFn) -> Result<TokenStream,
             }
         }
     };
-    let method = quote! { ::cheers::__internal::axum::http::Method::#method };
+    let method = quote! { ::cheers::__internal::axum::http::Method::#method_ident };
+
+    let mock_fn_args = match field_args.path.len() {
+        0 => quote! { ::axum::extract::State<S> },
+        1 => {
+            let ty = &field_args.path[0].1;
+            quote! { ::axum::extract::Path<#ty>, ::axum::extract::State<S> }
+        }
+        _ => {
+            let types = field_args.path.iter().map(|(_, ty)| ty);
+            quote! { ::axum::extract::Path<(#(#types),*)>, ::axum::extract::State<S> }
+        }
+    };
 
     Ok(quote! {
         #item
@@ -282,6 +297,33 @@ pub fn generate(args: ActionArgs, item: &mut MaybeItemFn) -> Result<TokenStream,
                 #(#path_renders_js)*
                 ::cheers::__internal::__render_action_call(buffer, #method_name, &__cheers_action_path, #form);
             }
+        }
+
+        impl #impl_generics #struct_name #ty_generics #where_clause {
+            pub fn mock<H, Fut, S>(handler: H) -> ::cheers::router::testing::MockedAction<S>
+            where
+                H: ::std::ops::Fn(#mock_fn_args) -> Fut
+                    + ::std::clone::Clone
+                    + ::std::marker::Send
+                    + ::std::marker::Sync
+                    + 'static,
+                Fut: ::std::future::Future + ::std::marker::Send,
+                Fut::Output: ::axum::response::IntoResponse,
+                S: ::std::clone::Clone + ::std::marker::Send + ::std::marker::Sync + 'static,
+            {
+                ::cheers::router::testing::MockedAction::new(
+                    #path,
+                    ::axum::routing::on(
+                        #method.try_into().expect("valid method filter"),
+                        handler,
+                    ),
+                )
+            }
+        }
+
+        impl #impl_generics ::cheers::router::ActionDef for #struct_name #ty_generics #where_clause {
+            const PATH: &'static str = #path;
+            const METHOD: ::cheers::__internal::axum::http::Method = #method;
         }
 
         ::cheers::__internal::inventory::submit! {{

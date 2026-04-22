@@ -100,6 +100,8 @@ pub mod prelude {
     };
 }
 pub use render::{Raw, RawAttribute, Rendered};
+pub use router::ActionDef;
+pub use router::testing::RouterExt;
 
 #[cfg(test)]
 mod test_utils;
