@@ -13,8 +13,8 @@ use rand::Rng;
 
 #[derive(Clone)]
 struct Ctx {
-    stocks: &'static Mutex<BTreeMap<String, (String, u64)>>,
-    stocks_tx: tokio::sync::broadcast::Sender<(String, String, u64)>,
+    stocks: &'static Mutex<BTreeMap<String, (String, u32)>>,
+    stocks_tx: tokio::sync::broadcast::Sender<(String, String, u32)>,
 }
 
 #[derive(Cheers)]
@@ -46,7 +46,7 @@ struct Stock<'a> {
     id: &'a String,
     name: &'a str,
     #[signal]
-    price_cents: u64,
+    price_cents: u32,
 }
 
 impl<'a> Render for Stock<'a> {
@@ -218,7 +218,7 @@ async fn main() {
 
                 let mut stocks = update_ctx.stocks.lock().expect("lock");
                 if let Some((name, price)) = stocks.get_mut(stock_id) {
-                    let new_price = (*price as i64 + change).max(1) as u64;
+                    let new_price = (*price as i64 + change).max(1) as u32;
                     *price = new_price;
 
                     if let Err(e) =
