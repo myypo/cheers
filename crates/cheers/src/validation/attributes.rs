@@ -304,9 +304,9 @@ pub mod data {
     /// # }
     /// # impl Render for Example {
     /// #     fn render_to(&self, buffer: &mut Buffer<Element>) {
-    /// #         scoped_signal!(signal_foo: &str);
+    /// #         scoped_signal!(signal_foo: Vec<String>);
     /// html! {
-    ///     div !signals(signal_foo: "[]") {
+    ///     div !signals(signal_foo: Vec::<String>::new()) {
     ///         input !bind(signal_foo) type="checkbox" value="bar";
     ///         input !bind(signal_foo) type="checkbox" value="baz";
     ///     }

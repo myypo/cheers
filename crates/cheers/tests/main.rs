@@ -1209,6 +1209,26 @@ fn data_signals_render_large_integers_as_js_strings() {
 }
 
 #[test]
+fn data_signals_render_vecs_as_js_arrays() {
+    #[expect(dead_code)]
+    #[derive(Cheers)]
+    struct Example {
+        #[signal]
+        values: Vec<String>,
+    }
+
+    let result = html! {
+        div !signals(Example::signal_values(): vec!["bar".to_owned(), "baz".to_owned()]) {}
+    }
+    .render();
+
+    assert_eq!(
+        result.as_inner(),
+        r#"<div data-signals="{example:{values:['bar','baz']}}"></div>"#
+    );
+}
+
+#[test]
 fn data_style() {
     #[expect(dead_code)]
     #[derive(Cheers)]
@@ -1243,13 +1263,7 @@ fn control_flow_inside_js_attributes_uses_js_context() {
     let cond = true;
 
     let result = html! {
-        div !show({
-            @if cond {
-                (hiding)
-            } @else {
-                "false"
-            }
-        }) {}
+        div !show({ @if cond { (hiding) } @else { "false" } }) {}
     }
     .render();
 

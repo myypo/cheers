@@ -958,6 +958,22 @@ impl<T: Render> Render for [T] {
     }
 }
 
+impl<T: Render<JsSource>> Render<JsSource> for [T] {
+    #[inline]
+    fn render_to(&self, buffer: &mut Buffer<JsSource>) {
+        buffer.dangerously_get_string().push('[');
+
+        for (index, item) in self.iter().enumerate() {
+            if index != 0 {
+                buffer.dangerously_get_string().push(',');
+            }
+            item.render_to(buffer);
+        }
+
+        buffer.dangerously_get_string().push(']');
+    }
+}
+
 impl<T: Render, const N: usize> Render for [T; N] {
     #[inline]
     fn render_to(&self, buffer: &mut Buffer) {
@@ -965,9 +981,23 @@ impl<T: Render, const N: usize> Render for [T; N] {
     }
 }
 
+impl<T: Render<JsSource>, const N: usize> Render<JsSource> for [T; N] {
+    #[inline]
+    fn render_to(&self, buffer: &mut Buffer<JsSource>) {
+        self.as_slice().render_to(buffer);
+    }
+}
+
 impl<T: Render> Render for Vec<T> {
     #[inline]
     fn render_to(&self, buffer: &mut Buffer) {
+        self.as_slice().render_to(buffer);
+    }
+}
+
+impl<T: Render<JsSource>> Render<JsSource> for Vec<T> {
+    #[inline]
+    fn render_to(&self, buffer: &mut Buffer<JsSource>) {
         self.as_slice().render_to(buffer);
     }
 }

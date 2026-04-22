@@ -289,7 +289,7 @@ html! {
     span !text(name_signal) {}
     div !show(open_signal) {}
     button !indicator(fetching_signal) {}
-    div !signals(count: 5, label: "'ok'") {}
+    div !signals(count: 5, label: "ok") {}
     div !computed(total: { (price) " + " (tax) }) {}
     button !on:click(save_action) {}
     button !on:click({ "console.log(" signal_name ")" }) {}
