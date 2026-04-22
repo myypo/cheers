@@ -1189,26 +1189,6 @@ fn data_signals() {
 }
 
 #[test]
-fn data_signals_render_large_integers_as_js_strings() {
-    #[expect(dead_code)]
-    #[derive(Cheers)]
-    struct Counter {
-        #[signal]
-        count: i64,
-    }
-
-    let result = html! {
-        div !signals(Counter::signal_count(): i64::MAX) {}
-    }
-    .render();
-
-    assert_eq!(
-        result.as_inner(),
-        r#"<div data-signals="{counter:{count:'9223372036854775807'}}"></div>"#
-    );
-}
-
-#[test]
 fn data_signals_render_vecs_as_js_arrays() {
     #[expect(dead_code)]
     #[derive(Cheers)]

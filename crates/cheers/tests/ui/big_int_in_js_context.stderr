@@ -1,0 +1,24 @@
+error[E0277]: the trait bound `u64: Render<JsSource>` is not satisfied
+ --> tests/ui/big_int_in_js_context.rs:5:13
+  |
+5 |       let _ = html! {
+  |  _____________^
+6 | |         div !text(big) {}
+7 | |     };
+  | |_____^ the trait `Render<JsSource>` is not implemented for `u64`
+  |
+help: the following other types implement trait `Render<C>`
+ --> src/render.rs
+  |
+  |               impl Render<Element> for $Ty {
+  |               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `u64` implements `Render`
+...
+  |               impl Render<AttributeValue> for $Ty {
+  |               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `u64` implements `Render<AttributeValue>`
+...
+  | / render_big_int_via_itoa! {
+  | |     i64 i128 isize
+  | |     u64 u128 usize
+  | | }
+  | |_- in this macro invocation
+  = note: this error originates in the macro `html` which comes from the expansion of the macro `render_big_int_via_itoa` (in Nightly builds, run with -Z macro-backtrace for more info)

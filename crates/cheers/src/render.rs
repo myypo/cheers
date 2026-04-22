@@ -798,7 +798,7 @@ render_via_itoa! {
     u8 u16 u32
 }
 
-macro_rules! render_big_int {
+macro_rules! render_big_int_via_itoa {
     ($($Ty:ty)*) => {
         $(
             impl Render<Element> for $Ty {
@@ -819,33 +819,11 @@ macro_rules! render_big_int {
                     buffer.dangerously_get_string().push_str(itoa::Buffer::new().format(*self));
                 }
             }
-
-            impl Render<JsSource> for $Ty {
-                #[inline]
-                fn render_to(&self, buffer: &mut Buffer<JsSource>) {
-                    let mut itoa_buffer = itoa::Buffer::new();
-                    // XSS SAFETY: large integers are serialized as JS string
-                    // literals so they do not lose precision when interpreted
-                    // by JavaScript.
-                    push_js_single_quoted_string_to_html_attribute(
-                        buffer.dangerously_get_string(),
-                        itoa_buffer.format(*self),
-                    );
-                }
-
-                #[inline]
-                fn render(&self) -> Rendered<String> {
-                    let mut s = String::new();
-                    let mut itoa_buffer = itoa::Buffer::new();
-                    push_js_single_quoted_string_to_html_attribute(&mut s, itoa_buffer.format(*self));
-                    Rendered(s)
-                }
-            }
         )*
     };
 }
 
-render_big_int! {
+render_big_int_via_itoa! {
     i64 i128 isize
     u64 u128 usize
 }
