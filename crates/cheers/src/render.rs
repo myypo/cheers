@@ -185,6 +185,23 @@ pub type AttributeBuffer = Buffer<AttributeValue>;
     reason = "`Buffer` does not make sense in `const` contexts"
 )]
 impl<C: Context> Buffer<C> {
+    #[inline]
+    fn cast_context<T: Context>(&mut self) -> &mut Buffer<T> {
+        // SAFETY:
+        // - Both `Buffer<C>` and `Buffer<T>` are `#[repr(transparent)]` wrappers
+        //   around `String`, differing only in the zero-sized `PhantomData`
+        //   marker type.
+        // - `PhantomData` does not affect memory layout, so the layout of
+        //   `Buffer<C>` and `Buffer<T>` is guaranteed to be identical by Rust's
+        //   type system.
+        // - This cast only changes the marker type and does not affect the
+        //   actual data or its validity.
+        // - The lifetime of the reference is preserved, and there are no
+        //   aliasing or validity issues, as both types are functionally
+        //   identical at runtime.
+        unsafe { &mut *ptr::from_mut(self).cast::<Buffer<T>>() }
+    }
+
     /// Creates a new, empty [`Buffer`].
     #[inline]
     #[must_use]
@@ -229,33 +246,13 @@ impl<C: Context> Buffer<C> {
     /// Converts this into a `&mut Buffer<AttributeValue>`.
     #[inline]
     pub fn as_attribute_buffer(&mut self) -> &mut AttributeBuffer {
-        // SAFETY:
-        // - Both `Buffer<C>` and `AttributeBuffer` are `#[repr(transparent)]` wrappers
-        //   around `String`, differing only in the zero-sized `PhantomData` marker
-        //   type.
-        // - `PhantomData` does not affect memory layout, so the layout of `Buffer<C>`
-        //   and `AttributeBuffer` is guaranteed to be identical by Rust's type system.
-        // - This cast only changes the marker type and does not affect the actual data
-        //   or its validity.
-        // - The lifetime of the reference is preserved, and there are no aliasing or
-        //   validity issues, as both types are functionally identical at runtime.
-        unsafe { &mut *ptr::from_mut(self).cast::<AttributeBuffer>() }
+        self.cast_context()
     }
 
     /// Converts this into a `&mut Buffer<JsSource>`.
     #[inline]
     pub fn as_js_buffer(&mut self) -> &mut Buffer<JsSource> {
-        // SAFETY:
-        // - Both `Buffer<C>` and `Buffer<JsSource>` are `#[repr(transparent)]` wrappers
-        //   around `String`, differing only in the zero-sized `PhantomData` marker
-        //   type.
-        // - `PhantomData` does not affect memory layout, so the layout of `Buffer<C>`
-        //   and `Buffer<JsSource>` is guaranteed to be identical by Rust's type system.
-        // - This cast only changes the marker type and does not affect the actual data
-        //   or its validity.
-        // - The lifetime of the reference is preserved, and there are no aliasing or
-        //   validity issues, as both types are functionally identical at runtime.
-        unsafe { &mut *ptr::from_mut(self).cast::<Buffer<JsSource>>() }
+        self.cast_context()
     }
 
     /// Renders the buffer to a [`Rendered<String>`].

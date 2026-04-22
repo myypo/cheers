@@ -3,7 +3,7 @@
 // Description: Creates a new signal that is a reference to the element on which the data attribute is placed.
 
 import { attribute } from '@engine'
-import { mergePathString } from '@engine/signals'
+import { mergePath, parseSignalPath } from '@engine/signals'
 import { modifyCasing } from '@utils/text'
 
 attribute({
@@ -11,6 +11,6 @@ attribute({
   requirement: 'exclusive',
   apply({ el, key, mods, value }) {
     const signalName = key != null ? modifyCasing(key, mods) : value
-    mergePathString(signalName, el)
+    mergePath(parseSignalPath(signalName), el)
   },
 })

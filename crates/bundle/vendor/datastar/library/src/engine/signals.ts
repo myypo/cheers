@@ -567,12 +567,6 @@ export const mergePath = (
   options?: MergePatchArgs,
 ): void => mergePaths([[path, value]], options)
 
-export const mergePathString = (
-  path: string,
-  value: any,
-  options?: MergePatchArgs,
-): void => mergePath(parseSignalPath(path), value, options)
-
 const deep = (value: any, prefix: Path = []): any => {
   const isArr = Array.isArray(value)
   if (isArr || isPojo(value)) {
@@ -759,10 +753,11 @@ export const filtered = (
       const path = [...prefix, key]
       if (isPojo(node[key])) {
         stack.push([node[key], path])
-      } else if (
-        includeRe.test(serializePath(path)) &&
-        !excludeRe.test(serializePath(path))
-      ) {
+      } else {
+        const serialized = serializePath(path)
+        if (!includeRe.test(serialized) || excludeRe.test(serialized)) {
+          continue
+        }
         paths.push([path, getPath(path)])
       }
     }

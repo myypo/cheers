@@ -7,11 +7,11 @@ mod readme_doctests {}
 pub mod components;
 mod context;
 mod events;
-mod signal_path;
 mod reference;
 mod render;
 mod response;
 pub mod router;
+mod signal_path;
 pub mod track;
 
 #[doc(hidden)]

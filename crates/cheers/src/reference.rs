@@ -1,17 +1,14 @@
-use std::{
-    fmt::{Debug, Display},
-    marker::PhantomData,
-};
+use std::{borrow::Cow, fmt::Display, marker::PhantomData};
 
 use serde::Deserialize;
 
 use crate::{
     context::{AttributeValue, JsSource},
-    signal_path::{is_bare_signal_path_segment, parse_signal_path},
     render::{
         Buffer, Render, push_js_single_quoted_string_to_html_attribute,
         push_js_source_to_html_attribute,
     },
+    signal_path::{is_bare_signal_path_segment, parse_signal_path},
 };
 
 /// A DOM id generated for a component.
@@ -97,10 +94,40 @@ impl Render<AttributeValue> for ElementId {
     }
 }
 
-#[derive(Debug)]
-enum InnerSignalPath {
-    Static(&'static str),
-    Dynamic(String),
+#[inline]
+fn push_signal_object_key(dst: &mut String, segment: &str) {
+    if is_bare_signal_path_segment(segment) {
+        push_js_source_to_html_attribute(dst, segment);
+    } else {
+        push_js_single_quoted_string_to_html_attribute(dst, segment);
+    }
+}
+
+fn push_signal_object_prefix(path: &str, dst: &mut String) -> Option<usize> {
+    let mut segments = parse_signal_path(path).into_iter();
+    let first_segment = segments.next()?;
+
+    // XSS SAFETY: signal paths are framework-generated Datastar paths. We
+    // emit each object key as either a bare identifier or a quoted JS string
+    // literal so arbitrary segments remain valid when embedded inside a
+    // double-quoted HTML attribute value.
+    push_signal_object_key(dst, &first_segment);
+
+    let mut close_count = 0;
+    for segment in segments {
+        close_count += 1;
+        dst.push_str(":{");
+        push_signal_object_key(dst, &segment);
+    }
+
+    Some(close_count)
+}
+
+#[inline]
+fn close_signal_object(dst: &mut String, count: usize) {
+    for _ in 0..count {
+        dst.push('}');
+    }
 }
 
 /// A typed reference to a client-side signal.
@@ -152,7 +179,7 @@ enum InnerSignalPath {
 /// ```
 #[derive(Debug)]
 pub struct Signal<T> {
-    path: InnerSignalPath,
+    path: Cow<'static, str>,
     ty: PhantomData<T>,
 }
 
@@ -162,7 +189,7 @@ impl<T> Signal<T> {
     /// accessors for components without an id field. Not part of the stable public API.
     pub const fn __static(path: &'static str) -> Self {
         Self {
-            path: InnerSignalPath::Static(path),
+            path: Cow::Borrowed(path),
             ty: PhantomData::<T>,
         }
     }
@@ -181,7 +208,7 @@ impl<T> Signal<T> {
         name.push_str(&hash.to_string());
 
         Self {
-            path: InnerSignalPath::Dynamic(name),
+            path: Cow::Owned(name),
             ty: PhantomData::<T>,
         }
     }
@@ -191,7 +218,7 @@ impl<T> Signal<T> {
     /// accessors for components with an id field. Not part of the stable public API.
     pub fn __string(path: String) -> Self {
         Signal {
-            path: InnerSignalPath::Dynamic(path),
+            path: Cow::Owned(path),
             ty: PhantomData::<T>,
         }
     }
@@ -200,45 +227,21 @@ impl<T> Signal<T> {
     /// Used internally by the macro support methods on [`Signal`]. Not part of the stable
     /// public API.
     pub fn __path(&self) -> &str {
-        match &self.path {
-            InnerSignalPath::Static(path) => path,
-            InnerSignalPath::Dynamic(path) => path.as_str(),
-        }
+        self.path.as_ref()
     }
 
     #[doc(hidden)]
     /// Used by the `html!`, `html_borrow!`, `attribute!`, and `attribute_borrow!`
     /// macros when expanding computed signal attributes. Not part of the stable public API.
     pub fn __computed_open(&self, buffer: &mut Buffer<JsSource>) -> usize {
-        let mut segments = parse_signal_path(self.__path()).into_iter();
-        let Some(first_segment) = segments.next() else {
+        let Some(close_count) =
+            push_signal_object_prefix(self.__path(), buffer.dangerously_get_string())
+        else {
             return 0;
         };
 
-        let s = buffer.dangerously_get_string();
-        let mut close_count = 0;
-
-        // XSS SAFETY: signal paths are framework-generated Datastar paths. We
-        // emit each object key as a quoted JS string literal so arbitrary
-        // segments remain valid when embedded inside a double-quoted HTML
-        // attribute value.
-        if is_bare_signal_path_segment(&first_segment) {
-            push_js_source_to_html_attribute(s, &first_segment);
-        } else {
-            push_js_single_quoted_string_to_html_attribute(s, &first_segment);
-        }
-        for segment in segments {
-            close_count += 1;
-            s.push_str(":{");
-            if is_bare_signal_path_segment(&segment) {
-                push_js_source_to_html_attribute(s, &segment);
-            } else {
-                push_js_single_quoted_string_to_html_attribute(s, &segment);
-            }
-        }
-
         // XSS SAFETY: statically assigning a JS function - the execution is intentional.
-        s.push_str(":()=>");
+        buffer.dangerously_get_string().push_str(":()=>");
 
         close_count
     }
@@ -250,10 +253,7 @@ impl Signal<()> {
     /// macros when expanding computed signal attributes. Not part of the stable public API.
     pub fn __computed_close(count: usize, buffer: &mut Buffer<JsSource>) {
         // XSS SAFETY: statically closing the JS object
-        let buf = buffer.dangerously_get_string();
-        for _ in 0..count {
-            buf.push('}');
-        }
+        close_signal_object(buffer.dangerously_get_string(), count);
     }
 }
 
@@ -262,44 +262,19 @@ impl<T: Render<JsSource>> Signal<T> {
     /// Used by the `html!`, `html_borrow!`, `attribute!`, and `attribute_borrow!`
     /// macros when expanding `!signals(...)`. Not part of the stable public API.
     pub fn __assign(&self, buffer: &mut Buffer<JsSource>, v: T) {
-        let mut segments = parse_signal_path(self.__path()).into_iter();
-        let Some(first_segment) = segments.next() else {
+        let Some(close_count) = ({
+            let s = buffer.dangerously_get_string();
+            push_signal_object_prefix(self.__path(), s)
+        }) else {
             return;
         };
 
-        let mut close_count = 0;
-        {
-            let s = buffer.dangerously_get_string();
-
-            // XSS SAFETY: signal paths are framework-generated Datastar paths.
-            // We emit each object key as a quoted JS string literal so
-            // arbitrary segments remain valid when embedded inside a
-            // double-quoted HTML attribute value.
-            if is_bare_signal_path_segment(&first_segment) {
-                push_js_source_to_html_attribute(s, &first_segment);
-            } else {
-                push_js_single_quoted_string_to_html_attribute(s, &first_segment);
-            }
-
-            for seg in segments {
-                close_count += 1;
-                s.push_str(":{");
-                if is_bare_signal_path_segment(&seg) {
-                    push_js_source_to_html_attribute(s, &seg);
-                } else {
-                    push_js_single_quoted_string_to_html_attribute(s, &seg);
-                }
-            }
-            s.push(':');
-        }
+        buffer.dangerously_get_string().push(':');
 
         v.render_to(buffer);
 
         // XSS SAFETY: statically closing the JS object written above.
-        let s = buffer.dangerously_get_string();
-        for _ in 0..close_count {
-            s.push('}');
-        }
+        close_signal_object(buffer.dangerously_get_string(), close_count);
     }
 }
 
