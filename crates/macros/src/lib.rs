@@ -138,7 +138,7 @@ fn expand_attribute_literal(tokens: proc_macro::TokenStream) -> proc_macro::Toke
 ///
 /// assert!(rendered.contains("id=\"todo_item-1\""));
 /// assert!(rendered.contains("for=\"todo_item-1-input\""));
-/// assert!(rendered.contains("data-bind=\"todo_item.1.done\""));
+/// assert!(rendered.contains("data-bind=\"todo_item['1']['done']\""));
 /// assert!(rendered.contains("name=\"title\""));
 /// ```
 pub fn cheers_derive(item: proc_macro::TokenStream) -> proc_macro::TokenStream {
@@ -379,7 +379,7 @@ pub fn action(
 ///
 /// assert_eq!(
 ///     Counter { count: 3 }.render().into_inner(),
-///     r#"<span data-text="$counter.count"></span>"#,
+///     r#"<span data-text="$counter['count']"></span>"#,
 /// );
 /// ```
 pub fn signals(tokens: proc_macro::TokenStream) -> proc_macro::TokenStream {

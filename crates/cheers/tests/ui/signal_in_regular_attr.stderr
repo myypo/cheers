@@ -1,0 +1,19 @@
+error[E0308]: mismatched types
+  --> tests/ui/signal_in_regular_attr.rs:13:9
+   |
+13 | /         html! {
+14 | |             div id=(signal_count) {}
+15 | |         }
+   | |         ^
+   | |         |
+   | |_________expected `&mut Buffer<JsSource>`, found `&mut Buffer<AttributeValue>`
+   |           arguments to this function are incorrect
+   |
+   = note: expected mutable reference `&mut cheers::prelude::Buffer<JsSource>`
+              found mutable reference `&mut cheers::prelude::Buffer<AttributeValue>`
+note: method defined here
+  --> src/render.rs
+   |
+   |     fn render_to(&self, buffer: &mut Buffer<C>);
+   |        ^^^^^^^^^
+   = note: this error originates in the macro `html` (in Nightly builds, run with -Z macro-backtrace for more info)

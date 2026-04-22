@@ -8,7 +8,7 @@ use syn::{
     token::{Brace, Paren},
 };
 
-use super::UnquotedName;
+use super::{AttributeValueNode, UnquotedName};
 
 fn pinned_stream_tokens_expr(stream: &TokenStream) -> TokenStream {
     quote! {
@@ -190,6 +190,7 @@ pub struct Generator {
     checks: Checks,
     async_stmts: Vec<TokenStream>,
     id: Option<TokenStream>,
+    context_override: Option<Context>,
 }
 
 impl Generator {
@@ -220,6 +221,7 @@ impl Generator {
             checks: Checks::new(),
             async_stmts: Vec::new(),
             id: None,
+            context_override: None,
         }
     }
 
@@ -318,6 +320,7 @@ impl Generator {
         append_async: bool,
     ) -> AnyBlock {
         let mut g = Self::new_with_brace(self.context, true, brace_token, flavour);
+        g.context_override = self.context_override;
 
         f(&mut g);
 
@@ -335,6 +338,7 @@ impl Generator {
             self.push_stmt(block);
         } else {
             let mut g = Self::new_with_brace(self.context, false, Brace::default(), flavour);
+            g.context_override = self.context_override;
             f(&mut g);
             self.checks.append(&mut g.checks);
             self.parts.extend(g.parts);
@@ -358,7 +362,9 @@ impl Generator {
         let value = lit.value();
         let escaped_value = match context {
             Context::Element => html_escape::encode_text(&value),
-            Context::AttributeValue => html_escape::encode_double_quoted_attribute(&value),
+            Context::AttributeValue | Context::JsSource => {
+                html_escape::encode_double_quoted_attribute(&value)
+            }
         };
 
         self.parts
@@ -375,14 +381,37 @@ impl Generator {
         self.parts.push(Part::Static(lit));
     }
 
+    pub fn with_context_override<R>(
+        &mut self,
+        context: Context,
+        f: impl FnOnce(&mut Self) -> R,
+    ) -> R {
+        let prev = self.context_override.replace(context);
+        let result = f(self);
+        self.context_override = prev;
+        result
+    }
+
     pub fn push_expr(&mut self, paren_token: Paren, context: Context, expr: impl ToTokens) {
+        let effective_context = self.context_override.unwrap_or(context);
         let buffer_ident = Self::buffer_ident();
-        let buffer_expr = match (self.context, context) {
+        let buffer_expr = match (self.context, effective_context) {
             (Context::Element, Context::Element)
-            | (Context::AttributeValue, Context::AttributeValue) => {
+            | (Context::AttributeValue, Context::AttributeValue)
+            | (Context::JsSource, Context::JsSource) => {
                 quote!(#buffer_ident)
             }
             (Context::Element, Context::AttributeValue) => {
+                quote!(#buffer_ident.as_attribute_buffer())
+            }
+            (Context::Element, Context::JsSource) => {
+                quote!(#buffer_ident.as_js_buffer())
+            }
+            (Context::AttributeValue, Context::JsSource) => {
+                quote!(#buffer_ident.as_js_buffer())
+            }
+            (Context::JsSource, Context::Element) => unreachable!(),
+            (Context::JsSource, Context::AttributeValue) => {
                 quote!(#buffer_ident.as_attribute_buffer())
             }
             (Context::AttributeValue, Context::Element) => unreachable!(),
@@ -397,6 +426,28 @@ impl Generator {
                 #buffer_expr
             );
         });
+    }
+
+    pub fn push_js_value_node(&mut self, node: &mut AttributeValueNode) {
+        match node {
+            AttributeValueNode::Literal(lit) => {
+                self.push_escaped_literal(Context::AttributeValue, &lit.lit_str());
+            }
+            AttributeValueNode::Expr(paren_expr) => {
+                self.push_expr(paren_expr.paren_token, Context::JsSource, &paren_expr.expr);
+            }
+            AttributeValueNode::Ident(ident) => {
+                self.push_expr(Paren::default(), Context::JsSource, ident);
+            }
+            AttributeValueNode::Group(group) => {
+                for child in &mut group.0.0 {
+                    self.push_js_value_node(child);
+                }
+            }
+            AttributeValueNode::Control(control) => {
+                self.with_context_override(Context::JsSource, |g| g.push(control));
+            }
+        }
     }
 
     pub fn push_async_stmt(&mut self, async_stmt: impl ToTokens) {
@@ -446,6 +497,7 @@ enum Part {
 pub enum Context {
     Element,
     AttributeValue,
+    JsSource,
 }
 
 impl Context {
@@ -453,6 +505,7 @@ impl Context {
         let ident = match self {
             Self::Element => Ident::new("Element", Span::mixed_site()),
             Self::AttributeValue => Ident::new("AttributeValue", Span::mixed_site()),
+            Self::JsSource => Ident::new("JsSource", Span::mixed_site()),
         };
 
         quote!(::cheers::prelude::#ident)

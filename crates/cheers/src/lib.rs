@@ -7,6 +7,7 @@ mod readme_doctests {}
 pub mod components;
 mod context;
 mod events;
+mod signal_path;
 mod reference;
 mod render;
 mod response;
@@ -26,6 +27,8 @@ pub mod __internal {
     pub use futures;
     pub use inventory;
     pub use serde;
+
+    pub use crate::{render::__render_action_call, signal_path::__push_signal_path_segment};
 
     pub trait Ids {
         type Fields;
@@ -84,7 +87,7 @@ pub mod prelude {
     };
 
     pub use crate::{
-        context::{AttributeValue, Element},
+        context::{AttributeValue, Element, JsSource},
         events::{
             Event, EventReceiver, EventSender, JsScript, PatchElements, PatchElementsMode,
             PatchSignals, events,

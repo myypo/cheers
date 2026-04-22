@@ -2,9 +2,10 @@
 
 /// A marker trait to represent the context that the value is being rendered to.
 ///
-/// This can be either [`Element`] or an [`AttributeValue`]. An [`Element`]
-/// represents an HTML node, while an [`AttributeValue`] represents an attribute
-/// value which will eventually be surrounded by double quotes.
+/// This can be [`Element`], [`AttributeValue`], or [`JsSource`]. [`Element`]
+/// represents an HTML node, [`AttributeValue`] represents an attribute value
+/// which will eventually be surrounded by double quotes, and [`JsSource`] represents
+/// JavaScript source embedded inside a Datastar attribute value.
 ///
 /// This is used to ensure that the correct rendering methods are called
 /// for each context, and to prevent errors such as accidentally rendering
@@ -34,10 +35,22 @@ pub struct AttributeValue;
 
 impl Context for AttributeValue {}
 
+/// A marker type to represent a JavaScript expression or value inside a
+/// Datastar attribute (e.g. `data-signals`, `data-class`, `data-on:click`).
+///
+/// Values rendered with this context are ultimately embedded inside a
+/// double-quoted HTML attribute, so implementations must ensure the output
+/// is valid JavaScript source and is also safe for HTML attribute parsing.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash)]
+pub struct JsSource;
+
+impl Context for JsSource {}
+
 mod sealed {
-    use super::{AttributeValue, Element};
+    use super::{AttributeValue, Element, JsSource};
 
     pub trait Sealed {}
     impl Sealed for Element {}
     impl Sealed for AttributeValue {}
+    impl Sealed for JsSource {}
 }

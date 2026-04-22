@@ -235,7 +235,22 @@ pub(crate) fn generate_signal_impl(
 
         if let Some(id_field) = &id_field {
             let id_ident = &id_field.ident;
-            let string_constructor = quote! { ::cheers::prelude::Signal::__string(format!("{}.{}.{}", #struct_snake_case, #id_ident, #signal_name)) };
+            let string_constructor = quote! {{
+                let mut __cheers_signal_path = ::std::string::String::new();
+                ::cheers::__internal::__push_signal_path_segment(
+                    &mut __cheers_signal_path,
+                    #struct_snake_case,
+                );
+                ::cheers::__internal::__push_signal_path_segment(
+                    &mut __cheers_signal_path,
+                    &#id_ident,
+                );
+                ::cheers::__internal::__push_signal_path_segment(
+                    &mut __cheers_signal_path,
+                    #signal_name,
+                );
+                ::cheers::prelude::Signal::__string(__cheers_signal_path)
+            }};
 
             signal_methods.push(quote! {
                 #vis fn #method_ident(#id_param) -> #signal_ty {
@@ -244,7 +259,7 @@ pub(crate) fn generate_signal_impl(
             });
             signals_method_fields.push(quote! { #method_ident: #string_constructor });
         } else {
-            let full_name = format!("{struct_snake_case}.{signal_name}");
+            let full_name = format!("{struct_snake_case}['{signal_name}']");
             let static_constructor =
                 quote! { ::cheers::prelude::Signal::<#leaf_ty>::__static(#full_name) };
 

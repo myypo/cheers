@@ -38,6 +38,7 @@ async-compression.workspace = true
 tokio-util.workspace = true
 
 [dev-dependencies]
+trybuild = "1"
 
 [features]
 tracing = ["dep:tracing"]

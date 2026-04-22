@@ -1139,7 +1139,22 @@ fn data_indicator() {
 
     assert_eq!(
         result.as_inner(),
-        r#"<button data-indicator="something.fetching" data-json-signals></button><div data-show="!$something.fetching || true">Loaded!</div>"#
+        r#"<button data-indicator="something['fetching']" data-json-signals></button><div data-show="!$something['fetching'] || true">Loaded!</div>"#
+    );
+}
+
+#[test]
+fn data_text_escapes_rust_strings_for_js_and_html() {
+    let value = "hi \"there\" <tag> & more\n\u{2028}\u{2029}\\ 'done'";
+
+    let result = html! {
+        div !text(value) {}
+    }
+    .render();
+
+    assert_eq!(
+        result.as_inner(),
+        "<div data-text=\"'hi &quot;there&quot; &lt;tag&gt; &amp; more\\n\\u2028\\u2029\\\\ \\\'done\\\''\"></div>"
     );
 }
 
@@ -1174,6 +1189,26 @@ fn data_signals() {
 }
 
 #[test]
+fn data_signals_render_large_integers_as_js_strings() {
+    #[expect(dead_code)]
+    #[derive(Cheers)]
+    struct Counter {
+        #[signal]
+        count: i64,
+    }
+
+    let result = html! {
+        div !signals(Counter::signal_count(): i64::MAX) {}
+    }
+    .render();
+
+    assert_eq!(
+        result.as_inner(),
+        r#"<div data-signals="{counter:{count:'9223372036854775807'}}"></div>"#
+    );
+}
+
+#[test]
 fn data_style() {
     #[expect(dead_code)]
     #[derive(Cheers)]
@@ -1191,8 +1226,37 @@ fn data_style() {
 
     assert_eq!(
         result.as_inner(),
-        r#"<pre data-style="{display:$options.hiding ? 'none' : 'flex',color:'red'}"></pre>"#
+        r#"<pre data-style="{display:$options['hiding'] ? 'none' : 'flex',color:'red'}"></pre>"#
     )
+}
+
+#[test]
+fn control_flow_inside_js_attributes_uses_js_context() {
+    #[expect(dead_code)]
+    #[derive(Cheers)]
+    struct Options {
+        #[signal]
+        hiding: bool,
+    }
+
+    let hiding = Options::signal_hiding();
+    let cond = true;
+
+    let result = html! {
+        div !show({
+            @if cond {
+                (hiding)
+            } @else {
+                "false"
+            }
+        }) {}
+    }
+    .render();
+
+    assert_eq!(
+        result.as_inner(),
+        r#"<div data-show="$options['hiding']"></div>"#
+    );
 }
 
 #[allow(dead_code)]
@@ -1255,7 +1319,7 @@ fn signal_computed() {
 
     assert_eq!(
         result,
-        r#"<div><p data-computed="{input:{c:()=>$input.a+$input.b}}" data-computed="{input:{d:()=>$input.c- 1}}"></p></div>"#
+        r#"<div><p data-computed="{input:{c:()=>$input['a']+$input['b']}}" data-computed="{input:{d:()=>$input['c']- 1}}"></p></div>"#
     )
 }
 
@@ -1288,7 +1352,7 @@ fn signal_outer_without_id() {
 
     assert_eq!(
         result,
-        r#"<p data-bind="ghost.keepsake" data-on:close="$ghost.keepsake + 'noooo'">El</p>"#
+        r#"<p data-bind="ghost['keepsake']" data-on:close="$ghost['keepsake'] + 'noooo'">El</p>"#
     )
 }
 
@@ -1306,7 +1370,10 @@ fn signal_outer_with_id() {
     impl Outer {
         fn assert_signals(&self) {
             signals!(signal_outside);
-            assert_eq!(signal_outside.render().into_inner(), "$outer.42.outside");
+            assert_eq!(
+                signal_outside.render().into_inner(),
+                "$outer['42']['outside']"
+            );
         }
     }
 
@@ -1317,7 +1384,7 @@ fn signal_outer_with_id() {
     outer.assert_signals();
     assert_eq!(
         Outer::signal_outside(42).render().into_inner(),
-        "$outer.42.outside"
+        "$outer['42']['outside']"
     );
 }
 
@@ -1352,7 +1419,42 @@ fn signal_id() {
 
     assert_eq!(
         result,
-        r#"<p data-bind="ghost.69.name" data-on:click="console.log($ghost.69.name)"></p>"#
+        r#"<p data-bind="ghost['69']['name']" data-on:click="console.log($ghost['69']['name'])"></p>"#
+    )
+}
+
+#[test]
+fn signal_id_with_unsafe_segment() {
+    #[derive(Cheers)]
+    #[expect(dead_code)]
+    struct GhostUser {
+        #[id]
+        id: &'static str,
+        #[signal]
+        name: String,
+    }
+
+    impl Render for GhostUser {
+        fn render_to(&self, buffer: &mut Buffer<Element>) {
+            signals!(signal_name);
+
+            html! {
+                p !bind(signal_name) !on:click({ "console.log(" signal_name ")" }) {}
+            }
+            .render_to(buffer);
+        }
+    }
+
+    let result = GhostUser {
+        id: "user.123",
+        name: "Ole".to_owned(),
+    }
+    .render()
+    .into_inner();
+
+    assert_eq!(
+        result,
+        r#"<p data-bind="ghost_user['user.123']['name']" data-on:click="console.log($ghost_user['user.123']['name'])"></p>"#
     )
 }
 
@@ -1414,7 +1516,7 @@ fn signal_patch_with_id_scope() {
 
     let name = Project::signal_name(1);
     let result = html! {
-        div !signals(name: "'Website Redesign'".to_owned()) {}
+        div !signals(name: "Website Redesign".to_owned()) {}
     }
     .render();
 
@@ -1437,7 +1539,7 @@ fn signal_without_id() {
         fn assert_signals(&self) {
             signals!(signal_num);
 
-            assert_eq!(signal_num.render().into_inner(), "$flare.num");
+            assert_eq!(signal_num.render().into_inner(), "$flare['num']");
         }
     }
 
@@ -1458,6 +1560,23 @@ fn action_with_plain_path() {
     }
     .render();
     assert_eq!(result.as_inner(), "@post('/cheers/actions/do_stuff/Bob')");
+}
+
+#[test]
+fn action_path_segments_are_escaped_for_js_attributes() {
+    #[action(POST)]
+    #[expect(unused_variables)]
+    async fn do_stuff(Path(name): Path<String>) {}
+
+    let result = DoStuffAction {
+        name: "O'Reilly & <friends> \"x\"".to_owned(),
+    }
+    .render();
+
+    assert_eq!(
+        result.as_inner(),
+        "@post('/cheers/actions/do_stuff/O\\'Reilly &amp; &lt;friends&gt; &quot;x&quot;')"
+    );
 }
 
 #[test]

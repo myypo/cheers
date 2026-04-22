@@ -5,12 +5,13 @@ use core::{
 };
 use std::{borrow::Cow, rc::Rc, sync::Arc};
 
-use crate::context::{AttributeValue, Context, Element};
+use crate::context::{AttributeValue, Context, Element, JsSource};
 
-/// A raw pre-escaped HTML fragment or attribute value.
+/// Raw pre-escaped output for a specific rendering context.
 ///
-/// `Raw<T, Element>` is for already-sanitized HTML nodes. [`RawAttribute<T>`] is the same idea in
-/// attribute context.
+/// `Raw<T, Element>` is for already-sanitized HTML nodes. [`RawAttribute<T>`]
+/// is the same idea in attribute context. `Raw<T, JsSource>` is for already-sanitized
+/// JavaScript source intended for Datastar HTML attributes.
 ///
 /// Most code should prefer [`html!`](crate::prelude::html) and normal [`Render`] implementations.
 /// Reach for `Raw` only when you already have trusted, pre-escaped markup and need to insert it
@@ -44,8 +45,8 @@ impl<T: AsRef<str>, C: Context> Raw<T, C> {
     /// Creates a new [`Raw`] from the given string.
     ///
     /// It is recommended to add a `// XSS SAFETY` comment above the usage of
-    /// this function to indicate why it is safe to directly use the
-    /// contained raw HTML.
+    /// this function to indicate why it is safe to directly use the contained
+    /// raw output for the chosen rendering context.
     #[inline]
     pub const fn dangerously_create(value: T) -> Self {
         Self {
@@ -162,11 +163,11 @@ macro_rules! const_precise_live_drops_hack {
 }
 pub(crate) use const_precise_live_drops_hack;
 
-/// The buffer used for rendering HTML.
+/// The buffer used for rendering output in a specific [`Context`].
 ///
 /// This is a wrapper around [`String`] that prevents accidental XSS
-/// vulnerabilities by disallowing direct rendering of raw HTML into the buffer
-/// without clearly indicating the risk of doing so.
+/// vulnerabilities by disallowing direct rendering of raw output into the
+/// buffer without clearly indicating the risk of doing so.
 #[derive(Clone, Default, PartialEq, Eq)]
 #[repr(transparent)]
 pub struct Buffer<C: Context = Element> {
@@ -188,7 +189,7 @@ impl<C: Context> Buffer<C> {
     #[inline]
     #[must_use]
     pub fn new() -> Self {
-        // XSS SAFETY: The buffer is empty and does not contain any HTML.
+        // XSS SAFETY: The buffer is empty and does not contain any output.
         Self::dangerously_from_string(String::new())
     }
 
@@ -196,7 +197,7 @@ impl<C: Context> Buffer<C> {
     ///
     /// It is recommended to add a `// XSS SAFETY` comment above the usage of
     /// this function to indicate why the original string is safe to be used as
-    /// raw HTML.
+    /// raw output for the chosen rendering context.
     #[inline]
     #[must_use]
     pub fn dangerously_from_string(string: String) -> Self {
@@ -211,7 +212,7 @@ impl<C: Context> Buffer<C> {
     ///
     /// It is recommended to add a `// XSS SAFETY` comment above the usage of
     /// this function to indicate why the original string is safe to be used as
-    /// raw HTML.
+    /// raw output for the chosen rendering context.
     #[inline]
     #[must_use]
     pub fn dangerously_from_string_mut(string: &mut String) -> &mut Self {
@@ -241,6 +242,22 @@ impl<C: Context> Buffer<C> {
         unsafe { &mut *ptr::from_mut(self).cast::<AttributeBuffer>() }
     }
 
+    /// Converts this into a `&mut Buffer<JsSource>`.
+    #[inline]
+    pub fn as_js_buffer(&mut self) -> &mut Buffer<JsSource> {
+        // SAFETY:
+        // - Both `Buffer<C>` and `Buffer<JsSource>` are `#[repr(transparent)]` wrappers
+        //   around `String`, differing only in the zero-sized `PhantomData` marker
+        //   type.
+        // - `PhantomData` does not affect memory layout, so the layout of `Buffer<C>`
+        //   and `Buffer<JsSource>` is guaranteed to be identical by Rust's type system.
+        // - This cast only changes the marker type and does not affect the actual data
+        //   or its validity.
+        // - The lifetime of the reference is preserved, and there are no aliasing or
+        //   validity issues, as both types are functionally identical at runtime.
+        unsafe { &mut *ptr::from_mut(self).cast::<Buffer<JsSource>>() }
+    }
+
     /// Renders the buffer to a [`Rendered<String>`].
     #[inline]
     #[must_use]
@@ -256,14 +273,20 @@ impl<C: Context> Buffer<C> {
 impl<C: Context> Buffer<C> {
     /// Gets a mutable reference to the inner [`String`].
     ///
-    /// For [`Buffer<Node>`] (a.k.a. [`Buffer`]) writes, the caller must push
+    /// For [`Buffer<Element>`] (a.k.a. [`Buffer`]) writes, the caller must push
     /// complete HTML nodes. If rendering string-like types, the pushed contents
     /// must escape `&` to `&amp;`, `<` to `&lt;`, and `>` to `&gt;`.
     ///
-    /// For `Buffer<AttributeValue>` writes, the
-    /// caller must push attribute values which will eventually be surrounded by
-    /// double quotes. The pushed contents must escape `&` to `&amp;`, `<` to
-    /// `&lt;`, `>` to `&gt;`, and `"` to `&quot;`.
+    /// For `Buffer<AttributeValue>` writes, the caller must push attribute
+    /// values which will eventually be surrounded by double quotes. The pushed
+    /// contents must escape `&` to `&amp;`, `<` to `&lt;`, `>` to `&gt;`, and
+    /// `"` to `&quot;`.
+    ///
+    /// For `Buffer<JsSource>` writes, the caller must push JavaScript source intended
+    /// for a Datastar attribute value which will eventually be surrounded by
+    /// double quotes. The pushed contents must therefore remain valid
+    /// JavaScript *and* escape any characters that would otherwise break HTML
+    /// attribute parsing, such as `&`, `<`, `>`, and `"`.
     ///
     /// It is recommended to add a `// XSS SAFETY` comment above the usage of
     /// this method to indicate why it is safe to directly write to the
@@ -313,7 +336,7 @@ impl Debug for Buffer {
 /// implementing `Render`. `#[derive(Cheers)]` does not implement this trait; it only generates
 /// helper APIs such as ids, signals, and form names.
 ///
-/// For [`Render<Node>`] (a.k.a. [`Render`]) implementations, this
+/// For [`Render<Element>`] (a.k.a. [`Render`]) implementations, this
 /// must render complete HTML nodes. If rendering string-like types, the
 /// implementation must escape `&` to `&amp;`, `<` to `&lt;`, and `>` to `&gt;`.
 ///
@@ -321,6 +344,11 @@ impl Debug for Buffer {
 /// attribute value which will eventually be surrounded by double quotes. The
 /// implementation must escape `&` to `&amp;`, `<` to `&lt;`, `>` to `&gt;`, and
 /// `"` to `&quot;`.
+///
+/// For [`Render<JsSource>`] implementations, this must render JavaScript source for
+/// a Datastar attribute value. The implementation must ensure the result is
+/// valid JavaScript and is also safe to embed in a double-quoted HTML
+/// attribute value.
 ///
 /// # Example
 ///
@@ -414,7 +442,7 @@ impl<T: Render> RenderExt for T {}
 
 /// A value lazily rendered via a closure.
 ///
-/// For [`Lazy<F, Node>`] (a.k.a. [`Lazy<F>`]), this must render complete
+/// For [`Lazy<F, Element>`] (a.k.a. [`Lazy<F>`]), this must render complete
 /// HTML nodes. If rendering string-like types, the closure must escape `&` to
 /// `&amp;`, `<` to `&lt;`, and `>` to `&gt;`.
 ///
@@ -422,6 +450,9 @@ impl<T: Render> RenderExt for T {}
 /// render an attribute value which will eventually be surrounded by double
 /// quotes. The closure must escape `&` to `&amp;`, `<` to `&lt;`, `>` to
 /// `&gt;`, and `"` to `&quot;`.
+///
+/// For [`Lazy<F, JsSource>`], this must render JavaScript source intended for a
+/// double-quoted Datastar HTML attribute value.
 #[derive(Clone, Copy)]
 #[must_use = "`Lazy` does nothing unless `.render()` or `.render_to()` is called"]
 pub struct Lazy<F: Fn(&mut Buffer<C>), C: Context = Element> {
@@ -439,7 +470,8 @@ impl<F: Fn(&mut Buffer<C>), C: Context> Lazy<F, C> {
     ///
     /// It is recommended to add a `// XSS SAFETY` comment above the usage of
     /// this function to indicate why it is safe to assume that the closure will
-    /// not write possibly unsafe HTML to the buffer.
+    /// not write possibly unsafe output to the buffer for the chosen rendering
+    /// context.
     #[inline]
     pub const fn dangerously_create(f: F) -> Self {
         Self {
@@ -488,6 +520,78 @@ impl<T: AsRef<str>, C: Context> Render<C> for Raw<T, C> {
     fn render(&self) -> Rendered<String> {
         Rendered(self.as_str().into())
     }
+}
+
+#[inline]
+fn push_html_double_quoted_attribute_char(dst: &mut String, ch: char) {
+    match ch {
+        '&' => dst.push_str("&amp;"),
+        '<' => dst.push_str("&lt;"),
+        '>' => dst.push_str("&gt;"),
+        '"' => dst.push_str("&quot;"),
+        ch => dst.push(ch),
+    }
+}
+
+#[inline]
+pub(crate) fn push_js_source_to_html_attribute(dst: &mut String, source: &str) {
+    for ch in source.chars() {
+        push_html_double_quoted_attribute_char(dst, ch);
+    }
+}
+
+#[inline]
+pub(crate) fn push_json_source_to_html_attribute(dst: &mut String, source: &str) {
+    for ch in source.chars() {
+        match ch {
+            '\u{2028}' => dst.push_str("\\u2028"),
+            '\u{2029}' => dst.push_str("\\u2029"),
+            ch => push_html_double_quoted_attribute_char(dst, ch),
+        }
+    }
+}
+
+#[inline]
+pub(crate) fn push_js_single_quoted_string_to_html_attribute(dst: &mut String, value: &str) {
+    dst.push('\'');
+
+    for ch in value.chars() {
+        match ch {
+            '\\' => dst.push_str("\\\\"),
+            '\'' => dst.push_str("\\'"),
+            '\n' => dst.push_str("\\n"),
+            '\r' => dst.push_str("\\r"),
+            '\t' => dst.push_str("\\t"),
+            '\u{2028}' => dst.push_str("\\u2028"),
+            '\u{2029}' => dst.push_str("\\u2029"),
+            ch if ch.is_control() => {
+                // XSS SAFETY: control characters are emitted as JS `\uXXXX`
+                // escape sequences, which are valid JavaScript source and do
+                // not introduce raw HTML-special characters.
+                _ = write!(dst, "\\u{:04x}", ch as u32);
+            }
+            ch => push_html_double_quoted_attribute_char(dst, ch),
+        }
+    }
+
+    dst.push('\'');
+}
+
+#[doc(hidden)]
+pub fn __render_action_call(buffer: &mut Buffer<JsSource>, method: &str, path: &str, form: bool) {
+    let s = buffer.dangerously_get_string();
+
+    // XSS SAFETY: the static action syntax is framework-generated, while the
+    // dynamic path is emitted as a JS single-quoted string literal that also
+    // remains safe for embedding in a double-quoted HTML attribute value.
+    s.push('@');
+    s.push_str(method);
+    s.push('(');
+    push_js_single_quoted_string_to_html_attribute(s, path);
+    if form {
+        s.push_str(",{contentType:'form'}");
+    }
+    s.push(')');
 }
 
 impl Render for fmt::Arguments<'_> {
@@ -566,6 +670,27 @@ impl Render<AttributeValue> for char {
     }
 }
 
+impl Render<JsSource> for char {
+    #[inline]
+    fn render_to(&self, buffer: &mut Buffer<JsSource>) {
+        let mut encoded = [0; 4];
+        // XSS SAFETY: the helper emits a JS string literal while also escaping
+        // HTML attribute delimiters.
+        push_js_single_quoted_string_to_html_attribute(
+            buffer.dangerously_get_string(),
+            self.encode_utf8(&mut encoded),
+        );
+    }
+
+    #[inline]
+    fn render(&self) -> Rendered<String> {
+        let mut s = String::with_capacity(8);
+        let mut encoded = [0; 4];
+        push_js_single_quoted_string_to_html_attribute(&mut s, self.encode_utf8(&mut encoded));
+        Rendered(s)
+    }
+}
+
 impl Render for str {
     #[inline]
     fn render_to(&self, buffer: &mut Buffer) {
@@ -590,6 +715,22 @@ impl Render<AttributeValue> for str {
     }
 }
 
+impl Render<JsSource> for str {
+    #[inline]
+    fn render_to(&self, buffer: &mut Buffer<JsSource>) {
+        // XSS SAFETY: the helper emits a JS string literal while also escaping
+        // HTML attribute delimiters.
+        push_js_single_quoted_string_to_html_attribute(buffer.dangerously_get_string(), self);
+    }
+
+    #[inline]
+    fn render(&self) -> Rendered<String> {
+        let mut s = String::with_capacity(self.len() + 2);
+        push_js_single_quoted_string_to_html_attribute(&mut s, self);
+        Rendered(s)
+    }
+}
+
 impl Render for String {
     #[inline]
     fn render_to(&self, buffer: &mut Buffer) {
@@ -606,6 +747,18 @@ impl Render<AttributeValue> for String {
     #[inline]
     fn render_to(&self, buffer: &mut AttributeBuffer) {
         self.as_str().render_to(buffer);
+    }
+}
+
+impl Render<JsSource> for String {
+    #[inline]
+    fn render_to(&self, buffer: &mut Buffer<JsSource>) {
+        self.as_str().render_to(buffer);
+    }
+
+    #[inline]
+    fn render(&self) -> Rendered<String> {
+        Render::<JsSource>::render(self.as_str())
     }
 }
 
@@ -644,8 +797,60 @@ macro_rules! render_via_itoa {
 }
 
 render_via_itoa! {
-    i8 i16 i32 i64 i128 isize
-    u8 u16 u32 u64 u128 usize
+    i8 i16 i32
+    u8 u16 u32
+}
+
+macro_rules! render_big_int {
+    ($($Ty:ty)*) => {
+        $(
+            impl Render<Element> for $Ty {
+                #[inline]
+                fn render_to(&self, buffer: &mut Buffer<Element>) {
+                    buffer.dangerously_get_string().push_str(itoa::Buffer::new().format(*self));
+                }
+
+                #[inline]
+                fn render(&self) -> Rendered<String> {
+                    Rendered(itoa::Buffer::new().format(*self).into())
+                }
+            }
+
+            impl Render<AttributeValue> for $Ty {
+                #[inline]
+                fn render_to(&self, buffer: &mut Buffer<AttributeValue>) {
+                    buffer.dangerously_get_string().push_str(itoa::Buffer::new().format(*self));
+                }
+            }
+
+            impl Render<JsSource> for $Ty {
+                #[inline]
+                fn render_to(&self, buffer: &mut Buffer<JsSource>) {
+                    let mut itoa_buffer = itoa::Buffer::new();
+                    // XSS SAFETY: large integers are serialized as JS string
+                    // literals so they do not lose precision when interpreted
+                    // by JavaScript.
+                    push_js_single_quoted_string_to_html_attribute(
+                        buffer.dangerously_get_string(),
+                        itoa_buffer.format(*self),
+                    );
+                }
+
+                #[inline]
+                fn render(&self) -> Rendered<String> {
+                    let mut s = String::new();
+                    let mut itoa_buffer = itoa::Buffer::new();
+                    push_js_single_quoted_string_to_html_attribute(&mut s, itoa_buffer.format(*self));
+                    Rendered(s)
+                }
+            }
+        )*
+    };
+}
+
+render_big_int! {
+    i64 i128 isize
+    u64 u128 usize
 }
 
 macro_rules! render_via_zmij {
@@ -692,6 +897,18 @@ macro_rules! render_via_deref {
                     T::render_to(&**self, buffer);
                 }
             }
+
+            impl<T: Render<JsSource> + ?Sized> Render<JsSource> for $Ty {
+                #[inline]
+                fn render_to(&self, buffer: &mut Buffer<JsSource>) {
+                    T::render_to(&**self, buffer);
+                }
+
+                #[inline]
+                fn render(&self) -> Rendered<String> {
+                    T::render(&**self)
+                }
+            }
         )*
     };
 }
@@ -720,6 +937,18 @@ impl<'a, B: 'a + Render<AttributeValue> + ToOwned + ?Sized> Render<AttributeValu
     #[inline]
     fn render_to(&self, buffer: &mut AttributeBuffer) {
         B::render_to(&**self, buffer);
+    }
+}
+
+impl<'a, B: 'a + Render<JsSource> + ToOwned + ?Sized> Render<JsSource> for Cow<'a, B> {
+    #[inline]
+    fn render_to(&self, buffer: &mut Buffer<JsSource>) {
+        B::render_to(&**self, buffer);
+    }
+
+    #[inline]
+    fn render(&self) -> Rendered<String> {
+        B::render(&**self)
     }
 }
 

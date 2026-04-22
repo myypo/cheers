@@ -6,8 +6,12 @@ use std::{
 use serde::Deserialize;
 
 use crate::{
-    context::AttributeValue,
-    render::{Buffer, Render},
+    context::{AttributeValue, JsSource},
+    signal_path::{is_bare_signal_path_segment, parse_signal_path},
+    render::{
+        Buffer, Render, push_js_single_quoted_string_to_html_attribute,
+        push_js_source_to_html_attribute,
+    },
 };
 
 /// A DOM id generated for a component.
@@ -110,8 +114,8 @@ enum InnerSignalPath {
 /// - Outside the component that defines the signal, acquire it through the generated associated
 ///   functions such as `YourComponent::signal_name(...)`.
 ///
-/// When rendered in an attribute position, a signal becomes a `$`-prefixed path understood by the
-/// client-side runtime.
+/// When rendered in [`JsSource`] context, a signal becomes a `$`-prefixed path
+/// understood by the client-side runtime.
 ///
 /// # Example
 ///
@@ -137,13 +141,13 @@ enum InnerSignalPath {
 ///
 /// assert_eq!(
 ///     Counter { count: 3 }.render().into_inner(),
-///     r#"<span data-text="$counter.count"></span>"#,
+///     r#"<span data-text="$counter['count']"></span>"#,
 /// );
 ///
 /// let count: Signal<i32> = Counter::signal_count();
 /// assert_eq!(
 ///     html! { span !text(count) {} }.render().into_inner(),
-///     r#"<span data-text="$counter.count"></span>"#,
+///     r#"<span data-text="$counter['count']"></span>"#,
 /// );
 /// ```
 #[derive(Debug)]
@@ -205,27 +209,38 @@ impl<T> Signal<T> {
     #[doc(hidden)]
     /// Used by the `html!`, `html_borrow!`, `attribute!`, and `attribute_borrow!`
     /// macros when expanding computed signal attributes. Not part of the stable public API.
-    pub fn __computed_open(&self, buffer: &mut Buffer<AttributeValue>) -> usize {
-        let path = self.__path();
-        let segments: Vec<&str> = path.split('.').collect();
-
-        if segments.is_empty() {
+    pub fn __computed_open(&self, buffer: &mut Buffer<JsSource>) -> usize {
+        let mut segments = parse_signal_path(self.__path()).into_iter();
+        let Some(first_segment) = segments.next() else {
             return 0;
-        }
+        };
 
-        for (i, segment) in segments.iter().enumerate() {
-            if i == 0 {
-                segment.render_to(buffer);
+        let s = buffer.dangerously_get_string();
+        let mut close_count = 0;
+
+        // XSS SAFETY: signal paths are framework-generated Datastar paths. We
+        // emit each object key as a quoted JS string literal so arbitrary
+        // segments remain valid when embedded inside a double-quoted HTML
+        // attribute value.
+        if is_bare_signal_path_segment(&first_segment) {
+            push_js_source_to_html_attribute(s, &first_segment);
+        } else {
+            push_js_single_quoted_string_to_html_attribute(s, &first_segment);
+        }
+        for segment in segments {
+            close_count += 1;
+            s.push_str(":{");
+            if is_bare_signal_path_segment(&segment) {
+                push_js_source_to_html_attribute(s, &segment);
             } else {
-                // XSS SAFETY: statically opening the JS object
-                buffer.dangerously_get_string().push_str(":{");
-                segment.render_to(buffer);
+                push_js_single_quoted_string_to_html_attribute(s, &segment);
             }
         }
-        // XSS SAFETY: statically assigning a JS function - the execution is intentional
-        buffer.dangerously_get_string().push_str(":()=>");
 
-        segments.len() - 1
+        // XSS SAFETY: statically assigning a JS function - the execution is intentional.
+        s.push_str(":()=>");
+
+        close_count
     }
 }
 
@@ -233,7 +248,7 @@ impl Signal<()> {
     #[doc(hidden)]
     /// Used by the `html!`, `html_borrow!`, `attribute!`, and `attribute_borrow!`
     /// macros when expanding computed signal attributes. Not part of the stable public API.
-    pub fn __computed_close(count: usize, buffer: &mut Buffer<AttributeValue>) {
+    pub fn __computed_close(count: usize, buffer: &mut Buffer<JsSource>) {
         // XSS SAFETY: statically closing the JS object
         let buf = buffer.dangerously_get_string();
         for _ in 0..count {
@@ -242,48 +257,60 @@ impl Signal<()> {
     }
 }
 
-impl<T: Render<AttributeValue>> Signal<T> {
+impl<T: Render<JsSource>> Signal<T> {
     #[doc(hidden)]
     /// Used by the `html!`, `html_borrow!`, `attribute!`, and `attribute_borrow!`
     /// macros when expanding `!signals(...)`. Not part of the stable public API.
-    pub fn __assign(&self, buffer: &mut Buffer<AttributeValue>, v: T) {
-        let path = self.__path();
-        let segments: Vec<&str> = path.split('.').collect();
-
-        if segments.is_empty() {
+    pub fn __assign(&self, buffer: &mut Buffer<JsSource>, v: T) {
+        let mut segments = parse_signal_path(self.__path()).into_iter();
+        let Some(first_segment) = segments.next() else {
             return;
-        }
+        };
 
+        let mut close_count = 0;
         {
-            let mut first = true;
-            for seg in segments.iter() {
-                if first {
-                    first = false;
-                    seg.render_to(buffer);
+            let s = buffer.dangerously_get_string();
+
+            // XSS SAFETY: signal paths are framework-generated Datastar paths.
+            // We emit each object key as a quoted JS string literal so
+            // arbitrary segments remain valid when embedded inside a
+            // double-quoted HTML attribute value.
+            if is_bare_signal_path_segment(&first_segment) {
+                push_js_source_to_html_attribute(s, &first_segment);
+            } else {
+                push_js_single_quoted_string_to_html_attribute(s, &first_segment);
+            }
+
+            for seg in segments {
+                close_count += 1;
+                s.push_str(":{");
+                if is_bare_signal_path_segment(&seg) {
+                    push_js_source_to_html_attribute(s, &seg);
                 } else {
-                    // XSS SAFETY: statically opening the JS object
-                    buffer.dangerously_get_string().push_str(":{");
-                    seg.render_to(buffer);
+                    push_js_single_quoted_string_to_html_attribute(s, &seg);
                 }
             }
-            // XSS SAFETY: static assignment
-            buffer.dangerously_get_string().push(':');
+            s.push(':');
         }
 
         v.render_to(buffer);
 
-        // XSS SAFETY: statically closing the JS object
+        // XSS SAFETY: statically closing the JS object written above.
         let s = buffer.dangerously_get_string();
-        for _ in 0..segments.len() - 1 {
+        for _ in 0..close_count {
             s.push('}');
         }
     }
 }
 
-impl<T> Render<AttributeValue> for Signal<T> {
-    fn render_to(&self, buffer: &mut Buffer<AttributeValue>) {
-        '$'.render_to(buffer);
-        self.__path().render_to(buffer);
+impl<T> Render<JsSource> for Signal<T> {
+    fn render_to(&self, buffer: &mut Buffer<JsSource>) {
+        let s = buffer.dangerously_get_string();
+
+        // XSS SAFETY: `$` is static syntax, while the signal path is
+        // framework-generated and HTML-escaped for attribute embedding.
+        s.push('$');
+        push_js_source_to_html_attribute(s, self.__path());
     }
 }
 
@@ -385,18 +412,29 @@ mod tests {
 
     #[test]
     fn signal_object_string_value() {
-        let signal = Signal::<&str>::__string("user.name".to_string());
-        let mut buffer = Buffer::new();
-        signal.__assign(&mut buffer, "'Nick'");
+        let signal = Signal::<&str>::__string("user['name']".to_string());
+        let mut buffer = Buffer::<JsSource>::new();
+        signal.__assign(&mut buffer, "Nick");
         assert_eq!(buffer.rendered().into_inner(), r#"user:{name:'Nick'}"#);
     }
 
     #[test]
     fn signal_object_number_value() {
-        let signal = Signal::<f64>::__string("user.age".to_string());
-        let mut buffer = Buffer::new();
+        let signal = Signal::<f64>::__string("user['age']".to_string());
+        let mut buffer = Buffer::<JsSource>::new();
         signal.__assign(&mut buffer, -42.0);
         assert_eq!(buffer.rendered().into_inner(), r#"user:{age:-42.0}"#);
+    }
+
+    #[test]
+    fn signal_object_unsafe_segment() {
+        let signal = Signal::<&str>::__string("project['user.123']['name']".to_string());
+        let mut buffer = Buffer::<JsSource>::new();
+        signal.__assign(&mut buffer, "Nick");
+        assert_eq!(
+            buffer.rendered().into_inner(),
+            r#"project:{'user.123':{name:'Nick'}}"#
+        );
     }
 
     #[test]

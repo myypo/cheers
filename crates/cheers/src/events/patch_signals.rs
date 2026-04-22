@@ -3,7 +3,7 @@ use serde::Serialize;
 use serde_json::{Map, Value};
 
 use super::{DATASTAR_PATCH_SIGNALS, Error, Event, sanitize_axum_sse_data};
-use crate::reference::Signal;
+use crate::{reference::Signal, signal_path::parse_signal_path};
 
 /// A signal patch command that merges JSON values into the client-side signal store.
 ///
@@ -104,11 +104,14 @@ impl PatchSignals {
 }
 
 fn fragment_from_path(path: &str, leaf: Value) -> Value {
-    path.split('.').rev().fold(leaf, |acc, segment| {
-        let mut object = Map::new();
-        object.insert(segment.to_owned(), acc);
-        Value::Object(object)
-    })
+    parse_signal_path(path)
+        .into_iter()
+        .rev()
+        .fold(leaf, |acc, segment| {
+            let mut object = Map::new();
+            object.insert(segment, acc);
+            Value::Object(object)
+        })
 }
 
 fn compose_patch(dst: &mut Value, src: Value) {
@@ -219,6 +222,15 @@ mod tests {
         name: String,
         #[signal]
         archived: bool,
+    }
+
+    #[expect(dead_code)]
+    #[derive(Cheers)]
+    struct ProjectBySlug {
+        #[id]
+        slug: &'static str,
+        #[signal]
+        name: String,
     }
 
     #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -349,6 +361,29 @@ mod tests {
             serde_json::from_str(&body).expect("signal patch response should be valid JSON");
 
         assert_eq!(body, json!({ "project": { "1": { "name": null } } }));
+    }
+
+    #[tokio::test]
+    async fn supports_unsafe_path_segments() {
+        let patch = PatchSignals::new().set(
+            ProjectBySlug::signal_name("user.123"),
+            "Website Redesign".to_owned(),
+        );
+
+        let body = read_axum_body(patch.into_response()).await;
+        let body: Value =
+            serde_json::from_str(&body).expect("signal patch response should be valid JSON");
+
+        assert_eq!(
+            body,
+            json!({
+                "project_by_slug": {
+                    "user.123": {
+                        "name": "Website Redesign",
+                    }
+                }
+            })
+        );
     }
 
     #[tokio::test]

@@ -1,5 +1,5 @@
 use proc_macro2::TokenStream;
-use quote::{TokenStreamExt, quote};
+use quote::quote;
 use syn::{
     Error, FnArg, GenericArgument, Ident, LitStr, Pat, PatType, PathArguments, Signature, Type,
     TypeTuple,
@@ -216,19 +216,6 @@ fn path_lit_str<'a>(ident: &'a Ident, args: impl IntoIterator<Item = &'a Ident>)
     LitStr::new(&path_str, ident.span())
 }
 
-fn options(args: &ActionFieldArgs) -> Option<TokenStream> {
-    if args.form {
-        let mut tokens = quote! { let mut s = ",{contentType:'form'".to_owned(); };
-        tokens.append_all(quote! {
-            s.push('}');
-            s
-        });
-        Some(tokens)
-    } else {
-        None
-    }
-}
-
 pub fn generate(args: ActionArgs, item: &mut MaybeItemFn) -> Result<TokenStream, Error> {
     let field_args = ActionFieldArgs::new(&mut item.sig)?;
 
@@ -249,24 +236,19 @@ pub fn generate(args: ActionArgs, item: &mut MaybeItemFn) -> Result<TokenStream,
     };
 
     let method = &args.method;
-
-    let static_path = format!(
-        "@{}('{}",
-        method.to_string().to_lowercase(),
-        &static_part_path_str(ident)
-    );
-    let path_renders = field_args.path.iter().map(|(i, _)| {
-        quote! {
-            "/".render_to(buffer);
-            self.#i.render_to(buffer);
-        }
-    });
-    let options = options(&field_args);
-    let options_render = if let Some(options) = options {
-        quote! { {#options}.render_to(buffer); }
-    } else {
-        TokenStream::new()
-    };
+    let method_name = LitStr::new(&method.to_string().to_lowercase(), method.span());
+    let static_path = LitStr::new(&static_part_path_str(ident), ident.span());
+    let path_renders_js: Vec<_> = field_args
+        .path
+        .iter()
+        .map(|(i, _)| {
+            quote! {
+                __cheers_action_path.push('/');
+                __cheers_action_path.push_str(&::std::string::ToString::to_string(&self.#i));
+            }
+        })
+        .collect();
+    let form = field_args.form;
     let generics = filter_generics(
         item.sig.generics.clone(),
         field_args.path.iter().map(|(_, ty)| ty),
@@ -294,13 +276,11 @@ pub fn generate(args: ActionArgs, item: &mut MaybeItemFn) -> Result<TokenStream,
 
         #struct_decl
 
-        impl #impl_generics ::cheers::prelude::Render<::cheers::prelude::AttributeValue> for #struct_name #ty_generics #where_clause {
-            fn render_to(&self, buffer: &mut ::cheers::prelude::Buffer<::cheers::prelude::AttributeValue>) {
-                #static_path.render_to(buffer);
-                #(#path_renders)*
-                "'".render_to(buffer);
-                #options_render
-                ")".render_to(buffer);
+        impl #impl_generics ::cheers::prelude::Render<::cheers::prelude::JsSource> for #struct_name #ty_generics #where_clause {
+            fn render_to(&self, buffer: &mut ::cheers::prelude::Buffer<::cheers::prelude::JsSource>) {
+                let mut __cheers_action_path = ::std::string::String::from(#static_path);
+                #(#path_renders_js)*
+                ::cheers::__internal::__render_action_call(buffer, #method_name, &__cheers_action_path, #form);
             }
         }
 

@@ -776,7 +776,7 @@ impl Generate for Data {
                     }
 
                     let buffer_ident = Generator::buffer_ident();
-                    let buffer_expr = quote!(#buffer_ident.as_attribute_buffer());
+                    let buffer_expr = quote!(#buffer_ident.as_js_buffer());
 
                     let ident = &d.ident;
                     let expr = &d.value;
@@ -806,7 +806,7 @@ impl Generate for Data {
 
                     g.push_expr(paren_token, Self::CONTEXT, &d.ident);
                     g.push_str(":");
-                    g.push(&mut d.value);
+                    g.push_js_value_node(&mut d.value);
                 }
                 g.push_str("}");
                 g.push_str("\"");
@@ -819,7 +819,7 @@ impl Generate for Data {
                     g.push_str("{");
 
                     let buffer_ident = Generator::buffer_ident();
-                    let buffer_expr = quote!(#buffer_ident.as_attribute_buffer());
+                    let buffer_expr = quote!(#buffer_ident.as_js_buffer());
                     let ident_expr = &d.ident;
                     g.push_stmt(quote! {
                         let count = ::cheers::prelude::Signal::__computed_open(
@@ -827,7 +827,7 @@ impl Generate for Data {
                             #buffer_expr
                         );
                     });
-                    g.push(&mut d.value);
+                    g.push_js_value_node(&mut d.value);
                     g.push_stmt(quote! {
                         ::cheers::prelude::Signal::__computed_close(count, #buffer_expr);
                     });
@@ -839,7 +839,7 @@ impl Generate for Data {
                 g.push_str(" data-");
                 g.push_literals(name_literals);
                 g.push_str("=\"");
-                g.push(attribute_value_node);
+                g.push_js_value_node(attribute_value_node);
                 g.push_str("\"");
             }
             DataContent::Bind(expr) => {

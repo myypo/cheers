@@ -1,4 +1,4 @@
-use crate::prelude::*;
+use crate::{prelude::*, render::push_json_source_to_html_attribute};
 
 use axum::{
     Json,
@@ -192,13 +192,17 @@ pub struct ExceptionEvent {
 
 pub struct TrackAction<P: Serialize>(pub P);
 
-impl<P: Serialize> Render<AttributeValue> for TrackAction<P> {
-    fn render_to(&self, buffer: &mut Buffer<AttributeValue>) {
+impl<P: Serialize> Render<JsSource> for TrackAction<P> {
+    fn render_to(&self, buffer: &mut Buffer<JsSource>) {
         let payload = serde_json::to_string(&self.0).unwrap_or_else(|_| "{}".to_owned());
+        let s = buffer.dangerously_get_string();
 
-        "@track(".render_to(buffer);
-        payload.render_to(buffer);
-        ")".render_to(buffer);
+        // XSS SAFETY: the wrapper syntax is static, while the JSON payload is
+        // HTML-escaped for attribute embedding and has JS line terminators
+        // normalized to `\u2028` / `\u2029`.
+        s.push_str("@track(");
+        push_json_source_to_html_attribute(s, &payload);
+        s.push(')');
     }
 }
 
@@ -221,6 +225,20 @@ mod tests {
         assert!(source.contains(r#""endpoint":"/_track""#));
         assert!(source.contains(r#""service":"svc""#));
         assert!(source.contains(r#""release":"1\u2028.0\u2029.0""#));
+    }
+
+    #[test]
+    fn track_action_escapes_json_for_js_attributes() {
+        let rendered = TrackAction(serde_json::json!({
+            "message": "hi \"there\" <tag> & more \u{2028}\u{2029}"
+        }))
+        .render()
+        .into_inner();
+
+        assert_eq!(
+            rendered,
+            "@track({&quot;message&quot;:&quot;hi \\&quot;there\\&quot; &lt;tag&gt; &amp; more \\u2028\\u2029&quot;})"
+        );
     }
 
     #[tokio::test]
