@@ -5,7 +5,7 @@ use anyhow::{Context, Error, bail};
 fn main() -> Result<(), Error> {
     let manifest_dir = std::env::var("CARGO_MANIFEST_DIR")
         .context("read CARGO_MANIFEST_DIR env var to infer vendor path")?;
-    let vendor_dir = Path::new(&manifest_dir).join("vendor/datastar/library/src");
+    let vendor_dir = Path::new(&manifest_dir).join("../../vendor/datastar/src");
     if !vendor_dir.exists() {
         bail!("vendor dir does not exist: {}", vendor_dir.display());
     }
@@ -21,6 +21,8 @@ fn main() -> Result<(), Error> {
         "        let content: &str = match module_specifier.to_string_lossy().as_ref() {\n",
     );
 
+    println!("cargo:rerun-if-changed={}", vendor_dir.display());
+
     for entry in walkdir::WalkDir::new(&vendor_dir).sort_by(|a, b| a.file_name().cmp(b.file_name()))
     {
         let entry = entry.context("read vendor dir entry")?;
@@ -29,6 +31,7 @@ fn main() -> Result<(), Error> {
         }
 
         let path = entry.path();
+        println!("cargo:rerun-if-changed={}", path.display());
         let Some(ext) = path.extension() else {
             continue;
         };
@@ -65,7 +68,6 @@ fn main() -> Result<(), Error> {
 
     fs::write(&dest_path, &code)
         .context("write file with datastar module resolution implementation")?;
-    println!("cargo:rerun-if-changed=vendor/");
 
     Ok(())
 }

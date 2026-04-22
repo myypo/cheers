@@ -1,20 +1,13 @@
 {
-	"extends": "../../../../../vendor/datastar/library/tsconfig.json",
-	"compilerOptions": {
-		"noEmit": true,
-		"paths": {
-			"@engine": [
-				"../../../../../vendor/datastar/library/src/engine/engine.ts"
-			],
-			"@engine/*": ["../../../../../vendor/datastar/library/src/engine/*"],
-			"@plugins/*": ["../../../../../vendor/datastar/library/src/plugins/*"],
-			"@utils/*": ["../../../../../vendor/datastar/library/src/utils/*"]
-		}
-	},
-	"include": [
-		"./datastar-entry.ts",
-		"track-config.ts",
-		"track-plugin.ts",
-		"../../../../../vendor/datastar/library/src/globals.d.ts"
-	]
+  "extends": "../../../../../vendor/datastar/tsconfig.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "paths": {
+      "@engine": ["../../../../../vendor/datastar/src/engine/engine.ts"],
+      "@engine/*": ["../../../../../vendor/datastar/src/engine/*"],
+      "@plugins/*": ["../../../../../vendor/datastar/src/plugins/*"],
+      "@utils/*": ["../../../../../vendor/datastar/src/utils/*"]
+    }
+  },
+  "include": ["./datastar-entry.ts", "track-config.ts", "track-plugin.ts"]
 }

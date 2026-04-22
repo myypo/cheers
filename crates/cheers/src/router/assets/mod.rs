@@ -597,6 +597,15 @@ mod tests {
         assert!(track_config.content.contains("svc"));
     }
 
+    #[test]
+    fn bundles_vendor_datastar_runtime() {
+        let modules = datastar_modules(None).expect("datastar modules should build");
+        let bundle = bundle::bundle_and_minify(RUNTIME_ENTRY_MODULE, modules)
+            .expect("vendored datastar runtime should bundle");
+
+        assert!(!bundle.is_empty());
+    }
+
     #[cfg(debug_assertions)]
     #[test]
     fn uses_hardcoded_url_for_dev_builds() {
