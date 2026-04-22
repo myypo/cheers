@@ -3,7 +3,7 @@
 // Description: Creates a signal (if one doesn’t already exist) and sets up two-way data binding between it and an element’s value.
 
 import { attribute } from '@engine'
-import { effect, getPath, mergePaths } from '@engine/signals'
+import { effect, getPath, mergePath, mergePaths, parseSignalPath } from '@engine/signals'
 import type { Paths } from '@engine/types'
 import { aliasify, modifyCasing } from '@utils/text'
 
@@ -23,6 +23,7 @@ attribute({
   requirement: 'exclusive',
   apply({ el, key, mods, value, error }) {
     const signalName = key != null ? modifyCasing(key, mods) : value
+    const signalPath = parseSignalPath(signalName)
 
     let get = (el: any, type: string) =>
       type === 'number' ? +el.value : el.value
@@ -105,7 +106,7 @@ attribute({
                   }),
               ),
             ).then(() => {
-              mergePaths([[signalName, signalFiles]])
+              mergePath(signalPath, signalFiles)
             })
           }
 
@@ -158,10 +159,10 @@ attribute({
       }
     }
 
-    const initialValue = getPath(signalName)
+    const initialValue = getPath(signalPath)
     const type = typeof initialValue
 
-    let path = signalName
+    let path = signalPath
     if (
       Array.isArray(initialValue) &&
       !(el instanceof HTMLSelectElement && el.multiple)
@@ -174,7 +175,7 @@ attribute({
       const paths: Paths = []
       let i = 0
       for (const input of inputs) {
-        paths.push([`${path}.${i}`, get(input, 'none')])
+        paths.push([[...path, `${i}`], get(input, 'none')])
 
         if (el === input) {
           break
@@ -182,9 +183,9 @@ attribute({
         i++
       }
       mergePaths(paths, { ifMissing: true })
-      path = `${path}.${i}`
+      path = [...path, `${i}`]
     } else {
-      mergePaths([[path, get(el, type)]], {
+      mergePath(path, get(el, type), {
         ifMissing: true,
       })
     }
@@ -194,7 +195,7 @@ attribute({
       if (signalValue != null) {
         const value = get(el, typeof signalValue)
         if (value !== empty) {
-          mergePaths([[path, value]])
+          mergePath(path, value)
         }
       }
     }

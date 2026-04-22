@@ -4,7 +4,7 @@
 
 import { attribute } from '@engine'
 import { DATASTAR_FETCH_EVENT } from '@engine/consts'
-import { mergePaths } from '@engine/signals'
+import { mergePath, parseSignalPath } from '@engine/signals'
 import type { DatastarFetchEvent } from '@engine/types'
 import { FINISHED, STARTED } from '@plugins/actions/fetch'
 import { modifyCasing } from '@utils/text'
@@ -14,8 +14,9 @@ attribute({
   requirement: 'exclusive',
   apply({ el, key, mods, value }) {
     const signalName = key != null ? modifyCasing(key, mods) : value
+    const signalPath = parseSignalPath(signalName)
 
-    mergePaths([[signalName, false]])
+    mergePath(signalPath, false)
 
     const watcher = ((event: CustomEvent<DatastarFetchEvent>) => {
       const { type, el: elt } = event.detail
@@ -24,16 +25,16 @@ attribute({
       }
       switch (type) {
         case STARTED:
-          mergePaths([[signalName, true]])
+          mergePath(signalPath, true)
           break
         case FINISHED:
-          mergePaths([[signalName, false]])
+          mergePath(signalPath, false)
           break
       }
     }) as EventListener
     document.addEventListener(DATASTAR_FETCH_EVENT, watcher)
     return () => {
-      mergePaths([[signalName, false]])
+      mergePath(signalPath, false)
       document.removeEventListener(DATASTAR_FETCH_EVENT, watcher)
     }
   },

@@ -4,11 +4,12 @@ import type {
   Effect,
   JSONPatch,
   MergePatchArgs,
+  Path,
   Paths,
   Signal,
   SignalFilterOptions,
 } from '@engine/types'
-import { isPojo, pathToObj } from '@utils/paths'
+import { isPojo, parsePath, pathToObj, serializePath } from '@utils/paths'
 import { hasOwn } from '@utils/polyfills'
 
 interface ReactiveNode {
@@ -547,25 +548,38 @@ const isValidLink = (checkLink: Link, sub: ReactiveNode): boolean => {
   return false
 }
 
-export const getPath = <T = any>(path: string): T | undefined => {
+export const getPath = <T = any>(path: Path): T | undefined => {
   let result = root
-  const split = path.split('.')
-  for (const path of split) {
-    if (result == null || !hasOwn(result, path)) {
+  for (const segment of path) {
+    if (result == null || !hasOwn(result, segment)) {
       return
     }
-    result = result[path]
+    result = result[segment]
   }
   return result as T
 }
 
-const deep = (value: any, prefix = ''): any => {
+export const parseSignalPath = (path: string): Path => parsePath(path)
+
+export const mergePath = (
+  path: Path,
+  value: any,
+  options?: MergePatchArgs,
+): void => mergePaths([[path, value]], options)
+
+export const mergePathString = (
+  path: string,
+  value: any,
+  options?: MergePatchArgs,
+): void => mergePath(parseSignalPath(path), value, options)
+
+const deep = (value: any, prefix: Path = []): any => {
   const isArr = Array.isArray(value)
   if (isArr || isPojo(value)) {
     const deepObj = (isArr ? [] : {}) as Record<string, Signal<any>>
     for (const key in value) {
       deepObj[key] = signal(
-        deep((value as Record<string, Signal<any>>)[key], `${prefix + key}.`),
+        deep((value as Record<string, Signal<any>>)[key], [...prefix, key]),
       )
     }
     const keys = signal(0)
@@ -590,14 +604,14 @@ const deep = (value: any, prefix = ''): any => {
           // to an empty string
           if (!hasOwn(deepObj, prop) || deepObj[prop]() == null) {
             deepObj[prop] = signal('')
-            dispatch(prefix + prop, '')
+            dispatch([...prefix, prop], '')
             keys(keys() + 1)
           }
           return deepObj[prop]()
         }
       },
       set(_, prop: string, newValue) {
-        const path = prefix + prop
+        const path = [...prefix, prop]
         // special case for when setting length so we can make a diff patch
         if (isArr && prop === 'length') {
           const diff = (deepObj[prop] as unknown as number) - newValue
@@ -609,7 +623,7 @@ const deep = (value: any, prefix = ''): any => {
             for (let i = newValue; i < deepObj[prop]; i++) {
               patch[i] = null
             }
-            dispatch(prefix.slice(0, -1), patch)
+            dispatch(prefix, patch)
             keys(keys() + 1)
           }
         } else if (hasOwn(deepObj, prop)) {
@@ -620,7 +634,7 @@ const deep = (value: any, prefix = ''): any => {
             deepObj[prop] = newValue
             dispatch(path, '')
             // if prop changed after setting it then dispatch
-          } else if (deepObj[prop](deep(newValue, `${path}.`))) {
+          } else if (deepObj[prop](deep(newValue, path))) {
             dispatch(path, newValue)
           }
           // if newValue is null or undefined then noop
@@ -630,7 +644,7 @@ const deep = (value: any, prefix = ''): any => {
             deepObj[prop] = newValue
             dispatch(path, '')
           } else {
-            deepObj[prop] = signal(deep(newValue, `${path}.`))
+            deepObj[prop] = signal(deep(newValue, path))
             dispatch(path, newValue)
           }
           keys(keys() + 1)
@@ -656,7 +670,7 @@ const deep = (value: any, prefix = ''): any => {
   return value
 }
 
-const dispatch = (path?: string, value?: any) => {
+const dispatch = (path?: Path, value?: any) => {
   if (path !== undefined && value !== undefined) {
     currentPatch.push([path, value])
   }
@@ -682,7 +696,7 @@ export const mergePatch = (
         delete root[key]
       }
     } else {
-      mergeInner(patch[key], key, root, '', ifMissing)
+      mergeInner(patch[key], key, root, ifMissing)
     }
   }
   endBatch()
@@ -695,7 +709,6 @@ const mergeInner = (
   patch: any,
   target: string,
   targetParent: Record<string, any>,
-  prefix: string,
   ifMissing: boolean | undefined,
 ): void => {
   if (isPojo(patch)) {
@@ -714,13 +727,7 @@ const mergeInner = (
           delete targetParent[target][key]
         }
       } else {
-        mergeInner(
-          patch[key],
-          key,
-          targetParent[target],
-          `${prefix + target}.`,
-          ifMissing,
-        )
+        mergeInner(patch[key], key, targetParent[target], ifMissing)
       }
     }
   } else if (!(ifMissing && hasOwn(targetParent, target))) {
@@ -743,16 +750,19 @@ export const filtered = (
   const includeRe = toRegExp(include)
   const excludeRe = toRegExp(exclude)
   const paths: Paths = []
-  const stack: [any, string][] = [[obj, '']]
+  const stack: [any, Path][] = [[obj, []]]
 
   while (stack.length) {
     const [node, prefix] = stack.pop()!
 
     for (const key in node) {
-      const path = prefix + key
+      const path = [...prefix, key]
       if (isPojo(node[key])) {
-        stack.push([node[key], `${path}.`])
-      } else if (includeRe.test(path) && !excludeRe.test(path)) {
+        stack.push([node[key], path])
+      } else if (
+        includeRe.test(serializePath(path)) &&
+        !excludeRe.test(serializePath(path))
+      ) {
         paths.push([path, getPath(path)])
       }
     }
