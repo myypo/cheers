@@ -358,7 +358,7 @@ impl SvgSpriteBundler {
 
         let Some(sprite) = registrations
             .first()
-            .map(|registration| registration.sprite)
+            .map(|registration| (registration.sprite)())
         else {
             return Ok(None);
         };
@@ -366,17 +366,17 @@ impl SvgSpriteBundler {
         if registrations
             .iter()
             .skip(1)
-            .any(|other| other.sprite != sprite)
+            .any(|other| (other.sprite)() != sprite)
         {
             return Err(Error::Bundling(
                 "only a single global SVG sprite sheet is supported right now; consolidate your `include_svg_sprite!` calls into one sheet".to_owned(),
             ));
         }
 
-        let path = make_svg_path(sprite);
+        let path = make_svg_path(&sprite);
         set_static_path(&SVG_SPRITE_PATH, &path, "SVG_SPRITE_PATH")?;
 
-        Ok(Some(sprite.to_owned()))
+        Ok(Some(sprite))
     }
 }
 
@@ -535,7 +535,7 @@ macro_rules! include_svg_sprite {
                     line: line!(),
                     column: column!(),
                 },
-                sprite: ($crate::macros::svg_static! { $($svg)* }).into_inner(),
+                sprite: (|| $crate::prelude::svg! { $($svg)* }.render().into_inner()) as fn() -> String,
             }
         }
     };

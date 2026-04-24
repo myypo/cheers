@@ -9,3 +9,9 @@ fn big_int_in_js_context_is_rejected() {
     let tests = trybuild::TestCases::new();
     tests.compile_fail("tests/ui/big_int_in_js_context.rs");
 }
+
+#[test]
+fn unsupported_ref_expr_is_rejected() {
+    let tests = trybuild::TestCases::new();
+    tests.compile_fail("tests/ui/unsupported_ref_expr.rs");
+}

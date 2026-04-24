@@ -7,7 +7,7 @@ use ast::{
 use syn::{Expr, Ident, Token, punctuated::Punctuated, spanned::Spanned};
 
 fn paren_expr_len<N: Node>(paren_expr: &ParenExpr<N>) -> Option<usize> {
-    span_len(&paren_expr.expr).map(|len| len + 2)
+    span_len(&paren_expr.expr).map(|len| len + 2 + paren_expr.mode.prefix_len())
 }
 
 fn component_attr_value_len(value: &ComponentAttributeValue) -> Option<usize> {

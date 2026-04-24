@@ -1,7 +1,7 @@
 use std::{collections::BTreeMap, iter};
 
 use proc_macro2::{Ident, Span, TokenStream};
-use quote::{ToTokens, TokenStreamExt, quote, quote_spanned};
+use quote::{ToTokens, TokenStreamExt, format_ident, quote, quote_spanned};
 use syn::{
     Error, LitStr, braced,
     parse::Parse,
@@ -16,24 +16,23 @@ fn pinned_stream_tokens_expr(stream: &TokenStream) -> TokenStream {
     }
 }
 
-pub fn lazy<T: Parse + Generate>(tokens: TokenStream, move_: bool) -> Result<TokenStream, Error> {
-    lazy_with_flavour::<T>(tokens, move_, NodeFlavour::Html)
+pub fn lazy<T: Parse + Generate>(tokens: TokenStream) -> Result<TokenStream, Error> {
+    lazy_with_flavour::<T>(tokens, NodeFlavour::Html)
 }
 
 pub fn lazy_with_flavour<T: Parse + Generate>(
     tokens: TokenStream,
-    move_: bool,
     flavour: NodeFlavour,
 ) -> Result<TokenStream, Error> {
-    let mut g = Generator::new_closure(T::CONTEXT, flavour);
+    let mut borrow_state = BorrowState::new();
+    let mut g = Generator::new_closure(T::CONTEXT, flavour, &mut borrow_state);
 
     g.push(syn::parse2::<T>(tokens)?);
 
     let block = g.finish();
+    let borrow_captures = borrow_state.captures;
 
     let buffer_ident = Generator::buffer_ident();
-
-    let move_token = move_.then(|| quote!(move));
 
     let marker_ident = T::CONTEXT.marker_type();
 
@@ -48,9 +47,10 @@ pub fn lazy_with_flavour<T: Parse + Generate>(
         tokens.append_all(quote! {
             {
                 use ::cheers::validation::attributes::*;
+                #(#borrow_captures)*
 
                 ::cheers::prelude::Lazy::<_, #marker_ident>::dangerously_create(
-                    #move_token |#buffer_ident: &mut ::cheers::prelude::Buffer<#marker_ident>| {
+                    move |#buffer_ident: &mut ::cheers::prelude::Buffer<#marker_ident>| {
 
                         #block
                     }
@@ -64,9 +64,10 @@ pub fn lazy_with_flavour<T: Parse + Generate>(
         tokens.append_all(quote! {
             {
                 use ::cheers::validation::attributes::*;
+                #(#borrow_captures)*
 
                 let lazy = ::cheers::prelude::Lazy::<_, #marker_ident>::dangerously_create(
-                    #move_token |#buffer_ident: &mut ::cheers::prelude::Buffer<#marker_ident>| {
+                    move |#buffer_ident: &mut ::cheers::prelude::Buffer<#marker_ident>| {
 
                         #block
                     }
@@ -90,7 +91,8 @@ pub fn literal_with_flavour<T: Parse + Generate>(
     tokens: TokenStream,
     flavour: NodeFlavour,
 ) -> syn::Result<TokenStream> {
-    let mut g = Generator::new_static(T::CONTEXT, flavour);
+    let mut borrow_state = BorrowState::new();
+    let mut g = Generator::new_static(T::CONTEXT, flavour, &mut borrow_state);
 
     g.push(syn::parse2::<T>(tokens)?);
 
@@ -181,7 +183,38 @@ impl ToTokens for ValidationModule {
     }
 }
 
-pub struct Generator {
+struct BorrowState {
+    captures: Vec<TokenStream>,
+    counter: usize,
+}
+
+impl BorrowState {
+    fn new() -> Self {
+        Self {
+            captures: Vec::new(),
+            counter: 0,
+        }
+    }
+
+    fn hoist_ref_expr(&mut self, paren_token: Paren, expr: impl ToTokens) -> Ident {
+        let ref_idx = self.counter;
+        self.counter += 1;
+
+        let ref_ident = format_ident!("__cheers_ref_{ref_idx}", span = Span::mixed_site());
+
+        let mut ref_expr = TokenStream::new();
+        paren_token.surround(&mut ref_expr, |tokens| expr.to_tokens(tokens));
+
+        let reference = quote_spanned!(paren_token.span=> &);
+        self.captures.push(quote! {
+            let #ref_ident = #reference #ref_expr;
+        });
+
+        ref_ident
+    }
+}
+
+pub struct Generator<'a> {
     lazy: bool,
     context: Context,
     flavour: NodeFlavour,
@@ -191,26 +224,36 @@ pub struct Generator {
     async_stmts: Vec<TokenStream>,
     id: Option<TokenStream>,
     context_override: Option<Context>,
+    borrow_state: &'a mut BorrowState,
 }
 
-impl Generator {
+impl<'a> Generator<'a> {
     pub fn buffer_ident() -> Ident {
         Ident::new("__hypertext_buffer", Span::mixed_site())
     }
 
-    fn new_closure(context: Context, flavour: NodeFlavour) -> Self {
-        Self::new_with_brace(context, true, Brace::default(), flavour)
+    fn new_closure(
+        context: Context,
+        flavour: NodeFlavour,
+        borrow_state: &'a mut BorrowState,
+    ) -> Self {
+        Self::new_root_with_brace(context, true, Brace::default(), flavour, borrow_state)
     }
 
-    fn new_static(context: Context, flavour: NodeFlavour) -> Self {
-        Self::new_with_brace(context, false, Brace::default(), flavour)
+    fn new_static(
+        context: Context,
+        flavour: NodeFlavour,
+        borrow_state: &'a mut BorrowState,
+    ) -> Self {
+        Self::new_root_with_brace(context, false, Brace::default(), flavour, borrow_state)
     }
 
-    const fn new_with_brace(
+    fn new_root_with_brace(
         context: Context,
         lazy: bool,
         brace_token: Brace,
         flavour: NodeFlavour,
+        borrow_state: &'a mut BorrowState,
     ) -> Self {
         Self {
             lazy,
@@ -222,6 +265,27 @@ impl Generator {
             async_stmts: Vec::new(),
             id: None,
             context_override: None,
+            borrow_state,
+        }
+    }
+
+    fn new_child_with_brace<'b>(
+        &'b mut self,
+        brace_token: Brace,
+        flavour: NodeFlavour,
+        lazy: bool,
+    ) -> Generator<'b> {
+        Generator {
+            lazy,
+            context: self.context,
+            flavour,
+            brace_token,
+            parts: Vec::new(),
+            checks: Checks::new(),
+            async_stmts: Vec::new(),
+            id: None,
+            context_override: self.context_override,
+            borrow_state: &mut *self.borrow_state,
         }
     }
 
@@ -306,7 +370,7 @@ impl Generator {
     pub fn block_with(
         &mut self,
         brace_token: Brace,
-        f: impl FnOnce(&mut Self),
+        f: impl for<'b> FnOnce(&mut Generator<'b>),
         append_async: bool,
     ) -> AnyBlock {
         self.block_with_flavour(brace_token, self.flavour, f, append_async)
@@ -316,36 +380,59 @@ impl Generator {
         &mut self,
         brace_token: Brace,
         flavour: NodeFlavour,
-        f: impl FnOnce(&mut Self),
+        f: impl for<'b> FnOnce(&mut Generator<'b>),
         append_async: bool,
     ) -> AnyBlock {
-        let mut g = Self::new_with_brace(self.context, true, brace_token, flavour);
-        g.context_override = self.context_override;
+        let (mut child_checks, mut child_async_stmts, block) = {
+            let mut g = self.new_child_with_brace(brace_token, flavour, true);
 
-        f(&mut g);
+            f(&mut g);
 
-        self.checks.append(&mut g.checks);
+            let child_checks = std::mem::replace(&mut g.checks, Checks::new());
+            let child_async_stmts = std::mem::take(&mut g.async_stmts);
+            let block = g.finish();
+
+            (child_checks, child_async_stmts, block)
+        };
+
+        self.checks.append(&mut child_checks);
         if append_async {
-            self.async_stmts.append(&mut g.async_stmts);
+            self.async_stmts.append(&mut child_async_stmts);
         }
 
-        g.finish()
+        block
     }
 
-    pub fn push_with_flavour(&mut self, flavour: NodeFlavour, f: impl FnOnce(&mut Self)) {
+    pub fn push_with_flavour(
+        &mut self,
+        flavour: NodeFlavour,
+        f: impl for<'b> FnOnce(&mut Generator<'b>),
+    ) {
         if self.lazy {
             let block = self.block_with_flavour(Brace::default(), flavour, f, true);
             self.push_stmt(block);
         } else {
-            let mut g = Self::new_with_brace(self.context, false, Brace::default(), flavour);
-            g.context_override = self.context_override;
-            f(&mut g);
-            self.checks.append(&mut g.checks);
-            self.parts.extend(g.parts);
+            let (mut child_checks, child_parts) = {
+                let mut g = self.new_child_with_brace(Brace::default(), flavour, false);
+
+                f(&mut g);
+
+                let child_checks = std::mem::replace(&mut g.checks, Checks::new());
+                let child_parts = std::mem::take(&mut g.parts);
+
+                (child_checks, child_parts)
+            };
+
+            self.checks.append(&mut child_checks);
+            self.parts.extend(child_parts);
         }
     }
 
-    pub fn push_in_block(&mut self, brace_token: Brace, f: impl FnOnce(&mut Self)) {
+    pub fn push_in_block(
+        &mut self,
+        brace_token: Brace,
+        f: impl for<'b> FnOnce(&mut Generator<'b>),
+    ) {
         let block = self.block_with(brace_token, f, true);
         self.push_stmt(block);
     }
@@ -429,25 +516,16 @@ impl Generator {
     }
 
     pub fn push_js_value_node(&mut self, node: &mut AttributeValueNode) {
-        match node {
-            AttributeValueNode::Literal(lit) => {
-                self.push_escaped_literal(Context::AttributeValue, &lit.lit_str());
-            }
-            AttributeValueNode::Expr(paren_expr) => {
-                self.push_expr(paren_expr.paren_token, Context::JsSource, &paren_expr.expr);
-            }
-            AttributeValueNode::Ident(ident) => {
-                self.push_expr(Paren::default(), Context::JsSource, ident);
-            }
-            AttributeValueNode::Group(group) => {
-                for child in &mut group.0.0 {
-                    self.push_js_value_node(child);
-                }
-            }
-            AttributeValueNode::Control(control) => {
-                self.with_context_override(Context::JsSource, |g| g.push(control));
-            }
-        }
+        self.with_context_override(Context::JsSource, |g| g.push(node));
+    }
+
+    pub fn hoist_ref_expr(&mut self, paren_token: Paren, expr: impl ToTokens) -> Ident {
+        self.borrow_state.hoist_ref_expr(paren_token, expr)
+    }
+
+    pub fn push_ref_expr(&mut self, paren_token: Paren, context: Context, expr: impl ToTokens) {
+        let ref_ident = self.hoist_ref_expr(paren_token, expr);
+        self.push_expr(Paren::default(), context, ref_ident);
     }
 
     pub fn push_async_stmt(&mut self, async_stmt: impl ToTokens) {
@@ -458,7 +536,11 @@ impl Generator {
         self.parts.push(Part::Dynamic(stmt.to_token_stream()));
     }
 
-    pub fn push_conditional(&mut self, cond: impl ToTokens, f: impl FnOnce(&mut Self)) {
+    pub fn push_conditional(
+        &mut self,
+        cond: impl ToTokens,
+        f: impl for<'b> FnOnce(&mut Generator<'b>),
+    ) {
         let then_block = self.block_with(Brace::default(), f, true);
         self.push_stmt(quote! {
             if #cond #then_block
@@ -514,13 +596,13 @@ impl Context {
 
 pub trait Generate {
     const CONTEXT: Context;
-    fn generate(&mut self, g: &mut Generator);
+    fn generate(&mut self, g: &mut Generator<'_>);
 }
 
 impl<T: Generate> Generate for &mut T {
     const CONTEXT: Context = T::CONTEXT;
 
-    fn generate(&mut self, g: &mut Generator) {
+    fn generate(&mut self, g: &mut Generator<'_>) {
         (*self).generate(g);
     }
 }
@@ -578,9 +660,8 @@ impl ToTokens for Checks {
                     use #module::*;
 
                     #[doc(hidden)]
-                    /// Used by the `html!`, `html_borrow!`, `html_static!`, `svg!`,
-                    /// `svg_borrow!`, `svg_static!`, `attribute!`, `attribute_borrow!`,
-                    /// and `attribute_static!` macros to trigger compile-time element
+                    /// Used by the `html!`, `svg!`, and `attribute!` macros to
+                    /// trigger compile-time element
                     /// validation.
                     fn check_element<
                         K: ::cheers::validation::ElementKind

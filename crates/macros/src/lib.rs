@@ -19,31 +19,15 @@ use crate::{
 
 fn expand_document_lazy(
     tokens: proc_macro::TokenStream,
-    move_: bool,
     flavour: NodeFlavour,
 ) -> proc_macro::TokenStream {
-    ast::generate::lazy_with_flavour::<Document>(tokens.into(), move_, flavour)
+    ast::generate::lazy_with_flavour::<Document>(tokens.into(), flavour)
         .unwrap_or_else(|err| err.to_compile_error())
         .into()
 }
 
-fn expand_document_literal(
-    tokens: proc_macro::TokenStream,
-    flavour: NodeFlavour,
-) -> proc_macro::TokenStream {
-    ast::generate::literal_with_flavour::<Document>(tokens.into(), flavour)
-        .unwrap_or_else(|err| err.to_compile_error())
-        .into()
-}
-
-fn expand_attribute_lazy(tokens: proc_macro::TokenStream, move_: bool) -> proc_macro::TokenStream {
-    ast::generate::lazy::<Nodes<AttributeValueNode>>(tokens.into(), move_)
-        .unwrap_or_else(|err| err.to_compile_error())
-        .into()
-}
-
-fn expand_attribute_literal(tokens: proc_macro::TokenStream) -> proc_macro::TokenStream {
-    ast::generate::literal::<Nodes<AttributeValueNode>>(tokens.into())
+fn expand_attribute_lazy(tokens: proc_macro::TokenStream) -> proc_macro::TokenStream {
+    ast::generate::lazy::<Nodes<AttributeValueNode>>(tokens.into())
         .unwrap_or_else(|err| err.to_compile_error())
         .into()
 }
@@ -155,8 +139,8 @@ pub fn cheers_derive(item: proc_macro::TokenStream) -> proc_macro::TokenStream {
 /// Use `html!` for normal Cheers markup. It can render elements, text, components, control flow,
 /// and interpolated values with `(expr)`.
 ///
-/// `html!` captures interpolated values by value. If you need to keep using a captured value
-/// after the macro invocation, use [`html_borrow!`] instead.
+/// `html!` captures interpolated values by value. Use `(@&expr)` in expression positions when
+/// you want to borrow instead and keep using the original value after the macro invocation.
 ///
 /// # Example
 ///
@@ -174,17 +158,7 @@ pub fn cheers_derive(item: proc_macro::TokenStream) -> proc_macro::TokenStream {
 /// assert_eq!(page.render().into_inner(), "<section><h1>Hello</h1><p>Ferris</p></section>");
 /// ```
 pub fn html(tokens: proc_macro::TokenStream) -> proc_macro::TokenStream {
-    expand_document_lazy(tokens, true, NodeFlavour::Html)
-}
-
-#[proc_macro]
-pub fn html_borrow(tokens: proc_macro::TokenStream) -> proc_macro::TokenStream {
-    expand_document_lazy(tokens, false, NodeFlavour::Html)
-}
-
-#[proc_macro]
-pub fn html_static(tokens: proc_macro::TokenStream) -> proc_macro::TokenStream {
-    expand_document_literal(tokens, NodeFlavour::Html)
+    expand_document_lazy(tokens, NodeFlavour::Html)
 }
 
 #[proc_macro]
@@ -217,29 +191,14 @@ pub fn html_static(tokens: proc_macro::TokenStream) -> proc_macro::TokenStream {
 /// assert!(sprite.render().into_inner().contains("<symbol id=\"icon-check\""));
 /// ```
 pub fn svg(tokens: proc_macro::TokenStream) -> proc_macro::TokenStream {
-    expand_document_lazy(tokens, true, NodeFlavour::Xml(XmlFlavour::Svg))
-}
-
-#[proc_macro]
-/// Like [`svg!`], but borrows captured values instead of moving them.
-pub fn svg_borrow(tokens: proc_macro::TokenStream) -> proc_macro::TokenStream {
-    expand_document_lazy(tokens, false, NodeFlavour::Xml(XmlFlavour::Svg))
-}
-
-#[proc_macro]
-/// Builds a static SVG fragment or document.
-///
-/// This variant accepts only static content and returns a `Raw<&'static str>`,
-/// which can be used in `const` contexts.
-pub fn svg_static(tokens: proc_macro::TokenStream) -> proc_macro::TokenStream {
-    expand_document_literal(tokens, NodeFlavour::Xml(XmlFlavour::Svg))
+    expand_document_lazy(tokens, NodeFlavour::Xml(XmlFlavour::Svg))
 }
 
 #[proc_macro]
 /// Builds an attribute value from literal and interpolated fragments.
 ///
-/// `attribute!` captures interpolated values by value. If you need borrowed captures, use
-/// [`attribute_borrow!`] instead.
+/// `attribute!` captures interpolated values by value. Use `(@&expr)` to borrow an
+/// interpolated value instead.
 ///
 /// # Example
 ///
@@ -256,17 +215,7 @@ pub fn svg_static(tokens: proc_macro::TokenStream) -> proc_macro::TokenStream {
 /// assert_eq!(page.render().into_inner(), r#"<button class="btn btn-primary">Save</button>"#);
 /// ```
 pub fn attribute(tokens: proc_macro::TokenStream) -> proc_macro::TokenStream {
-    expand_attribute_lazy(tokens, true)
-}
-
-#[proc_macro]
-pub fn attribute_borrow(tokens: proc_macro::TokenStream) -> proc_macro::TokenStream {
-    expand_attribute_lazy(tokens, false)
-}
-
-#[proc_macro]
-pub fn attribute_static(tokens: proc_macro::TokenStream) -> proc_macro::TokenStream {
-    expand_attribute_literal(tokens)
+    expand_attribute_lazy(tokens)
 }
 
 #[proc_macro]

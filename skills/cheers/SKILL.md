@@ -267,7 +267,7 @@ Form names are mainly component-local.
 ## Markup macros you will edit most often
 
 - `html!` is the default macro for cheers markup.
-- `html_borrow!` is for cases where you need to keep using a captured value after the macro call.
+- Use `(@&expr)` inside `html!` or `attribute!` when you need to borrow a captured value instead of moving it.
 - `attribute!` builds a dynamic attribute value from multiple fragments.
 
 Example:

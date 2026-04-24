@@ -231,8 +231,8 @@ impl<T> Signal<T> {
     }
 
     #[doc(hidden)]
-    /// Used by the `html!`, `html_borrow!`, `attribute!`, and `attribute_borrow!`
-    /// macros when expanding computed signal attributes. Not part of the stable public API.
+    /// Used by the `html!` and `attribute!` macros when expanding computed signal
+    /// attributes. Not part of the stable public API.
     pub fn __computed_open(&self, buffer: &mut Buffer<JsSource>) -> usize {
         let Some(close_count) =
             push_signal_object_prefix(self.__path(), buffer.dangerously_get_string())
@@ -249,8 +249,8 @@ impl<T> Signal<T> {
 
 impl Signal<()> {
     #[doc(hidden)]
-    /// Used by the `html!`, `html_borrow!`, `attribute!`, and `attribute_borrow!`
-    /// macros when expanding computed signal attributes. Not part of the stable public API.
+    /// Used by the `html!` and `attribute!` macros when expanding computed signal
+    /// attributes. Not part of the stable public API.
     pub fn __computed_close(count: usize, buffer: &mut Buffer<JsSource>) {
         // XSS SAFETY: statically closing the JS object
         close_signal_object(buffer.dangerously_get_string(), count);
@@ -259,8 +259,8 @@ impl Signal<()> {
 
 impl<T: Render<JsSource>> Signal<T> {
     #[doc(hidden)]
-    /// Used by the `html!`, `html_borrow!`, `attribute!`, and `attribute_borrow!`
-    /// macros when expanding `!signals(...)`. Not part of the stable public API.
+    /// Used by the `html!` and `attribute!` macros when expanding `!signals(...)`.
+    /// Not part of the stable public API.
     pub fn __assign(&self, buffer: &mut Buffer<JsSource>, v: T) {
         let Some(close_count) = ({
             let s = buffer.dangerously_get_string();

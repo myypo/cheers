@@ -204,6 +204,9 @@ impl<'a, 'b> Printer<'a, 'b> {
         let lines = self.lines_from_expr(expr, indent_level);
 
         self.write("(");
+        if paren_expr.mode.is_ref() {
+            self.write("@&");
+        }
         match lines.len() {
             0 => {}
             1 => self.write(lines[0].trim()),
@@ -343,6 +346,18 @@ mod test {
             test {
                 test3 { (a) }
             }
+        }
+        "#
+    );
+
+    test_default!(
+        ref_expr,
+        r#"
+        html!{p{(@&title)}}
+        "#,
+        r#"
+        html! {
+            p { (@&title) }
         }
         "#
     );

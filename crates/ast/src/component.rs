@@ -8,7 +8,7 @@ use syn::{
     token::{Brace, Bracket, Paren},
 };
 
-use super::{ElementBody, Generate, Generator, Literal, ParenExpr};
+use super::{ElementBody, Generate, Generator, Literal, ParenExpr, ParenExprMode};
 use crate::{AttributeValueNode, Context};
 
 pub struct Component {
@@ -20,7 +20,7 @@ pub struct Component {
 }
 
 impl Component {
-    fn children_lazy(&mut self, g: &mut Generator) -> Option<TokenStream> {
+    fn children_lazy(&mut self, g: &mut Generator<'_>) -> Option<TokenStream> {
         match &mut self.body {
             ElementBody::Normal { children, .. } => {
                 let buffer_ident = Generator::buffer_ident();
@@ -44,18 +44,19 @@ impl Component {
         }
     }
 
-    fn default_setters(&mut self) -> Vec<TokenStream> {
-        self.default_attrs
-            .iter_mut()
-            .flat_map(|attrs| {
-                attrs.attrs.iter().map(|attr| {
-                    let name = &attr.name;
-                    let value = attr.value_expr();
+    fn default_setters(&self, g: &mut Generator<'_>) -> Vec<TokenStream> {
+        let mut setters = Vec::new();
 
-                    quote!(.#name(#value))
-                })
-            })
-            .collect()
+        if let Some(default_attrs) = &self.default_attrs {
+            for attr in &default_attrs.attrs {
+                let name = &attr.name;
+                let value = attr.value_expr(g);
+
+                setters.push(quote!(.#name(#value)));
+            }
+        }
+
+        setters
     }
 
     fn required_attrs_in_signature_order(&self) -> Vec<&ComponentAttribute> {
@@ -71,13 +72,13 @@ impl Component {
         }
     }
 
-    fn generate_dotdot_tokens(&mut self, g: &mut Generator) -> TokenStream {
+    fn generate_dotdot_tokens(&mut self, g: &mut Generator<'_>) -> TokenStream {
         let fields = self
             .attrs
             .iter()
             .map(|attr| {
                 let name = &attr.name;
-                let value = attr.value_expr();
+                let value = attr.value_expr(g);
 
                 quote!(#name: #value,)
             })
@@ -104,34 +105,36 @@ impl Component {
         }
     }
 
-    fn generate_prop_builder_tokens(&mut self, g: &mut Generator) -> TokenStream {
-        let default_setters = self.default_setters();
-        let build_suffix = Self::build_suffix(self.children_lazy(g));
-
-        let runtime_required_constructors = self
+    fn generate_prop_builder_tokens(&mut self, g: &mut Generator<'_>) -> TokenStream {
+        let required_attrs = self
             .required_attrs_in_signature_order()
             .into_iter()
             .map(|attr| {
+                let field = attr.name.clone();
                 let method = Ident::new(
                     &format!("__cheers_prop_{}", attr.name.unraw()),
                     attr.name.span(),
                 );
-                let value = attr.value_expr();
-                let name = &self.name;
+                let value = attr.value_expr(g);
 
-                quote!(#name::#method(#value))
+                (field, method, value)
             });
 
-        let required_assignments = self.attrs.iter().map(|attr| {
-            let name = &attr.name;
-            let value = attr.value_expr();
+        let required_attrs = required_attrs.collect::<Vec<_>>();
+        let default_setters = self.default_setters(g);
+        let build_suffix = Self::build_suffix(self.children_lazy(g));
 
+        let name = &self.name;
+        let runtime_required_constructors = required_attrs
+            .iter()
+            .map(|(_, method, value)| quote!(#name::#method(#value)));
+
+        let required_assignments = required_attrs.iter().map(|(field, _, value)| {
             quote! {
-                __cheers_required.#name = #value;
+                __cheers_required.#field = #value;
             }
         });
 
-        let name = &self.name;
         let runtime_constructor = quote! {
             #name::__cheers_props(#(#runtime_required_constructors),*)
             #(#default_setters)*
@@ -172,7 +175,7 @@ impl Component {
 impl Generate for Component {
     const CONTEXT: Context = Context::Element;
 
-    fn generate(&mut self, g: &mut Generator) {
+    fn generate(&mut self, g: &mut Generator<'_>) {
         let tokens = if self.default_attrs.is_some() && self.dotdot.is_none() {
             self.generate_prop_builder_tokens(g)
         } else {
@@ -213,18 +216,23 @@ pub struct ComponentAttribute {
 }
 
 impl ComponentAttribute {
-    pub(crate) fn value_expr(&self) -> TokenStream {
+    pub(crate) fn value_expr(&self, g: &mut Generator<'_>) -> TokenStream {
         match &self.value {
             Some(ComponentAttributeValue::Literal(lit)) => lit.to_token_stream(),
-            Some(ComponentAttributeValue::Expr(expr)) => {
-                let mut tokens = TokenStream::new();
+            Some(ComponentAttributeValue::Expr(expr)) => match expr.mode {
+                ParenExprMode::Normal => {
+                    let mut tokens = TokenStream::new();
 
-                expr.paren_token.surround(&mut tokens, |tokens| {
-                    expr.expr.to_tokens(tokens);
-                });
+                    expr.paren_token.surround(&mut tokens, |tokens| {
+                        expr.expr.to_tokens(tokens);
+                    });
 
-                tokens
-            }
+                    tokens
+                }
+                ParenExprMode::Ref => g
+                    .hoist_ref_expr(expr.paren_token, &expr.expr)
+                    .to_token_stream(),
+            },
             Some(ComponentAttributeValue::Ident(ident)) => ident.to_token_stream(),
             None => self.name.to_token_stream(),
         }

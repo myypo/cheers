@@ -197,11 +197,23 @@ mod test {
     );
 
     test_default!(
+        component_with_ref_expression_attribute,
+        r#"
+        html! { Card title=(@&title) { "Content" } }
+        "#,
+        r#"
+        html! {
+            Card title=(@&title) { "Content" }
+        }
+        "#
+    );
+
+    test_default!(
         component_with_nested_markup_macro_expression_attribute,
         r#"
         html! {
             ExampleComponent
-                content=(html_borrow! {
+                content=(html! {
                     input
                         name=name
                         value=(&value)
@@ -215,7 +227,7 @@ mod test {
         html! {
             ExampleComponent
                 content=(
-                    html_borrow! {
+                    html! {
                         input name=name value=(&value) !on:change((&handler));
                     }
                 )

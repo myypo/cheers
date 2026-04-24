@@ -54,7 +54,7 @@ impl Node for ElementNode {
 impl Generate for ElementNode {
     const CONTEXT: Context = Context::Element;
 
-    fn generate(&mut self, g: &mut Generator) {
+    fn generate(&mut self, g: &mut Generator<'_>) {
         match self {
             Self::Element(element) => g.push(element),
             Self::Component(component) => g.push(component),
@@ -68,17 +68,75 @@ impl Generate for ElementNode {
 
 pub struct ParenExpr<N: Node> {
     pub paren_token: Paren,
+    pub mode: ParenExprMode,
     pub expr: TokenStream,
     phantom: PhantomData<N>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ParenExprMode {
+    Normal,
+    Ref,
+}
+
+impl ParenExprMode {
+    pub const fn is_ref(self) -> bool {
+        matches!(self, Self::Ref)
+    }
+
+    pub const fn prefix_len(self) -> usize {
+        if self.is_ref() { "@&".len() } else { 0 }
+    }
+
+    fn validate_ref_expr(expr: &TokenStream) -> syn::Result<()> {
+        fn is_supported(expr: &Expr) -> bool {
+            match expr {
+                Expr::Path(_) => true,
+                Expr::Field(field) => is_supported(&field.base),
+                Expr::Paren(paren) => is_supported(&paren.expr),
+                _ => false,
+            }
+        }
+
+        let expr = syn::parse2::<Expr>(expr.clone())?;
+
+        if is_supported(&expr) {
+            Ok(())
+        } else {
+            Err(Error::new_spanned(expr, "unsupported borrow expression"))
+        }
+    }
+
+    fn parse_expr(input: ParseStream) -> syn::Result<(Self, TokenStream)> {
+        if input.peek(Token![@]) {
+            input.parse::<Token![@]>()?;
+            input.parse::<Token![&]>()?;
+
+            let expr: TokenStream = input.parse()?;
+            Self::validate_ref_expr(&expr).map_err(|err| {
+                Error::new(
+                    err.span(),
+                    "`(@&...)` only supports simple path and field expressions",
+                )
+            })?;
+
+            Ok((Self::Ref, expr))
+        } else {
+            Ok((Self::Normal, input.parse()?))
+        }
+    }
 }
 
 impl<N: Node> Parse for ParenExpr<N> {
     fn parse(input: ParseStream) -> syn::Result<Self> {
         let content;
+        let paren_token = parenthesized!(content in input);
+        let (mode, expr) = ParenExprMode::parse_expr(&content)?;
 
         Ok(Self {
-            paren_token: parenthesized!(content in input),
-            expr: content.parse()?,
+            paren_token,
+            mode,
+            expr,
             phantom: PhantomData,
         })
     }
@@ -87,14 +145,20 @@ impl<N: Node> Parse for ParenExpr<N> {
 impl<N: Node> Generate for ParenExpr<N> {
     const CONTEXT: Context = N::CONTEXT;
 
-    fn generate(&mut self, g: &mut Generator) {
-        g.push_expr(self.paren_token, Self::CONTEXT, &self.expr);
+    fn generate(&mut self, g: &mut Generator<'_>) {
+        match self.mode {
+            ParenExprMode::Normal => g.push_expr(self.paren_token, Self::CONTEXT, &self.expr),
+            ParenExprMode::Ref => g.push_ref_expr(self.paren_token, Self::CONTEXT, &self.expr),
+        }
     }
 }
 
 impl<N: Node> ToTokens for ParenExpr<N> {
     fn to_tokens(&self, tokens: &mut TokenStream) {
         self.paren_token.surround(tokens, |tokens| {
+            if self.mode.is_ref() {
+                quote!(@&).to_tokens(tokens);
+            }
             self.expr.to_tokens(tokens);
         });
     }
@@ -114,7 +178,7 @@ impl Parse for Group<AttributeValueNode> {
 impl<N: Node> Generate for Group<N> {
     const CONTEXT: Context = N::CONTEXT;
 
-    fn generate(&mut self, g: &mut Generator) {
+    fn generate(&mut self, g: &mut Generator<'_>) {
         g.push(&mut self.0);
     }
 }
@@ -122,7 +186,7 @@ impl<N: Node> Generate for Group<N> {
 pub struct Nodes<N: Node>(pub Vec<N>);
 
 impl<N: Node> Nodes<N> {
-    fn block(&mut self, g: &mut Generator, brace_token: Brace) -> AnyBlock {
+    fn block(&mut self, g: &mut Generator<'_>, brace_token: Brace) -> AnyBlock {
         g.block_with(
             brace_token,
             |g| {
@@ -150,7 +214,7 @@ impl<N: Node + Parse> Parse for Nodes<N> {
 impl<N: Node> Generate for Nodes<N> {
     const CONTEXT: Context = N::CONTEXT;
 
-    fn generate(&mut self, g: &mut Generator) {
+    fn generate(&mut self, g: &mut Generator<'_>) {
         if self.0.iter().any(Node::is_control) {
             g.push_in_block(Brace::default(), |g| g.push_all(&mut self.0));
         } else {
@@ -168,7 +232,7 @@ pub struct Element {
 impl Generate for Element {
     const CONTEXT: Context = Context::Element;
 
-    fn generate(&mut self, g: &mut Generator) {
+    fn generate(&mut self, g: &mut Generator<'_>) {
         let flavour = g.node_flavour();
         let module = flavour.elements_module();
         let mut el_checks = ElementCheck::new(&self.name, self.body.kind(flavour), module);
@@ -278,7 +342,7 @@ impl Parse for Attribute {
 impl Generate for Attribute {
     const CONTEXT: Context = Context::AttributeValue;
 
-    fn generate(&mut self, g: &mut Generator) {
+    fn generate(&mut self, g: &mut Generator<'_>) {
         match self {
             Attribute::Regular { name, kind } => match kind {
                 AttributeKind::Value { value, toggle, .. } => {
@@ -481,7 +545,7 @@ impl Parse for AttributeValueNode {
 impl Generate for AttributeValueNode {
     const CONTEXT: Context = Context::AttributeValue;
 
-    fn generate(&mut self, g: &mut Generator) {
+    fn generate(&mut self, g: &mut Generator<'_>) {
         match self {
             Self::Literal(lit) => g.push_escaped_literal(Self::CONTEXT, &lit.lit_str()),
             Self::Group(group) => g.push(group),
@@ -752,7 +816,7 @@ impl Data {
 impl Generate for Data {
     const CONTEXT: Context = Context::AttributeValue;
 
-    fn generate(&mut self, g: &mut Generator) {
+    fn generate(&mut self, g: &mut Generator<'_>) {
         if let Some(recovery_error) = &self.recovery_error {
             g.push_diagnostic(recovery_error.to_compile_error());
         }

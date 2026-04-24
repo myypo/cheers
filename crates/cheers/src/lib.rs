@@ -15,9 +15,8 @@ mod signal_path;
 pub mod track;
 
 #[doc(hidden)]
-/// Re-exported for macro expansions such as `html!`, `html_borrow!`, `html_static!`,
-/// `svg!`, `svg_borrow!`, `svg_static!`, `attribute!`, `attribute_borrow!`, and
-/// `attribute_static!`. Not part of the stable public API.
+/// Re-exported for macro expansions such as `html!`, `svg!`, and `attribute!`.
+/// Not part of the stable public API.
 pub mod validation;
 #[doc(hidden)]
 /// Support module for generated code from `#[derive(Cheers)]`, `ids!`, `signals!`,
@@ -68,7 +67,7 @@ pub mod __internal {
         #[derive(Debug)]
         pub struct SvgSpriteRegistration {
             pub location: AssetSourceLocation,
-            pub sprite: &'static str,
+            pub sprite: fn() -> String,
         }
 
         inventory::collect!(SvgSpriteRegistration);
@@ -77,7 +76,7 @@ pub mod __internal {
 
 pub mod macros {
     pub use macros::{
-        attribute_borrow, attribute_static, html_borrow, html_static, svg_borrow, svg_static,
+        Cheers, action, attribute, form_names, html, ids, scoped_signal, signals, svg,
     };
 }
 

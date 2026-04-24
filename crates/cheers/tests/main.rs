@@ -17,7 +17,6 @@ use axum::{
 use cheers::{
     ActionDef, RouterExt,
     components::{CssStylesheet, Debugged, Displayed, Doctype, Scripts, SvgSymbol},
-    macros::{html_borrow, svg_borrow, svg_static},
     prelude::*,
 };
 use tokio::sync::{Barrier, Mutex};
@@ -246,13 +245,132 @@ fn component_fns() {
 #[test]
 fn borrow() {
     let s = "Hello, world!".to_owned();
-    let result = html_borrow! {
-        span { (s) }
+    let result = html! {
+        span { (@&s) }
     };
-    // still able to use `s` after the borrow, as we use `html_borrow!`
     let expected = format!("<span>{s}</span>");
 
     assert_eq!(result.render().into_inner(), expected);
+    assert_eq!(s, "Hello, world!");
+}
+
+#[test]
+fn ref_expr_keeps_outer_value_available() {
+    let s = "Hello!".to_owned();
+    let result = html! {
+        span { (@&s) }
+    };
+    let expected = format!("<span>{s}</span>");
+
+    assert_eq!(result.render().into_inner(), expected);
+    assert_eq!(s, "Hello!");
+}
+
+#[test]
+fn ref_expr_keeps_outer_value_available_in_attribute_values() {
+    let title = "Hello!".to_owned();
+    let result = html! {
+        div title=(@&title) {}
+    };
+
+    assert_eq!(
+        result.render().into_inner(),
+        r#"<div title="Hello!"></div>"#
+    );
+    assert_eq!(title, "Hello!");
+}
+
+#[test]
+fn ref_expr_keeps_outer_value_available_in_js_attribute_values() {
+    let value = "Hello!".to_owned();
+    let result = html! {
+        div !text((@&value)) {}
+    };
+
+    assert_eq!(
+        result.render().into_inner(),
+        r#"<div data-text="'Hello!'"></div>"#
+    );
+    assert_eq!(value, "Hello!");
+}
+
+#[test]
+fn ref_expr_keeps_outer_values_available_across_nested_blocks() {
+    let title = "Hello".to_owned();
+    let subtitle = "World".to_owned();
+    let show_subtitle = true;
+    let result = html! {
+        div {
+            span { (@&title) }
+            @if show_subtitle {
+                strong { (@&subtitle) }
+            } @else {}
+        }
+    };
+
+    assert_eq!(
+        result.render().into_inner(),
+        "<div><span>Hello</span><strong>World</strong></div>"
+    );
+    assert_eq!(title, "Hello");
+    assert_eq!(subtitle, "World");
+}
+
+#[test]
+fn ref_expr_keeps_outer_value_available_in_component_prop_builders() {
+    #[derive(Cheers)]
+    struct Feedback<'a> {
+        text: &'a str,
+        #[prop(default("anonymous"))]
+        author: &'a str,
+    }
+
+    impl<'a> Render for Feedback<'a> {
+        fn render_to(&self, buffer: &mut Buffer<Element>) {
+            html! {
+                h3 { (self.author) }
+                p { (self.text) }
+            }
+            .render_to(buffer);
+        }
+    }
+
+    let text = "Great".to_owned();
+    let author = "myypo".to_owned();
+    let result = html! {
+        Feedback text=(@&text) [author=(@&author)];
+    };
+
+    assert_eq!(
+        result.render().into_inner(),
+        r#"<h3>myypo</h3><p>Great</p>"#
+    );
+    assert_eq!(text, "Great");
+    assert_eq!(author, "myypo");
+}
+
+#[test]
+fn ref_expr_keeps_outer_value_available_in_plain_component_props() {
+    struct Badge<'a> {
+        label: &'a str,
+    }
+
+    impl<'a> Render for Badge<'a> {
+        fn render_to(&self, buffer: &mut Buffer<Element>) {
+            html! {
+                span { (self.label) }
+            }
+            .render_to(buffer);
+        }
+    }
+
+    let label = "Info".to_owned();
+    let result = html! {
+        Badge label=(@&label);
+    };
+
+    assert_eq!(result.render().into_inner(), "<span>Info</span>");
+    assert_eq!(label, "Info");
 }
 
 #[test]
@@ -688,12 +806,12 @@ fn svg_macro_foreign_object_switches_back_to_html() {
 }
 
 #[test]
-fn svg_borrow_captures_by_reference() {
+fn svg_ref_expr_captures_by_reference() {
     let label = String::from("Icon");
 
-    let result = svg_borrow! {
+    let result = svg! {
         svg viewBox="0 0 16 16" {
-            title { (label) }
+            title { (@&label) }
         }
     }
     .render();
@@ -706,12 +824,13 @@ fn svg_borrow_captures_by_reference() {
 }
 
 #[test]
-fn svg_static_supports_fragments() {
-    let result = svg_static! {
+fn svg_supports_fragments() {
+    let result = svg! {
         circle cx="50" cy="50" r="40";
-    };
+    }
+    .render();
 
-    assert_eq!(*result.as_inner(), r#"<circle cx="50" cy="50" r="40"/>"#);
+    assert_eq!(result.as_inner(), r#"<circle cx="50" cy="50" r="40"/>"#);
 }
 
 #[tokio::test]

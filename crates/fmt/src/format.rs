@@ -19,14 +19,7 @@ impl Default for FormatOptions {
     fn default() -> Self {
         FormatOptions {
             line_length: 100,
-            macro_names: vec![
-                String::from("html"),
-                String::from("html_borrow"),
-                String::from("html_static"),
-                String::from("svg"),
-                String::from("svg_borrow"),
-                String::from("svg_static"),
-            ],
+            macro_names: vec![String::from("html"), String::from("svg")],
         }
     }
 }

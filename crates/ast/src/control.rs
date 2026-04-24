@@ -60,7 +60,7 @@ impl<N: Node + Parse> Parse for Control<N> {
 impl<N: Node> Generate for Control<N> {
     const CONTEXT: Context = N::CONTEXT;
 
-    fn generate(&mut self, g: &mut Generator) {
+    fn generate(&mut self, g: &mut Generator<'_>) {
         match &mut self.kind {
             ControlKind::Let(let_) => g.push(let_),
             ControlKind::If(if_) => g.push(if_),
@@ -88,7 +88,7 @@ impl Parse for Let {
 impl Generate for Let {
     const CONTEXT: Context = Context::Element;
 
-    fn generate(&mut self, g: &mut Generator) {
+    fn generate(&mut self, g: &mut Generator<'_>) {
         g.push_stmt(&self.0);
     }
 }
@@ -99,7 +99,7 @@ pub struct ControlBlock<N: Node> {
 }
 
 impl<N: Node> ControlBlock<N> {
-    fn block(&mut self, g: &mut Generator) -> AnyBlock {
+    fn block(&mut self, g: &mut Generator<'_>) -> AnyBlock {
         self.nodes.block(g, self.brace_token)
     }
 }
@@ -142,8 +142,8 @@ impl<N: Node + Parse> Parse for If<N> {
 impl<N: Node> Generate for If<N> {
     const CONTEXT: Context = N::CONTEXT;
 
-    fn generate(&mut self, g: &mut Generator) {
-        fn to_expr<N: Node>(if_: &mut If<N>, g: &mut Generator) -> TokenStream {
+    fn generate(&mut self, g: &mut Generator<'_>) {
+        fn to_expr<N: Node>(if_: &mut If<N>, g: &mut Generator<'_>) -> TokenStream {
             let if_token = if_.if_token;
             let cond = &if_.cond;
             let then_block = if_.then_block.block(g);
@@ -214,7 +214,7 @@ impl<N: Node + Parse> Parse for For<N> {
 impl<N: Node> Generate for For<N> {
     const CONTEXT: Context = N::CONTEXT;
 
-    fn generate(&mut self, g: &mut Generator) {
+    fn generate(&mut self, g: &mut Generator<'_>) {
         let for_token = self.for_token;
         let pat = &self.pat;
         let in_token = self.in_token;
@@ -247,7 +247,7 @@ impl<N: Node + Parse> Parse for While<N> {
 impl<N: Node> Generate for While<N> {
     const CONTEXT: Context = N::CONTEXT;
 
-    fn generate(&mut self, g: &mut Generator) {
+    fn generate(&mut self, g: &mut Generator<'_>) {
         let while_token = self.while_token;
         let cond = &self.cond;
         let block = self.block.block(g);
@@ -290,7 +290,7 @@ impl<N: Node + Parse> Parse for Match<N> {
 impl<N: Node> Generate for Match<N> {
     const CONTEXT: Context = N::CONTEXT;
 
-    fn generate(&mut self, g: &mut Generator) {
+    fn generate(&mut self, g: &mut Generator<'_>) {
         let arms = self
             .arms
             .iter_mut()
@@ -474,7 +474,7 @@ impl Async {
 impl Generate for Async {
     const CONTEXT: Context = ElementNode::CONTEXT;
 
-    fn generate(&mut self, g: &mut Generator) {
+    fn generate(&mut self, g: &mut Generator<'_>) {
         let key = self.add_data_ssr_key();
 
         let async_token = self.async_token;
