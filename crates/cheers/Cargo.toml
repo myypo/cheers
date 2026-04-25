@@ -23,6 +23,7 @@ macros.workspace = true
 itoa.workspace = true
 zmij.workspace = true
 futures.workspace = true
+ignore.workspace = true
 tokio.workspace = true
 tokio-stream.workspace = true
 bundle.workspace = true
