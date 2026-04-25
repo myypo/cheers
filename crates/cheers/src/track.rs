@@ -10,7 +10,7 @@ use serde::{Deserialize, Serialize, de::DeserializeOwned};
 /// Global tracking configuration embedded into the Cheers runtime bundle.
 ///
 /// Mount a matching Axum route yourself and deserialize incoming payloads with
-/// [`Batch`]. Pass this config to [`crate::router::new`] or the `app(...)`
+/// [`Batch`]. Pass this config to [`crate::router::new`].
 ///
 /// # Example
 ///

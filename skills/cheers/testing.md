@@ -27,7 +27,7 @@ Assert contracts, not incidental whitespace or attribute order. Avoid snapshots 
 
 ## Injected state
 
-Use the app's normal state shape with deterministic doubles. `Arc<dyn Trait>` state works well:
+Use the app's normal state shape with deterministic doubles. Generic state and `Arc<dyn Trait>` state both work; choose whichever matches the app architecture:
 
 ```rust
 struct ScriptedCrew {
@@ -45,7 +45,7 @@ impl StaffTheMiningCrew for ScriptedCrew {
 ```rust
 #[tokio::test]
 async fn page_uses_injected_state() -> Result<(), Box<dyn std::error::Error>> {
-    let app = app(
+    let app = cheers::router::new(
         Router::new().route("/", get(page)),
         cheers::router::Config::default(),
     )?
@@ -63,7 +63,7 @@ async fn page_uses_injected_state() -> Result<(), Box<dyn std::error::Error>> {
 }
 ```
 
-Build tests with the generated `app(...)` helper. Include `Scripts` on pages that exercise actions, signals, patches, or streams.
+Build tests with `cheers::router::new(...)`. Register any generated actions on the Axum router with `.action::<SomeAction>()` before `.with_state(...)`. Include `Scripts` on pages that exercise actions, signals, patches, or streams.
 
 ## Actions and patches
 

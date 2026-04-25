@@ -292,6 +292,7 @@ pub fn scoped_signal(tokens: proc_macro::TokenStream) -> proc_macro::TokenStream
 ///
 /// Path parameters are taken from `Path<_>` arguments. Form submission is enabled when the
 /// handler takes a `Form<_>` argument or an argument marked with `#[form]`.
+/// Register the generated route explicitly with `Router::action::<...Action>()`.
 ///
 /// # Example
 ///

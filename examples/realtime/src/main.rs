@@ -146,8 +146,6 @@ async fn create_subscription(ctx: State<Ctx>) -> EventReceiver {
     rx
 }
 
-cheers::app!(Ctx);
-
 include_css!("./main.css");
 include_svg_sprite! {
     svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" {
@@ -232,8 +230,11 @@ async fn main() {
             }
         });
 
-        let app = app(
-            Router::new().route("/", get(home_page)),
+        let app = cheers::router::new(
+            Router::new()
+                .route("/", get(home_page))
+                .action::<IncrementStockAction>()
+                .action::<CreateSubscriptionAction>(),
             cheers::router::Config::default(),
         )
         .expect("create app")
@@ -267,17 +268,19 @@ mod tests {
             stocks_tx: tokio::sync::broadcast::channel(1).0,
         };
 
-        let app = app(
-            Router::new().route(
-                "/",
-                get(move || async move {
-                    html! {
-                        Base {
-                            Stock id name="yep" price_cents;
+        let app = cheers::router::new(
+            Router::new()
+                .route(
+                    "/",
+                    get(move || async move {
+                        html! {
+                            Base {
+                                Stock id name="yep" price_cents;
+                            }
                         }
-                    }
-                }),
-            ),
+                    }),
+                )
+                .action::<IncrementStockAction>(),
             cheers::router::Config::default(),
         )
         .expect("create app")

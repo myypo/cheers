@@ -146,12 +146,12 @@ async fn forge_record(_: State<Ctx>, Form(form): Form<DwarfListForm>) -> PatchEl
         })
 }
 
-cheers::app!(Ctx);
-
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let app = app(
-        Router::new().route("/", get(hall_of_ancestors)),
+    let app = cheers::router::new(
+        Router::new()
+            .route("/", get(hall_of_ancestors))
+            .action::<ForgeRecordAction>(),
         cheers::router::Config::default(),
     )?
     .with_state(Ctx);
@@ -169,8 +169,10 @@ mod tests {
 
     #[tokio::test]
     async fn forge_record_action_updates_the_page() {
-        let app = app(
-            Router::new().route("/", get(hall_of_ancestors)),
+        let app = cheers::router::new(
+            Router::new()
+                .route("/", get(hall_of_ancestors))
+                .action::<ForgeRecordAction>(),
             cheers::router::Config::default(),
         )
         .expect("create test app")

@@ -98,8 +98,9 @@ pub mod prelude {
         reference::{ElementId, FormName, Signal},
         render::{Buffer, Lazy, LazyAttribute, RawJs, Render, RenderExt as _},
         response::AsyncLazy,
+        router::{Action, ActionDef, ActionRouterExt as _},
         track::TrackAction,
     };
 }
 pub use render::{Raw, RawAttribute, RawJs, Rendered};
-pub use router::ActionDef;
+pub use router::{Action, ActionDef, ActionRouterExt};

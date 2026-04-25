@@ -151,7 +151,7 @@ Use `@async` for streamed initial rendering with accessible, layout-stable fallb
 
 # State and app wiring
 
-Prefer use-case traits in `Arc<dyn Trait>` for app state and examples:
+Prefer use-case-oriented state, either generic over a concrete implementation or using `Arc<dyn Trait>` when dynamic dispatch is a better fit:
 
 ```rust
 trait StaffTheMiningCrew: Send + Sync {
@@ -167,7 +167,7 @@ Keep traits use-case-specific, not generic `Backend`. Handlers should extract st
 
 Full pages are better rendered through a shared layout/base component with `Doctype`, `CssStylesheet`, and `Scripts`. Include `Scripts` on pages using actions, patches, signals, Datastar attributes, streams, or other Cheers client behavior; pure read-only pages do not need it.
 
-Use `include_css!("./path.css")`, `include_svg_sprite! { ... }`, and `cheers::app!(Ctx);` following the app's existing organization. Build test routers with the generated `app(...)` helper.
+Use `include_css!("./path.css")` and `include_svg_sprite! { ... }` following the app's existing organization. Build app and test routers with `cheers::router::new(...)`, and register generated actions explicitly on the Axum router with `.action::<SomeAction>()` before calling `.with_state(...)`.
 
 # Dynamic behavior
 

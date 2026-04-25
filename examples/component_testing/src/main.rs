@@ -1,5 +1,3 @@
-use std::sync::Arc;
-
 use axum::{Router, extract::State, routing::get};
 use cheers::{Rendered, components::Doctype, prelude::*};
 
@@ -47,9 +45,16 @@ trait StaffTheMiningCrew: Send + Sync {
     fn briefing(&self) -> ShiftBriefing;
 }
 
-#[derive(Clone)]
-struct Ctx {
-    staffing: Arc<dyn StaffTheMiningCrew>,
+struct Ctx<S: 'static> {
+    staffing: &'static S,
+}
+
+impl<S: 'static> Clone for Ctx<S> {
+    fn clone(&self) -> Self {
+        Self {
+            staffing: self.staffing,
+        }
+    }
 }
 
 struct InMemoryMineStaffing {
@@ -141,14 +146,20 @@ impl Render for Page {
     }
 }
 
-async fn page(ctx: State<Ctx>) -> Rendered<String> {
+async fn page<S>(ctx: State<Ctx<S>>) -> Rendered<String>
+where
+    S: StaffTheMiningCrew,
+{
     Page {
         briefing: ctx.staffing.briefing(),
     }
     .render()
 }
 
-async fn briefing_component(ctx: State<Ctx>) -> Rendered<String> {
+async fn briefing_component<S>(ctx: State<Ctx<S>>) -> Rendered<String>
+where
+    S: StaffTheMiningCrew,
+{
     html! {
         Doctype;
         html {
@@ -163,37 +174,43 @@ async fn briefing_component(ctx: State<Ctx>) -> Rendered<String> {
     .render()
 }
 
-cheers::app!(Ctx);
+fn routes<S>() -> Router<Ctx<S>>
+where
+    S: StaffTheMiningCrew + 'static,
+{
+    Router::new()
+        .route("/", get(page::<S>))
+        .route("/components/briefing", get(briefing_component::<S>))
+}
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let staffing = Arc::new(InMemoryMineStaffing::new(ShiftBriefing {
-        mine: "Mithril Deep".to_owned(),
-        foreman: "Thorin Ironmantle".to_owned(),
-        crew: vec![
-            CrewMember {
-                name: "Balin Stonehelm".to_owned(),
-                assignment: "Eastern winch".to_owned(),
-                risk: RiskLevel::Low,
-            },
-            CrewMember {
-                name: "Dori Emberpick".to_owned(),
-                assignment: "Lower gallery supports".to_owned(),
-                risk: RiskLevel::Watch,
-            },
-            CrewMember {
-                name: "Nori Deepdelver".to_owned(),
-                assignment: "Floodgate inspection".to_owned(),
-                risk: RiskLevel::High,
-            },
-        ],
-    }));
+    let staffing: &'static InMemoryMineStaffing =
+        Box::leak(Box::new(InMemoryMineStaffing::new(ShiftBriefing {
+            mine: "Mithril Deep".to_owned(),
+            foreman: "Thorin Ironmantle".to_owned(),
+            crew: vec![
+                CrewMember {
+                    name: "Balin Stonehelm".to_owned(),
+                    assignment: "Eastern winch".to_owned(),
+                    risk: RiskLevel::Low,
+                },
+                CrewMember {
+                    name: "Dori Emberpick".to_owned(),
+                    assignment: "Lower gallery supports".to_owned(),
+                    risk: RiskLevel::Watch,
+                },
+                CrewMember {
+                    name: "Nori Deepdelver".to_owned(),
+                    assignment: "Floodgate inspection".to_owned(),
+                    risk: RiskLevel::High,
+                },
+            ],
+        })));
     let ctx = Ctx { staffing };
 
-    let app = app(
-        Router::new()
-            .route("/", get(page))
-            .route("/components/briefing", get(briefing_component)),
+    let app = cheers::router::new(
+        routes::<InMemoryMineStaffing>(),
         cheers::router::Config::default(),
     )?
     .with_state(ctx);
@@ -225,23 +242,24 @@ mod tests {
         }
     }
 
-    fn scripted_ctx() -> Ctx {
-        let staffing = Arc::new(ScriptedMineStaffing::new(ShiftBriefing {
-            mine: "Mock Quartz Shaft".to_owned(),
-            foreman: "Testa Gemfinder".to_owned(),
-            crew: vec![
-                CrewMember {
-                    name: "Mockli Gemfinder".to_owned(),
-                    assignment: "Gem QA face".to_owned(),
-                    risk: RiskLevel::Watch,
-                },
-                CrewMember {
-                    name: "Stubin Copperbeard".to_owned(),
-                    assignment: "Harness inspection".to_owned(),
-                    risk: RiskLevel::High,
-                },
-            ],
-        }));
+    fn scripted_ctx() -> Ctx<ScriptedMineStaffing> {
+        let staffing: &'static ScriptedMineStaffing =
+            Box::leak(Box::new(ScriptedMineStaffing::new(ShiftBriefing {
+                mine: "Mock Quartz Shaft".to_owned(),
+                foreman: "Testa Gemfinder".to_owned(),
+                crew: vec![
+                    CrewMember {
+                        name: "Mockli Gemfinder".to_owned(),
+                        assignment: "Gem QA face".to_owned(),
+                        risk: RiskLevel::Watch,
+                    },
+                    CrewMember {
+                        name: "Stubin Copperbeard".to_owned(),
+                        assignment: "Harness inspection".to_owned(),
+                        risk: RiskLevel::High,
+                    },
+                ],
+            })));
 
         Ctx { staffing }
     }
@@ -267,10 +285,8 @@ mod tests {
 
     #[tokio::test]
     async fn page_uses_the_injected_staffing_usecase() {
-        let app = app(
-            Router::new()
-                .route("/", get(page))
-                .route("/components/briefing", get(briefing_component)),
+        let app = cheers::router::new(
+            routes::<ScriptedMineStaffing>(),
             cheers::router::Config::default(),
         )
         .expect("create test app")
@@ -323,10 +339,8 @@ mod tests {
 
     #[tokio::test]
     async fn briefing_component_route_uses_the_injected_staffing_usecase() {
-        let app = app(
-            Router::new()
-                .route("/", get(page))
-                .route("/components/briefing", get(briefing_component)),
+        let app = cheers::router::new(
+            routes::<ScriptedMineStaffing>(),
             cheers::router::Config::default(),
         )
         .expect("create test app")

@@ -58,15 +58,13 @@ async fn record_in_ledger(track: TrackRequest<GuildLedgerPayload>) -> StatusCode
     StatusCode::ACCEPTED
 }
 
-cheers::app!(Ctx);
-
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let track_config = TrackConfig::new("/_track")
         .service("guild-ledger")
         .release("0.1.0");
 
-    let app = app(
+    let app = cheers::router::new(
         Router::new()
             .route("/", get(guild_hall))
             .route("/_track", post(record_in_ledger)),

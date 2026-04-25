@@ -2,8 +2,8 @@ use proc_macro2::TokenStream;
 use quote::quote;
 use syn::{
     Error, FnArg, GenericArgument, Ident, LitStr, Pat, PatType, PathArguments, Signature, Type,
-    TypeTuple,
     parse::{Parse, ParseStream},
+    parse_quote,
 };
 
 use crate::{
@@ -90,28 +90,35 @@ impl ActionFieldArgs {
     }
 }
 
-fn state(sig: &Signature) -> GenericArgument {
-    sig.inputs
-        .iter()
-        .find_map(|i| {
-            if let FnArg::Typed(pat_type) = i
-                && let Type::Path(path) = &*pat_type.ty
-                && let Some(last_seg) = path.path.segments.last()
-                && last_seg.ident == "State"
-                && let PathArguments::AngleBracketed(args) = &last_seg.arguments
-                && let Some(state_ty) = args.args.first()
-            {
-                Some(state_ty.clone())
-            } else {
-                None
+fn state(sig: &Signature) -> Result<Option<Type>, Error> {
+    let mut state = None;
+
+    for i in &sig.inputs {
+        if let FnArg::Typed(pat_type) = i
+            && let Type::Path(path) = &*pat_type.ty
+            && let Some(last_seg) = path.path.segments.last()
+            && last_seg.ident == "State"
+            && let PathArguments::AngleBracketed(args) = &last_seg.arguments
+            && let Some(state_ty) = args.args.first()
+        {
+            if state.is_some() {
+                return Err(Error::new_spanned(
+                    &pat_type.ty,
+                    "only one State parameter allowed",
+                ));
             }
-        })
-        .unwrap_or_else(|| {
-            GenericArgument::Type(Type::Tuple(TypeTuple {
-                paren_token: Default::default(),
-                elems: Default::default(),
-            }))
-        })
+
+            let GenericArgument::Type(state_ty) = state_ty else {
+                return Err(Error::new_spanned(
+                    state_ty,
+                    "State parameter must use a concrete state type",
+                ));
+            };
+            state = Some(state_ty.clone());
+        }
+    }
+
+    Ok(state)
 }
 
 fn extract_form(pt: &PatType) -> bool {
@@ -227,7 +234,8 @@ pub fn generate(args: ActionArgs, item: &mut MaybeItemFn) -> Result<TokenStream,
         s.push_str("Action");
         Ident::new(&s, item.sig.ident.span())
     };
-    let state = state(&item.sig);
+    let state = state(&item.sig)?;
+    let has_state = state.is_some();
 
     let path = if field_args.path.is_empty() {
         LitStr::new(&static_part_path_str(ident), ident.span())
@@ -258,6 +266,21 @@ pub fn generate(args: ActionArgs, item: &mut MaybeItemFn) -> Result<TokenStream,
         false,
     );
     let (impl_generics, ty_generics, where_clause) = generics.split_for_impl();
+
+    let state = state.unwrap_or_else(|| parse_quote!(__CheersRouterState));
+    let mut register_types = field_args.path.iter().map(|(_, ty)| ty).collect::<Vec<_>>();
+    register_types.push(&state);
+    let mut register_generics = filter_generics(item.sig.generics.clone(), register_types, false);
+    if !has_state {
+        register_generics
+            .params
+            .push(parse_quote!(__CheersRouterState));
+    }
+    register_generics
+        .make_where_clause()
+        .predicates
+        .push(parse_quote!(#state: ::std::clone::Clone + ::std::marker::Send + ::std::marker::Sync + 'static));
+    let (register_impl_generics, _, register_where_clause) = register_generics.split_for_impl();
     let struct_decl = if field_args.path.is_empty() {
         quote! {
             #[derive(Debug, Clone)]
@@ -292,11 +315,10 @@ pub fn generate(args: ActionArgs, item: &mut MaybeItemFn) -> Result<TokenStream,
             const METHOD: ::cheers::__internal::axum::http::Method = #method;
         }
 
-        ::cheers::__internal::inventory::submit! {{
-            fn __register(r: ::cheers::__internal::axum::Router<#state>) -> ::cheers::__internal::axum::Router<#state> {
-                r.route(#path, ::axum::routing::on(#method.try_into().expect("turn method to method filter for action"), #ident))
+        impl #register_impl_generics ::cheers::router::Action<#state> for #struct_name #ty_generics #register_where_clause {
+            fn register(router: ::cheers::__internal::axum::Router<#state>) -> ::cheers::__internal::axum::Router<#state> {
+                router.route(#path, ::cheers::__internal::axum::routing::on(#method.try_into().expect("turn method to method filter for action"), #ident))
             }
-            Action(__register)
-        }}
+        }
     })
 }

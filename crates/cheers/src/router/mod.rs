@@ -72,25 +72,27 @@ pub trait ActionDef {
     const METHOD: axum::http::Method;
 }
 
-#[macro_export]
-macro_rules! app {
-    ($state:ident) => {
-        pub struct Action(
-            pub  fn(
-                $crate::__internal::axum::Router<$state>,
-            ) -> $crate::__internal::axum::Router<$state>,
-        );
-        $crate::__internal::inventory::collect!(Action);
+/// A server-side action that can register itself on an Axum [`Router`].
+///
+/// Implemented by the `#[action]` macro for each generated `...Action` type. Register actions
+/// explicitly with [`ActionRouterExt::action`] before passing the router to [`new`].
+pub trait Action<S>: ActionDef {
+    fn register(router: Router<S>) -> Router<S>;
+}
 
-        pub fn app(
-            mut router: $crate::__internal::axum::Router<$state>,
-            config: ::cheers::router::Config,
-        ) -> ::std::result::Result<$crate::__internal::axum::Router<$state>, $crate::router::Error>
-        {
-            for a in $crate::__internal::inventory::iter::<Action> {
-                router = (a.0)(router);
-            }
-            $crate::router::new(router, config)
-        }
-    };
+/// Extension methods for registering Cheers actions on an Axum [`Router`].
+pub trait ActionRouterExt<S>: Sized {
+    /// Registers the route generated for action type `A`.
+    fn action<A>(self) -> Self
+    where
+        A: Action<S>;
+}
+
+impl<S> ActionRouterExt<S> for Router<S> {
+    fn action<A>(self) -> Self
+    where
+        A: Action<S>,
+    {
+        A::register(self)
+    }
 }

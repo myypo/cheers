@@ -10,7 +10,7 @@ use std::{
 use axum::{
     Form,
     body::Body,
-    extract::{FromRequest, FromRequestParts, Path},
+    extract::{FromRequest, FromRequestParts, Path, State},
     http::StatusCode,
     response::IntoResponse,
 };
@@ -1736,9 +1736,6 @@ fn signal_without_id() {
     Flare { num: 5 }.assert_signals();
 }
 
-type Ctx = ();
-cheers::app!(Ctx);
-
 #[test]
 fn action_with_plain_path() {
     #[action(POST)]
@@ -1747,6 +1744,52 @@ fn action_with_plain_path() {
 
     let result = DoStuffAction {
         name: "Bob".to_owned(),
+    }
+    .render();
+    assert_eq!(result.as_inner(), "@post('/cheers/actions/do_stuff/Bob')");
+}
+
+#[test]
+fn action_can_be_registered_explicitly() {
+    #[action(POST)]
+    async fn do_stuff() {}
+
+    let _router: axum::Router<()> = axum::Router::new().action::<DoStuffAction>();
+}
+
+#[test]
+fn action_registration_supports_generic_state() {
+    trait UseCase: Send + Sync + 'static {}
+
+    struct LiveUseCase;
+
+    impl UseCase for LiveUseCase {}
+
+    struct GenericCtx<T> {
+        use_case: Arc<T>,
+    }
+
+    impl<T> Clone for GenericCtx<T> {
+        fn clone(&self) -> Self {
+            Self {
+                use_case: self.use_case.clone(),
+            }
+        }
+    }
+
+    #[action(POST)]
+    async fn do_stuff<T>(Path(id): Path<String>, State(ctx): State<GenericCtx<T>>)
+    where
+        T: UseCase,
+    {
+        let _ = (id, ctx);
+    }
+
+    let _router: axum::Router<GenericCtx<LiveUseCase>> =
+        axum::Router::new().action::<DoStuffAction>();
+
+    let result = DoStuffAction {
+        id: "Bob".to_owned(),
     }
     .render();
     assert_eq!(result.as_inner(), "@post('/cheers/actions/do_stuff/Bob')");
