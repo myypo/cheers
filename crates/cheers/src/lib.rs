@@ -79,13 +79,13 @@ pub mod __internal {
 
 pub mod macros {
     pub use macros::{
-        Cheers, action, attribute, form_names, html, ids, scoped_signal, signals, svg,
+        Cheers, action, attribute, form_names, html, ids, js, scoped_signal, signals, svg,
     };
 }
 
 pub mod prelude {
     pub use macros::{
-        Cheers, action, attribute, form_names, html, ids, scoped_signal, signals, svg,
+        Cheers, action, attribute, form_names, html, ids, js, scoped_signal, signals, svg,
     };
 
     pub use crate::{
@@ -96,11 +96,11 @@ pub mod prelude {
         },
         include_css, include_svg_sprite,
         reference::{ElementId, FormName, Signal},
-        render::{Buffer, Lazy, LazyAttribute, Render, RenderExt as _},
+        render::{Buffer, Lazy, LazyAttribute, RawJs, Render, RenderExt as _},
         response::AsyncLazy,
         track::TrackAction,
     };
 }
-pub use render::{Raw, RawAttribute, Rendered};
+pub use render::{Raw, RawAttribute, RawJs, Rendered};
 pub use router::ActionDef;
 pub use router::testing::RouterExt;

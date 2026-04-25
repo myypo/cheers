@@ -1,4 +1,4 @@
-use ast::Document;
+use ast::{Document, JsSourceNodes};
 use crop::Rope;
 
 use crate::{collect::MaudMacro, format::FormatOptions};
@@ -29,6 +29,27 @@ pub fn print<'b>(
     };
 
     printer.print_ast(ast);
+
+    printer.finish()
+}
+
+pub fn print_js<'b>(
+    ast: JsSourceNodes,
+    mac: &'b MaudMacro<'b>,
+    source: &Rope,
+    options: &FormatOptions,
+) -> String {
+    let mut printer = Printer {
+        lines: Vec::new(),
+        buf: String::new(),
+        base_indent: mac.indent.tabs + mac.indent.spaces / 4,
+        indent_str: &String::from(" ").repeat(4),
+        mac,
+        source,
+        options,
+    };
+
+    printer.print_js_ast(ast);
 
     printer.finish()
 }
@@ -66,6 +87,29 @@ impl<'a, 'b> Printer<'a, 'b> {
         }
     }
 
+    // TODO: run actual JS formatter
+    fn print_js_ast(&mut self, ast: JsSourceNodes) {
+        let indent_level = 0;
+
+        self.write(&self.mac.macro_name);
+        self.write("! ");
+
+        let nodes = ast.0.0;
+        if nodes.is_empty() {
+            self.write("{}")
+        } else {
+            self.write("{");
+
+            for node in nodes {
+                self.new_line(indent_level + 1);
+                self.print_attribute_value_node(node, indent_level + 1, true);
+            }
+            self.new_line(indent_level);
+
+            self.write("}");
+        }
+    }
+
     fn new_line(&mut self, indent_level: usize) {
         self.lines.push(self.buf.clone());
         self.buf = String::from(self.indent_str).repeat(self.base_indent + indent_level);
@@ -90,4 +134,14 @@ mod test {
     use crate::testing::*;
 
     test_default!(empty, "html!{ }", "html! {}");
+
+    test_default!(
+        js_macro,
+        r#"js!{"console.log("(signal_name)")"}"#,
+        r#"js! {
+    "console.log("
+    (signal_name)
+    ")"
+}"#
+    );
 }

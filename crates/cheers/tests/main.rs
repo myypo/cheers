@@ -1298,13 +1298,13 @@ fn data_signals() {
     let value = Other::signal_value();
 
     let multiple_nested = html! {
-        div !signals(count: 5, value: 100) {}
+        div !signals((@&count): 5, (@&value): 100) !text((@&count)) {}
     }
     .render();
 
     assert_eq!(
         multiple_nested.as_inner(),
-        r#"<div data-signals="{counter:{count:5},other:{value:100}}"></div>"#
+        r#"<div data-signals="{counter:{count:5},other:{value:100}}" data-text="$counter['count']"></div>"#
     );
 }
 
@@ -1393,8 +1393,8 @@ fn signal_computed() {
             signals!(signal_a, signal_b, signal_c, signal_d);
 
             html! {
-                p   !computed(signal_c: { (signal_a) "+" (signal_b) }, signal_d: {
-                            (signal_c)
+                p   !computed((@&signal_c): { (@&signal_a) "+" (@&signal_b) }, (@&signal_d): {
+                            (@&signal_c)
                             "- 1"
                         }) {}
             }
@@ -1450,7 +1450,7 @@ fn signal_outer_without_id() {
             signals!(signal_keepsake);
 
             html! {
-                p !bind(&signal_keepsake) !on:close({ (signal_keepsake) " + 'noooo'" }) {
+                p !bind((@&signal_keepsake)) !on:close({ (@&signal_keepsake) " + 'noooo'" }) {
                     (self.name)
                 }
             }
@@ -1503,6 +1503,43 @@ fn signal_outer_with_id() {
 }
 
 #[test]
+fn js_macro_literals_are_raw_js_source() {
+    let rendered = js! {
+        "console.log('wowzers')"
+    }
+    .render()
+    .into_inner();
+
+    assert_eq!(rendered, "console.log('wowzers')");
+}
+
+#[test]
+fn js_macro_literals_are_attribute_escaped() {
+    let rendered = js! {
+        "if (x < \"&\") {}"
+    }
+    .render()
+    .into_inner();
+
+    assert_eq!(rendered, "if (x &lt; &quot;&amp;&quot;) {}");
+}
+
+#[test]
+fn js_macro_interpolated_string_is_js_string_literal() {
+    let name = "Ferris";
+
+    let rendered = js! {
+        "console.log("
+        name
+        ")"
+    }
+    .render()
+    .into_inner();
+
+    assert_eq!(rendered, "console.log('Ferris')");
+}
+
+#[test]
 fn signal_id() {
     #[derive(Cheers)]
     #[expect(dead_code)]
@@ -1518,7 +1555,46 @@ fn signal_id() {
             signals!(signal_name);
 
             html! {
-                p !bind(signal_name) !on:click({ "console.log(" signal_name ")" }) {}
+                p
+                    !bind((@&signal_name))
+                    !text((@&signal_name))
+                    !on:click({ "console.log(" (@&signal_name) ")" })
+                    {}
+            }
+            .render_to(buffer);
+        }
+    }
+
+    let result = Ghost {
+        id: 69,
+        name: "Ole".to_owned(),
+    }
+    .render()
+    .into_inner();
+
+    assert_eq!(
+        result,
+        r#"<p data-bind="ghost['69']['name']" data-text="$ghost['69']['name']" data-on:click="console.log($ghost['69']['name'])"></p>"#
+    )
+}
+
+#[test]
+fn signal_id_with_inline_js_macro() {
+    #[derive(Cheers)]
+    #[expect(dead_code)]
+    struct Ghost {
+        #[id]
+        id: i32,
+        #[signal]
+        name: String,
+    }
+
+    impl Render for Ghost {
+        fn render_to(&self, buffer: &mut Buffer<Element>) {
+            signals!(signal_name);
+
+            html! {
+                p !bind((@&signal_name)) !on:click({ "console.log(" (@&signal_name) ")" }) {}
             }
             .render_to(buffer);
         }
@@ -1553,7 +1629,7 @@ fn signal_id_with_unsafe_segment() {
             signals!(signal_name);
 
             html! {
-                p !bind(signal_name) !on:click({ "console.log(" signal_name ")" }) {}
+                p !bind((@&signal_name)) !on:click({ "console.log(" (@&signal_name) ")" }) {}
             }
             .render_to(buffer);
         }

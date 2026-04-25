@@ -1,6 +1,6 @@
 use ast::{
-    Attribute, AttributeKind, AttributeName, AttributeValueNode, DataContent, DataExprValue,
-    Element, ElementBody,
+    Attribute, AttributeKind, AttributeName, AttributeValueNode, DataContent, DataExpr,
+    DataExprValue, Element, ElementBody,
 };
 use quote::ToTokens;
 use syn::{Expr, Token, punctuated::Punctuated};
@@ -144,7 +144,7 @@ impl<'a, 'b> Printer<'a, 'b> {
                                     self.write(" ");
                                 }
 
-                                self.print_expr(d.ident, attr_indent_level);
+                                self.print_data_expr(d.ident, attr_indent_level);
                                 self.write(": ");
                                 self.print_attribute_value_node(
                                     d.value,
@@ -173,7 +173,7 @@ impl<'a, 'b> Printer<'a, 'b> {
                         }
                         DataContent::Bind(expr) => {
                             self.write("(");
-                            self.print_expr(expr, attr_indent_level);
+                            self.print_data_expr(expr, attr_indent_level);
                             self.write(")");
                         }
                         DataContent::Empty => {}
@@ -217,7 +217,7 @@ impl<'a, 'b> Printer<'a, 'b> {
                 self.write(" ");
             }
 
-            self.print_expr(d.ident, indent_level);
+            self.print_data_expr(d.ident, indent_level);
             self.write(": ");
             self.print_expr(d.value, indent_level + 1);
 
@@ -259,7 +259,7 @@ impl<'a, 'b> Printer<'a, 'b> {
                 self.write(" ");
             }
 
-            self.print_expr(d.ident, indent_level);
+            self.print_data_expr(d.ident, indent_level);
             self.write(": ");
             self.print_attribute_value_node(d.value, indent_level + 1, false);
         }
@@ -269,6 +269,19 @@ impl<'a, 'b> Printer<'a, 'b> {
             self.write(",");
             // Move `)` to its own line
             self.new_line(indent_level);
+        }
+    }
+
+    fn print_data_expr(&mut self, expr: DataExpr, indent_level: usize) {
+        if expr.paren_token.is_some() {
+            self.write("(");
+        }
+        if expr.mode.is_ref() {
+            self.write("@&");
+        }
+        self.print_expr(expr.expr, indent_level);
+        if expr.paren_token.is_some() {
+            self.write(")");
         }
     }
 
@@ -964,6 +977,22 @@ mod test {
         r#"
         html! {
             p !on:click("console.log('text')") { "text" }
+        }
+        "#
+    );
+
+    test_default!(
+        data_attributes_ref_exprs,
+        r#"
+        html! {
+            div !signals((@&count):0) !computed((@&total):{(@&count) "+ 1"}) !text((@&total)) { "content" }
+        }
+        "#,
+        r#"
+        html! {
+            div !signals((@&count): 0) !computed((@&total): { (@&count) "+ 1" }) !text((@&total)) {
+                "content"
+            }
         }
         "#
     );

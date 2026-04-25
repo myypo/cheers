@@ -7,7 +7,7 @@ mod scoped_signal;
 mod shared;
 
 use ast::{
-    AttributeValueNode, Document, Nodes,
+    AttributeValueNode, Document, JsSourceNodes, Nodes,
     generate::{NodeFlavour, XmlFlavour},
 };
 use syn::{ItemStruct, parse_macro_input};
@@ -28,6 +28,12 @@ fn expand_document_lazy(
 
 fn expand_attribute_lazy(tokens: proc_macro::TokenStream) -> proc_macro::TokenStream {
     ast::generate::lazy::<Nodes<AttributeValueNode>>(tokens.into())
+        .unwrap_or_else(|err| err.to_compile_error())
+        .into()
+}
+
+fn expand_js_lazy(tokens: proc_macro::TokenStream) -> proc_macro::TokenStream {
+    ast::generate::lazy::<JsSourceNodes>(tokens.into())
         .unwrap_or_else(|err| err.to_compile_error())
         .into()
 }
@@ -216,6 +222,28 @@ pub fn svg(tokens: proc_macro::TokenStream) -> proc_macro::TokenStream {
 /// ```
 pub fn attribute(tokens: proc_macro::TokenStream) -> proc_macro::TokenStream {
     expand_attribute_lazy(tokens)
+}
+
+#[proc_macro]
+/// Builds a JavaScript source fragment for Datastar attributes.
+///
+/// # Example
+///
+/// ```ignore
+/// use cheers::prelude::*;
+///
+/// let onclick = js! {
+///     "console.log("
+///     (signal_name)
+///     ")"
+/// };
+///
+/// html! {
+///     button !on:click(onclick) { "Log" }
+/// };
+/// ```
+pub fn js(tokens: proc_macro::TokenStream) -> proc_macro::TokenStream {
+    expand_js_lazy(tokens)
 }
 
 #[proc_macro]

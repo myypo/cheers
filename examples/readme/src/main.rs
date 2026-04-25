@@ -145,9 +145,11 @@ mod tests {
                         .mode(PatchElementsMode::Append)
                         .element(html! {
                             li {
-                                (Dwarf {
-                                    name: String::from("Mocked Silvervein"),
-                                })
+                                (
+                                    Dwarf {
+                                        name: String::from("Mocked Silvervein"),
+                                    }
+                                )
                             }
                         })
                 })),

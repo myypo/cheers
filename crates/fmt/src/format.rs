@@ -1,14 +1,17 @@
 use std::ops::Range;
 
 use anyhow::{Context, Result};
-use ast::Document;
+use ast::{Document, JsSourceNodes};
 use crop::Rope;
 use syn::{
     parse::{Parse, ParseStream, Parser},
     spanned::Spanned,
 };
 
-use crate::{collect::MaudMacro, print::print};
+use crate::{
+    collect::MaudMacro,
+    print::{print, print_js},
+};
 
 pub struct FormatOptions {
     pub line_length: usize,
@@ -19,7 +22,11 @@ impl Default for FormatOptions {
     fn default() -> Self {
         FormatOptions {
             line_length: 100,
-            macro_names: vec![String::from("html"), String::from("svg")],
+            macro_names: vec![
+                String::from("html"),
+                String::from("svg"),
+                String::from("js"),
+            ],
         }
     }
 }
@@ -70,6 +77,16 @@ pub fn format_source(
 }
 
 fn format_macro(mac: &MaudMacro, source: &Rope, options: &FormatOptions) -> Result<String> {
+    if mac.macro_name == "js" {
+        let document: JsSourceNodes = Parser::parse2(
+            |input: ParseStream| JsSourceNodes::parse(input),
+            mac.macro_.tokens.clone(),
+        )
+        .context("Failed to parse js macro")?;
+
+        return Ok(print_js(document, mac, source, options));
+    }
+
     let document: Document = Parser::parse2(
         |input: ParseStream| Document::parse(input),
         mac.macro_.tokens.clone(),

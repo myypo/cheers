@@ -31,6 +31,28 @@ use crate::generate::Context;
 
 pub type Document = Nodes<ElementNode>;
 
+pub struct JsSourceNodes(pub Nodes<AttributeValueNode>);
+
+impl Parse for JsSourceNodes {
+    fn parse(input: ParseStream) -> syn::Result<Self> {
+        input.parse().map(Self)
+    }
+}
+
+impl Generate for JsSourceNodes {
+    const CONTEXT: Context = Context::JsSource;
+
+    fn generate(&mut self, g: &mut Generator<'_>) {
+        g.with_context_override(Context::JsSource, |g| {
+            if self.0.0.iter().any(Node::is_control) {
+                g.push_in_block(Brace::default(), |g| g.push_all(&mut self.0.0));
+            } else {
+                g.push_all(&mut self.0.0);
+            }
+        });
+    }
+}
+
 pub trait Node: Generate {
     fn is_control(&self) -> bool;
 }
@@ -107,22 +129,84 @@ impl ParenExprMode {
         }
     }
 
-    fn parse_expr(input: ParseStream) -> syn::Result<(Self, TokenStream)> {
+    fn parse_prefix(input: ParseStream) -> syn::Result<Self> {
         if input.peek(Token![@]) {
             input.parse::<Token![@]>()?;
             input.parse::<Token![&]>()?;
+            Ok(Self::Ref)
+        } else {
+            Ok(Self::Normal)
+        }
+    }
 
-            let expr: TokenStream = input.parse()?;
+    fn parse_expr(input: ParseStream) -> syn::Result<(Self, TokenStream)> {
+        let mode = Self::parse_prefix(input)?;
+        let expr: TokenStream = input.parse()?;
+
+        if mode.is_ref() {
             Self::validate_ref_expr(&expr).map_err(|err| {
                 Error::new(
                     err.span(),
                     "`(@&...)` only supports simple path and field expressions",
                 )
             })?;
+        }
 
-            Ok((Self::Ref, expr))
+        Ok((mode, expr))
+    }
+}
+
+pub struct BorrowExpr<E> {
+    pub paren_token: Option<Paren>,
+    pub mode: ParenExprMode,
+    pub expr: E,
+}
+
+pub type DataExpr = BorrowExpr<Expr>;
+
+impl Parse for BorrowExpr<Expr> {
+    fn parse(input: ParseStream) -> syn::Result<Self> {
+        let (paren_token, mode, expr) = if input.peek(Paren) {
+            let content;
+            let paren_token = parenthesized!(content in input);
+            let mode = ParenExprMode::parse_prefix(&content)?;
+            let expr: Expr = content.parse()?;
+
+            (Some(paren_token), mode, expr)
         } else {
-            Ok((Self::Normal, input.parse()?))
+            (None, ParenExprMode::Normal, input.parse()?)
+        };
+
+        if mode.is_ref() {
+            ParenExprMode::validate_ref_expr(&expr.to_token_stream()).map_err(|err| {
+                Error::new(
+                    err.span(),
+                    "`(@&...)` only supports simple path and field expressions",
+                )
+            })?;
+        }
+
+        Ok(Self {
+            paren_token,
+            mode,
+            expr,
+        })
+    }
+}
+
+impl<E: ToTokens> ToTokens for BorrowExpr<E> {
+    fn to_tokens(&self, tokens: &mut TokenStream) {
+        let write = |tokens: &mut TokenStream| {
+            if self.mode.is_ref() {
+                quote!(@&).to_tokens(tokens);
+            }
+            self.expr.to_tokens(tokens);
+        };
+
+        if let Some(paren_token) = self.paren_token {
+            paren_token.surround(tokens, write);
+        } else {
+            write(tokens);
         }
     }
 }
@@ -601,8 +685,27 @@ impl Parse for Toggle {
     }
 }
 
+impl BorrowExpr<Expr> {
+    fn paren_token(&self) -> Paren {
+        self.paren_token.unwrap_or_default()
+    }
+
+    fn borrowed_expr(&self, g: &mut Generator<'_>) -> proc_macro2::TokenStream {
+        match self.mode {
+            ParenExprMode::Normal => {
+                let expr = &self.expr;
+                quote!(&#expr)
+            }
+            ParenExprMode::Ref => {
+                let ref_ident = g.hoist_ref_expr(Paren::default(), &self.expr);
+                quote!(#ref_ident)
+            }
+        }
+    }
+}
+
 pub struct DataExprValue<V: Parse> {
-    pub ident: Expr,
+    pub ident: DataExpr,
     pub value: V,
 }
 
@@ -650,7 +753,7 @@ pub enum DataContent {
     Signals(Punctuated<DataExprValue<Expr>, Token![,]>),
     Kv(Punctuated<DataExprValue<AttributeValueNode>, Token![,]>),
     Computed(Punctuated<DataExprValue<AttributeValueNode>, Token![,]>),
-    Bind(Expr),
+    Bind(DataExpr),
     Empty,
     /// Fallback for parsing failures that allows rust-analyzer to emit better completions
     Recovered,
@@ -790,10 +893,6 @@ impl Data {
         self.paren_token.is_some()
     }
 
-    fn paren_token(&self) -> Paren {
-        self.paren_token.unwrap_or_default()
-    }
-
     fn name_literals(&self) -> Vec<LitStr> {
         let mut literals = Vec::new();
 
@@ -822,7 +921,6 @@ impl Generate for Data {
         }
 
         let name_literals = self.name_literals();
-        let paren_token = self.paren_token();
         let has_parens = self.has_parens();
 
         match &mut self.content {
@@ -842,11 +940,11 @@ impl Generate for Data {
                     let buffer_ident = Generator::buffer_ident();
                     let buffer_expr = quote!(#buffer_ident.as_js_buffer());
 
-                    let ident = &d.ident;
+                    let ident_ref = d.ident.borrowed_expr(g);
                     let expr = &d.value;
                     g.push_stmt(quote! {
                         ::cheers::prelude::Signal::__assign(
-                            &#ident,
+                            #ident_ref,
                             #buffer_expr,
                             #expr,
                         );
@@ -868,7 +966,15 @@ impl Generate for Data {
                         first = false;
                     }
 
-                    g.push_expr(paren_token, Self::CONTEXT, &d.ident);
+                    match d.ident.mode {
+                        ParenExprMode::Normal => {
+                            g.push_expr(d.ident.paren_token(), Self::CONTEXT, &d.ident.expr);
+                        }
+                        ParenExprMode::Ref => {
+                            let ident_ref = d.ident.borrowed_expr(g);
+                            g.push_expr(Paren::default(), Self::CONTEXT, ident_ref);
+                        }
+                    }
                     g.push_str(":");
                     g.push_js_value_node(&mut d.value);
                 }
@@ -884,10 +990,10 @@ impl Generate for Data {
 
                     let buffer_ident = Generator::buffer_ident();
                     let buffer_expr = quote!(#buffer_ident.as_js_buffer());
-                    let ident_expr = &d.ident;
+                    let ident_ref = d.ident.borrowed_expr(g);
                     g.push_stmt(quote! {
                         let count = ::cheers::prelude::Signal::__computed_open(
-                            &#ident_expr,
+                            #ident_ref,
                             #buffer_expr
                         );
                     });
@@ -907,13 +1013,14 @@ impl Generate for Data {
                 g.push_str("\"");
             }
             DataContent::Bind(expr) => {
+                let expr_ref = expr.borrowed_expr(g);
                 g.push_str(" data-");
                 g.push_literals(name_literals);
                 g.push_str("=\"");
                 g.push_expr(
-                    paren_token,
+                    Paren::default(),
                     Context::AttributeValue,
-                    quote! { ::cheers::prelude::Signal::__path(&#expr) },
+                    quote! { ::cheers::prelude::Signal::__path(#expr_ref) },
                 );
                 g.push_str("\"");
             }

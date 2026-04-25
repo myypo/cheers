@@ -1,4 +1,4 @@
-use ast::{Document, Node, ParenExpr};
+use ast::{Document, JsSourceNodes, Node, ParenExpr};
 use proc_macro2::Span;
 use syn::{
     Expr, ExprMacro,
@@ -79,19 +79,27 @@ impl<'a, 'b> Printer<'a, 'b> {
             return None;
         }
 
-        let document: Document = Parser::parse2(
-            |input: ParseStream| Document::parse(input),
-            expr_macro.mac.tokens.clone(),
-        )
-        .ok()?;
-
         let macro_ = MaudMacro {
             macro_: &expr_macro.mac,
             indent: Indent { tabs: 0, spaces: 0 },
-            macro_name,
+            macro_name: macro_name.clone(),
         };
 
-        let formatted = crate::print::print(document, &macro_, self.source, self.options);
+        let formatted = if macro_name == "js" {
+            let document: JsSourceNodes = Parser::parse2(
+                |input: ParseStream| JsSourceNodes::parse(input),
+                expr_macro.mac.tokens.clone(),
+            )
+            .ok()?;
+            crate::print::print_js(document, &macro_, self.source, self.options)
+        } else {
+            let document: Document = Parser::parse2(
+                |input: ParseStream| Document::parse(input),
+                expr_macro.mac.tokens.clone(),
+            )
+            .ok()?;
+            crate::print::print(document, &macro_, self.source, self.options)
+        };
         let line_prefix = self.expr_line_prefix(indent_level);
 
         Some(

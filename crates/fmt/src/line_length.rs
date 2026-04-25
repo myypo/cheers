@@ -1,6 +1,6 @@
 use ast::{
-    Attribute, AttributeKind, AttributeName, AttributeValueNode, DataContent, DataExprValue,
-    ElementBody, ElementNode, Node, ParenExpr, Toggle,
+    Attribute, AttributeKind, AttributeName, AttributeValueNode, DataContent, DataExpr,
+    DataExprValue, ElementBody, ElementNode, Node, ParenExpr, Toggle,
     component::{ComponentAttribute, ComponentAttributeValue, ComponentDefaultAttributes},
     control::{self, ControlBlock},
 };
@@ -8,6 +8,11 @@ use syn::{Expr, Ident, Token, punctuated::Punctuated, spanned::Spanned};
 
 fn paren_expr_len<N: Node>(paren_expr: &ParenExpr<N>) -> Option<usize> {
     span_len(&paren_expr.expr).map(|len| len + 2 + paren_expr.mode.prefix_len())
+}
+
+fn data_expr_len(expr: &DataExpr) -> Option<usize> {
+    span_len(&expr.expr)
+        .map(|len| len + expr.mode.prefix_len() + if expr.paren_token.is_some() { 2 } else { 0 })
 }
 
 fn component_attr_value_len(value: &ComponentAttributeValue) -> Option<usize> {
@@ -97,7 +102,7 @@ pub fn element_len(ident: &Ident, attrs: &[Attribute], body: &ElementBody) -> Op
 
                 match &data.content {
                     DataContent::Bind(expr) => {
-                        element_len += span_len(expr)?;
+                        element_len += data_expr_len(expr)?;
                     }
                     DataContent::Node(attribute_value_node) => {
                         element_len += attribute_value_len(attribute_value_node)?;
@@ -371,7 +376,7 @@ pub fn data_decl_len_expr(decls: &Punctuated<DataExprValue<Expr>, Token![,]>) ->
             // `, `
             total_len += 2;
         }
-        total_len += span_len(&d.ident)?;
+        total_len += data_expr_len(&d.ident)?;
 
         // `: `
         total_len += 2;
@@ -402,7 +407,7 @@ pub fn data_decl_len_attr_values(
 pub fn data_decl_len_attr_value(decl: &DataExprValue<AttributeValueNode>) -> Option<usize> {
     let mut total_len = 0usize;
 
-    total_len += span_len(&decl.ident)?;
+    total_len += data_expr_len(&decl.ident)?;
 
     // `: `
     total_len += 2;

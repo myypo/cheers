@@ -105,6 +105,11 @@ impl<T: AsRef<str>, C: Context> Debug for Raw<T, C> {
 /// This is a type alias for [`Raw<T, Attribute>`].
 pub type RawAttribute<T> = Raw<T, AttributeValue>;
 
+/// Raw pre-escaped JavaScript source.
+///
+/// This is a type alias for [`Raw<T, JsSource>`].
+pub type RawJs<T> = Raw<T, JsSource>;
+
 /// A rendered HTML string.
 ///
 /// This type is returned by [`Render::render`] ([`Rendered<String>`]), as
