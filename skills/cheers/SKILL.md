@@ -110,14 +110,29 @@ html! {
     button !indicator(fetching_signal) {}
     div !signals(count: 5) !computed(total: { (price) " + " (tax) }) {}
     button !on:click((SaveUserAction { id })) { "Save" }
+    textarea
+        !bind(draft_signal)
+        !on:focusout({ "localStorage.setItem('draft', " (draft_signal) ")" }) {}
     details !attr("open": { (open_signal) " ? '' : null" }) {}
 }
 ```
 
 Use generated action structs in `!on:*`; do not hardcode generated URLs and signal paths. Datastar expressions are JavaScript fragments. Use signals for small client-visible values, patches for structural HTML.
 
-Common attributes: `!bind` for two-way input binding, `!signals` for initial/local values, `!computed` for read-only derived values, `!text`/`!show`/`!attr`/`!class`/`!style` for reactive DOM state, `!indicator` for fetch state, `!init`/`!effect` for side effects, `!preserve_attr` and `!ignore_morph` for morphing edge cases, and `!on:event` for events. 
-Use the cheers crate docs when additional information on datastar attributes is needed.
+Common attributes: `!bind` for two-way input binding, `!signals` for initial/local values, `!computed` for read-only derived values, `!text`/`!show`/`!attr`/`!class`/`!style` for reactive DOM state, `!indicator` for fetch state, `!init`/`!effect` for side effects, `!preserve_attr` and `!ignore_morph` for morphing edge cases, and `!on:event` for events. Use the cheers crate docs when additional Datastar attribute details are needed.
+
+Use inline `{ ... }` fragments directly in Datastar attributes. Use `js!` only when the JavaScript fragment needs to be stored, reused, or passed around as a value:
+
+```rust
+let clear_draft = js! {
+    "localStorage.removeItem('draft')"
+};
+html! {
+    button !on:click(clear_draft) { "Discard draft" }
+}
+```
+
+In inline JS fragments and `js!`, string literals are raw JavaScript source, interpolated Rust strings render as JS string literals, and signals/action values render in `JsSource` context. Keep expressions small; prefer actions/patches/signals over large inline scripts.
 
 Suspense:
 
