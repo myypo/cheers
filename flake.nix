@@ -400,7 +400,7 @@
             src = ./.;
             cargoBuildFlags = [ "-p=cargo-cheers" ];
 
-            cargoHash = "sha256-bHrzYPb98XigRPDRzn8pwhyo3Ncp4WePuMbw0R7wMvU=";
+            cargoHash = "sha256-XZHqZVOzOsFeDQzS2+Y9CXkpoxHXUStbpLCNMLSgR30=";
 
             doCheck = false;
           };

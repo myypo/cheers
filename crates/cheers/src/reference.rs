@@ -94,6 +94,12 @@ impl Render<AttributeValue> for ElementId {
     }
 }
 
+impl Render<JsSource> for ElementId {
+    fn render_to(&self, buffer: &mut Buffer<JsSource>) {
+        self.0.render_to(buffer);
+    }
+}
+
 #[inline]
 fn push_signal_object_key(dst: &mut String, segment: &str) {
     if is_bare_signal_path_segment(segment) {
@@ -346,6 +352,12 @@ impl Render<AttributeValue> for FormName {
     }
 }
 
+impl Render<JsSource> for FormName {
+    fn render_to(&self, buffer: &mut Buffer<JsSource>) {
+        self.0.render_to(buffer);
+    }
+}
+
 /// Computes 32-bit FNV1a hash for component's location
 const fn hash_component_location(
     component_id: &str,
@@ -384,6 +396,25 @@ const fn hash_component_location(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn element_id_renders_as_js_string() {
+        let id = ElementId::__dynamic("row-4<&\"'".to_string());
+        let mut buffer = Buffer::<JsSource>::new();
+        id.render_to(&mut buffer);
+        assert_eq!(
+            buffer.rendered().into_inner(),
+            r#"'row-4&lt;&amp;&quot;\''"#
+        );
+    }
+
+    #[test]
+    fn form_name_renders_as_js_string() {
+        let name = FormName::__static("email");
+        let mut buffer = Buffer::<JsSource>::new();
+        name.render_to(&mut buffer);
+        assert_eq!(buffer.rendered().into_inner(), "'email'");
+    }
 
     #[test]
     fn signal_object_string_value() {

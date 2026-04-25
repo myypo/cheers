@@ -114,7 +114,7 @@ html! {
 }
 ```
 
-Use generated action structs in `!on:*`; do not hardcode generated URLs and signals. Datastar expressions are JavaScript fragments. Use signals for small client-visible values, patches for structural HTML.
+Use generated action structs in `!on:*`; do not hardcode generated URLs and signal paths. Datastar expressions are JavaScript fragments. Use signals for small client-visible values, patches for structural HTML.
 
 Common attributes: `!bind` for two-way input binding, `!signals` for initial/local values, `!computed` for read-only derived values, `!text`/`!show`/`!attr`/`!class`/`!style` for reactive DOM state, `!indicator` for fetch state, `!init`/`!effect` for side effects, `!preserve_attr` and `!ignore_morph` for morphing edge cases, and `!on:event` for events. 
 Use the cheers crate docs when additional information on datastar attributes is needed.

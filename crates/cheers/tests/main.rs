@@ -1915,7 +1915,10 @@ fn form_without_field() {
     impl<'a> Ghost<'a> {
         fn assert_form_names(&self) {
             form_names!(form_keepsake);
-            assert_eq!(form_keepsake.render().into_inner(), "keepsake");
+            assert_eq!(
+                Render::<AttributeValue>::render(&form_keepsake).into_inner(),
+                "keepsake"
+            );
         }
     }
 
