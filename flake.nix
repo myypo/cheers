@@ -76,43 +76,7 @@
             name = "readme-sync-check";
             runtimeInputs = [ pkgs.python3 ];
             text = ''
-              python3 - <<'PY'
-              from pathlib import Path
-              import sys
-
-              root = Path.cwd()
-              readme = root / "README.md"
-              example = root / "examples/readme/src/main.rs"
-              start_marker = "<!-- readme-app:start -->"
-              end_marker = "<!-- readme-app:end -->"
-
-              readme_text = readme.read_text(encoding="utf-8")
-
-              if start_marker not in readme_text or end_marker not in readme_text:
-                  print(
-                      f"missing README markers {start_marker!r} / {end_marker!r}",
-                      file=sys.stderr,
-                  )
-                  raise SystemExit(1)
-
-              before, rest = readme_text.split(start_marker, maxsplit=1)
-              _, after = rest.split(end_marker, maxsplit=1)
-              example_text = example.read_text(encoding="utf-8").rstrip()
-              generated = (
-                  f"{start_marker}\n"
-                  f"```rust no_run\n"
-                  f"{example_text}\n"
-                  f"```\n"
-                  f"{end_marker}"
-              )
-              updated = before + generated + after
-
-              if readme_text != updated:
-                  readme.write_text(updated, encoding="utf-8")
-                  print("README example was out of sync — updated README.md")
-              else:
-                  print("README example is in sync")
-              PY
+              python3 ${./scripts/readme-sync-check.py}
             '';
           };
           readme-doctest-check = pkgs.writeShellApplication {
@@ -125,6 +89,17 @@
             ];
             text = ''
               cargo test --doc -p cheers --all-features
+            '';
+          };
+          skill-rust-block-fmt = pkgs.writeShellApplication {
+            name = "skill-rust-block-fmt";
+            runtimeInputs = [
+              inputs.self.packages.${pkgs.stdenv.hostPlatform.system}.default
+              pkgs.python3
+              pkgs.rustfmt
+            ];
+            text = ''
+              python3 ${./scripts/format-skill-rust-blocks.py} "$@"
             '';
           };
         in
@@ -148,6 +123,13 @@
               hooks = {
                 rustfmt = {
                   enable = true;
+                  raw.priority = 0;
+                };
+                skill-rust-block-fmt = {
+                  enable = true;
+                  name = "format Rust blocks in skill files";
+                  entry = "${skill-rust-block-fmt}/bin/skill-rust-block-fmt";
+                  files = "^skills/.*\\.md$";
                   raw.priority = 0;
                 };
                 nixfmt = {
