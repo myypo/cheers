@@ -1,0 +1,16 @@
+[package]
+name = "cheers-example-component-testing"
+edition.workspace = true
+license.workspace = true
+publish = false
+rust-version.workspace = true
+version.workspace = true
+
+[dependencies]
+cheers.workspace = true
+axum.workspace = true
+tokio = { workspace = true, features = ["macros", "rt-multi-thread", "net"] }
+
+[dev-dependencies]
+cheers = { workspace = true, features = ["test"] }
+thirtyfour.workspace = true

@@ -684,6 +684,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "cheers-example-component-testing"
+version = "0.1.0-alpha.1"
+dependencies = [
+ "axum",
+ "cheers",
+ "thirtyfour",
+ "tokio",
+]
+
+[[package]]
 name = "cheers-example-readme"
 version = "0.1.0-alpha.1"
 dependencies = [
