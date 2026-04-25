@@ -26,13 +26,10 @@ The repository currently contains:
 
 ## Minimal app
 
-This example lives in [`examples/readme/src/main.rs`](examples/readme/src/main.rs)
-and is synced into this README from that source file.
-
 - `@async { ... } @else { ... }` suspense while the initial records load
 - `scoped_signal!` for a component-local in-flight indicator
 - `#[form(name: String)]` for a generated `DwarfListForm` type without storing form state
-- `#[action(POST)]` plus `PatchElementsMode::Append` to stream a new record into the list
+- `#[action(POST)]` plus `PatchElementsMode::Append` to add a new record into the list
 
 <!-- readme-app:start -->
 ```rust no_run
@@ -183,9 +180,11 @@ mod tests {
                         .mode(PatchElementsMode::Append)
                         .element(html! {
                             li {
-                                (Dwarf {
-                                    name: String::from("Mocked Silvervein"),
-                                })
+                                (
+                                    Dwarf {
+                                        name: String::from("Mocked Silvervein"),
+                                    }
+                                )
                             }
                         })
                 })),
