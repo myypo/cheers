@@ -103,4 +103,3 @@ pub mod prelude {
 }
 pub use render::{Raw, RawAttribute, RawJs, Rendered};
 pub use router::ActionDef;
-pub use router::testing::RouterExt;

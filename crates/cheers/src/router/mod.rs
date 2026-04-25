@@ -5,7 +5,6 @@ pub(crate) use assets::{css_url, js_url, svg_sprite_url};
 mod compression;
 mod live_reload;
 mod redirect_trailing_slash;
-pub mod testing;
 
 use std::fmt::Display;
 

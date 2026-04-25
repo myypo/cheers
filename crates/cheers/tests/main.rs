@@ -15,7 +15,7 @@ use axum::{
     response::IntoResponse,
 };
 use cheers::{
-    ActionDef, RouterExt,
+    ActionDef,
     components::{CssStylesheet, Debugged, Displayed, Doctype, Scripts, SvgSymbol},
     prelude::*,
 };
@@ -1948,30 +1948,6 @@ fn action_def_no_path() {
 
     assert_eq!(RemoveThingAction::PATH, "/cheers/actions/remove_thing");
     assert_eq!(RemoveThingAction::METHOD, axum::http::Method::DELETE);
-}
-
-#[tokio::test]
-async fn action_mock_routes_to_correct_path() {
-    use axum::{Router, extract::State, http::Request};
-
-    #[action(POST)]
-    #[expect(unused_variables)]
-    async fn greet(Path(name): Path<String>, State(()): State<()>) -> impl IntoResponse {
-        "real"
-    }
-
-    let app = Router::new().mock_action(GreetAction::mock(
-        |Path(_name): Path<String>, State(()): State<()>| async { "mocked" },
-    ));
-
-    let req = Request::builder()
-        .method("POST")
-        .uri("/cheers/actions/greet/world")
-        .body(Body::empty())
-        .unwrap();
-    let resp = app.oneshot(req).await.unwrap();
-    assert_eq!(resp.status(), StatusCode::OK);
-    assert_eq!(read_axum_body(resp).await, "mocked");
 }
 
 #[test]
