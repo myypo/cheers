@@ -10,3 +10,7 @@ version.workspace = true
 cheers.workspace = true
 axum.workspace = true
 tokio = { workspace = true, features = ["macros", "rt-multi-thread", "net"] }
+
+[dev-dependencies]
+cheers = { workspace = true, features = ["test"] }
+thirtyfour.workspace = true

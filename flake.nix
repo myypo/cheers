@@ -50,6 +50,8 @@
               pkg-config
 
               act
+              chromium
+              chromedriver
 
               cargo
               rustc
@@ -115,9 +117,11 @@
           };
           readme-doctest-check = pkgs.writeShellApplication {
             name = "readme-doctest-check";
-            runtimeInputs = [
-              pkgs.cargo
-              pkgs.rustc
+            runtimeInputs = with pkgs; [
+              cargo
+              rustc
+              chromium
+              chromedriver
             ];
             text = ''
               cargo test --doc -p cheers --all-features
@@ -149,6 +153,11 @@
                 nixfmt = {
                   enable = true;
                   raw.priority = 0;
+                };
+                shellcheck = {
+                  enable = true;
+                  raw.priority = 0;
+                  excludes = [ "(^|/)\\.envrc$" ];
                 };
                 commitlint =
                   let
@@ -356,7 +365,14 @@
                   name = "nextest";
                   entry = "${pkgs.cargo}/bin/cargo nextest run --workspace";
                   pass_filenames = false;
-                  extraPackages = [ pkgs.cargo-nextest ];
+                  extraPackages = with pkgs; [
+                    bash
+                    cargo-nextest
+                    chromium
+                    chromedriver
+                    coreutils
+                    util-linux
+                  ];
                 };
                 readme-doctests = {
                   enable = true;
@@ -372,12 +388,22 @@
                   name = "nextest (--release)";
                   entry = "${pkgs.cargo}/bin/cargo nextest run --workspace --release";
                   pass_filenames = false;
-                  extraPackages = [ pkgs.cargo-nextest ];
+                  extraPackages = with pkgs; [
+                    bash
+                    cargo-nextest
+                    chromium
+                    chromedriver
+                    coreutils
+                    util-linux
+                  ];
                 };
               };
               settings = {
                 rust.check.cargoDeps = pkgs.rustPlatform.importCargoLock {
                   lockFile = ./Cargo.lock;
+                  outputHashes = {
+                    "selenium-manager-0.4.36" = "sha256-MQX14lk6X/ShAnqRe6GGkC+SnOO2J2x43wFi2uB7uRc=";
+                  };
                 };
               };
             };
@@ -392,7 +418,7 @@
             src = ./.;
             cargoBuildFlags = [ "-p=cargo-cheers" ];
 
-            cargoHash = "sha256-8ci3AbJveRirZc5ZsIkcSxSyzdSXjshGF2urEDhmCeU=";
+            cargoHash = "sha256-bHrzYPb98XigRPDRzn8pwhyo3Ncp4WePuMbw0R7wMvU=";
 
             doCheck = false;
           };

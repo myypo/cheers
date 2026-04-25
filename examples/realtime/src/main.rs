@@ -43,7 +43,7 @@ impl<T: Render> Render for Base<T> {
 #[derive(Cheers)]
 struct Stock<'a> {
     #[id]
-    id: &'a String,
+    id: &'a str,
     name: &'a str,
     #[signal]
     price_cents: u32,
@@ -55,15 +55,15 @@ impl<'a> Render for Stock<'a> {
         ids!(id);
 
         let increment_action = IncrementStockAction {
-            stock_id: self.id.clone(),
+            stock_id: self.id.to_owned(),
         };
         let dollar_price = format!("${:.2}", self.price_cents as f64 / 100.0);
         html! {
             section id=id {
                 h3 { (SvgSymbol("icon-stock")) " " (self.name) }
-                button !on:click(increment_action) {
+                button type="button" aria:label={ "Increase " (self.name) " stock price by $1.00" } !on:click(increment_action) {
                     "Price: "
-                    span !signals(signal_price_cents: self.price_cents) { (dollar_price) }
+                    output aria:label={ (self.name) " current price" } !signals(signal_price_cents: self.price_cents) { (dollar_price) }
                     " (+$1.00)"
                 }
             }
@@ -246,4 +246,72 @@ async fn main() {
     })
     .await
     .unwrap();
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use thirtyfour::{prelude::*, stringmatch::StringMatchable};
+
+    #[tokio::test]
+    async fn stock_increments() {
+        let id = "whatever";
+        let price_cents = 69;
+
+        let stocks = Box::leak(Box::new(Mutex::new(BTreeMap::from([(
+            id.to_owned(),
+            ("yep".to_owned(), price_cents),
+        )]))));
+        let ctx = Ctx {
+            stocks,
+            stocks_tx: tokio::sync::broadcast::channel(1).0,
+        };
+
+        let app = app(
+            Router::new().route(
+                "/",
+                get(move || async move {
+                    html! {
+                        Base {
+                            Stock id name="yep" price_cents;
+                        }
+                    }
+                }),
+            ),
+            cheers::router::Config::default(),
+        )
+        .expect("create app")
+        .with_state(ctx);
+
+        let app = cheers::test::App::new(app).await.unwrap();
+
+        let button_selector = "//button[@aria-label='Increase yep stock price by $1.00']";
+        let price_selector = "//*[@aria-label='yep current price']";
+        app.run(|app| async move {
+            app.goto(app.url("/")).await?;
+
+            app.query(By::XPath(price_selector))
+                .with_text("$0.69".match_full())
+                .first()
+                .await?;
+
+            app.query(By::XPath(button_selector))
+                .and_clickable()
+                .first()
+                .await?
+                .click()
+                .await?;
+
+            let price = app
+                .query(By::XPath(price_selector))
+                .with_text("$1.69".match_full())
+                .first()
+                .await?;
+            assert_eq!(price.text().await?, "$1.69");
+
+            Ok(())
+        })
+        .await
+        .expect("increment stock in browser");
+    }
 }

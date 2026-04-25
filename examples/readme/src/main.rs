@@ -125,3 +125,76 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     axum::serve(listener, app).await?;
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use axum::extract::State;
+    use cheers::RouterExt as _;
+    use thirtyfour::{prelude::*, stringmatch::StringMatchable};
+
+    use super::*;
+
+    #[tokio::test]
+    async fn forge_record_action_mock_updates_the_page() {
+        let app = cheers::router::new(
+            Router::new()
+                .route("/", get(hall_of_ancestors))
+                .mock_action(ForgeRecordAction::mock(|State(_ctx): State<Ctx>| async {
+                    PatchElements::new()
+                        .id(DwarfList::id())
+                        .mode(PatchElementsMode::Append)
+                        .element(html! {
+                            li {
+                                (Dwarf {
+                                    name: String::from("Mocked Silvervein"),
+                                })
+                            }
+                        })
+                })),
+            cheers::router::Config::default(),
+        )
+        .expect("create test app")
+        .with_state(Ctx);
+
+        let app = cheers::test::App::new(app)
+            .await
+            .expect("start browser app");
+
+        app.run(|app| async move {
+            app.goto(app.url("/")).await?;
+
+            app.query(By::Css("li"))
+                .with_text("Engraved name: Thorin Ironmantle".match_full())
+                .first()
+                .await?;
+
+            app.find(By::Css("input[name='name']"))
+                .await?
+                .send_keys("Real input ignored by the mock")
+                .await?;
+
+            app.query(By::Css("button"))
+                .with_text("Engrave".match_full())
+                .and_clickable()
+                .first()
+                .await?
+                .click()
+                .await?;
+
+            let mocked_record = app
+                .query(By::Css("li"))
+                .with_text("Engraved name: Mocked Silvervein".match_full())
+                .first()
+                .await?;
+
+            assert_eq!(
+                mocked_record.text().await?,
+                "Engraved name: Mocked Silvervein"
+            );
+
+            Ok(())
+        })
+        .await
+        .expect("mocked action should update the page");
+    }
+}

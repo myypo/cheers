@@ -12,6 +12,9 @@ mod render;
 mod response;
 pub mod router;
 mod signal_path;
+#[cfg(feature = "test")]
+pub mod test;
+mod test_utils;
 pub mod track;
 
 #[doc(hidden)]
@@ -101,6 +104,3 @@ pub mod prelude {
 pub use render::{Raw, RawAttribute, Rendered};
 pub use router::ActionDef;
 pub use router::testing::RouterExt;
-
-#[cfg(test)]
-mod test_utils;

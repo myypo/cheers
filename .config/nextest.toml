@@ -1,0 +1,11 @@
+experimental = ["setup-scripts"]
+
+[scripts.setup.chromedriver]
+command = { command-line = "scripts/nextest-chromedriver.sh", relative-to = "workspace-root" }
+slow-timeout = { period = "10s", terminate-after = 2 }
+capture-stdout = true
+capture-stderr = true
+
+[[profile.default.scripts]]
+filter = 'package(/^cheers-example-/)'
+setup = 'chromedriver'

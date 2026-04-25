@@ -1,9 +1,10 @@
 use proc_macro2::TokenStream;
 use quote::quote;
 use syn::{
-    Error, FnArg, GenericArgument, Ident, LitStr, Pat, PatType, PathArguments, Signature, Type,
-    TypeTuple,
+    Error, FnArg, GenericArgument, Ident, LitStr, Pat, PatType, PathArguments, ReturnType,
+    Signature, Type, TypeTuple,
     parse::{Parse, ParseStream},
+    visit::Visit,
 };
 
 use crate::{
@@ -216,6 +217,20 @@ fn path_lit_str<'a>(ident: &'a Ident, args: impl IntoIterator<Item = &'a Ident>)
     LitStr::new(&path_str, ident.span())
 }
 
+fn contains_impl_trait(ty: &Type) -> bool {
+    struct ImplTraitVisitor(bool);
+
+    impl<'ast> Visit<'ast> for ImplTraitVisitor {
+        fn visit_type_impl_trait(&mut self, _: &'ast syn::TypeImplTrait) {
+            self.0 = true;
+        }
+    }
+
+    let mut visitor = ImplTraitVisitor(false);
+    visitor.visit_type(ty);
+    visitor.0
+}
+
 pub fn generate(args: ActionArgs, item: &mut MaybeItemFn) -> Result<TokenStream, Error> {
     let field_args = ActionFieldArgs::new(&mut item.sig)?;
 
@@ -286,6 +301,19 @@ pub fn generate(args: ActionArgs, item: &mut MaybeItemFn) -> Result<TokenStream,
         }
     };
 
+    let mock_future_bound = match &item.sig.output {
+        ReturnType::Default => quote! {
+            Fut: ::std::future::Future<Output = ()> + ::std::marker::Send,
+        },
+        ReturnType::Type(_, ty) if !contains_impl_trait(ty) => quote! {
+            Fut: ::std::future::Future<Output = #ty> + ::std::marker::Send,
+        },
+        ReturnType::Type(_, _) => quote! {
+            Fut: ::std::future::Future + ::std::marker::Send,
+            Fut::Output: ::axum::response::IntoResponse,
+        },
+    };
+
     Ok(quote! {
         #item
 
@@ -307,8 +335,7 @@ pub fn generate(args: ActionArgs, item: &mut MaybeItemFn) -> Result<TokenStream,
                     + ::std::marker::Send
                     + ::std::marker::Sync
                     + 'static,
-                Fut: ::std::future::Future + ::std::marker::Send,
-                Fut::Output: ::axum::response::IntoResponse,
+                #mock_future_bound
                 S: ::std::clone::Clone + ::std::marker::Send + ::std::marker::Sync + 'static,
             {
                 ::cheers::router::testing::MockedAction::new(

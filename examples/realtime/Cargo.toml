@@ -7,7 +7,10 @@ rust-version.workspace = true
 version.workspace = true
 
 [dependencies]
-cheers.workspace = true
+cheers = { workspace = true, features = ["test"] }
 axum = "0.8"
 tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
 rand = "0.8"
+
+[dev-dependencies]
+thirtyfour.workspace = true
