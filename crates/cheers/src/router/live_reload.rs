@@ -127,23 +127,12 @@ where
             notify::Config::default(),
         ) {
             Ok(watcher) => watcher,
-            #[cfg(not(feature = "tracing"))]
-            Err(_) => {
-                return;
-            }
-            #[cfg(feature = "tracing")]
             Err(e) => {
                 tracing::error!("Failed to create file watcher: {e}");
                 return;
             }
         };
 
-        #[cfg(not(feature = "tracing"))]
-        if watch_workspace_directories(&mut watcher, &mut watched).is_err() {
-            return;
-        }
-
-        #[cfg(feature = "tracing")]
         if let Err(e) = watch_workspace_directories(&mut watcher, &mut watched) {
             tracing::error!("Failed to watch directory: {e}");
             return;
