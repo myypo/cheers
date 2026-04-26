@@ -76,22 +76,22 @@ pub trait ActionDef {
 ///
 /// Implemented by the `#[action]` macro for each generated `...Action` type. Register actions
 /// explicitly with [`ActionRouterExt::action`] before passing the router to [`new`].
-pub trait Action<S>: ActionDef {
+pub trait Action<S, C = S>: ActionDef {
     fn register(router: Router<S>) -> Router<S>;
 }
 
 /// Extension methods for registering Cheers actions on an Axum [`Router`].
-pub trait ActionRouterExt<S>: Sized {
+pub trait ActionRouterExt<S, C = S>: Sized {
     /// Registers the route generated for action type `A`.
     fn action<A>(self) -> Self
     where
-        A: Action<S>;
+        A: Action<S, C>;
 }
 
-impl<S> ActionRouterExt<S> for Router<S> {
+impl<S, C> ActionRouterExt<S, C> for Router<S> {
     fn action<A>(self) -> Self
     where
-        A: Action<S>,
+        A: Action<S, C>,
     {
         A::register(self)
     }

@@ -10,7 +10,7 @@ use std::{
 use axum::{
     Form,
     body::Body,
-    extract::{FromRequest, FromRequestParts, Path, State},
+    extract::{FromRef, FromRequest, FromRequestParts, Path, State},
     http::StatusCode,
     response::IntoResponse,
 };
@@ -1393,10 +1393,10 @@ fn signal_computed() {
             signals!(signal_a, signal_b, signal_c, signal_d);
 
             html! {
-                p   !computed((@&signal_c): { (@&signal_a) "+" (@&signal_b) }, (@&signal_d): {
-                            (@&signal_c)
-                            "- 1"
-                        }) {}
+                p   !computed(
+                        (@&signal_c): { (@&signal_a) "+" (@&signal_b) },
+                        (@&signal_d): { (@&signal_c) "- 1" },
+                    ) {}
             }
             .render_to(buffer);
         }
@@ -1555,11 +1555,9 @@ fn signal_id() {
             signals!(signal_name);
 
             html! {
-                p
-                    !bind((@&signal_name))
+                p   !bind((@&signal_name))
                     !text((@&signal_name))
-                    !on:click({ "console.log(" (@&signal_name) ")" })
-                    {}
+                    !on:click({ "console.log(" (@&signal_name) ")" }) {}
             }
             .render_to(buffer);
         }

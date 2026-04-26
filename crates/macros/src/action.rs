@@ -267,19 +267,23 @@ pub fn generate(args: ActionArgs, item: &mut MaybeItemFn) -> Result<TokenStream,
     );
     let (impl_generics, ty_generics, where_clause) = generics.split_for_impl();
 
-    let state = state.unwrap_or_else(|| parse_quote!(__CheersRouterState));
+    let handler_state = state.unwrap_or_else(|| parse_quote!(__CheersRouterState));
+    let router_state: Type = parse_quote!(__CheersRouterState);
     let mut register_types = field_args.path.iter().map(|(_, ty)| ty).collect::<Vec<_>>();
-    register_types.push(&state);
+    register_types.push(&handler_state);
     let mut register_generics = filter_generics(item.sig.generics.clone(), register_types, false);
-    if !has_state {
-        register_generics
-            .params
-            .push(parse_quote!(__CheersRouterState));
-    }
     register_generics
-        .make_where_clause()
+        .params
+        .push(parse_quote!(__CheersRouterState));
+    let register_where_clause = register_generics.make_where_clause();
+    register_where_clause
         .predicates
-        .push(parse_quote!(#state: ::std::clone::Clone + ::std::marker::Send + ::std::marker::Sync + 'static));
+        .push(parse_quote!(#router_state: ::std::clone::Clone + ::std::marker::Send + ::std::marker::Sync + 'static));
+    if has_state {
+        register_where_clause.predicates.push(parse_quote!(
+            #handler_state: ::cheers::__internal::axum::extract::FromRef<#router_state> + ::std::marker::Send + 'static
+        ));
+    }
     let (register_impl_generics, _, register_where_clause) = register_generics.split_for_impl();
     let struct_decl = if field_args.path.is_empty() {
         quote! {
@@ -315,8 +319,8 @@ pub fn generate(args: ActionArgs, item: &mut MaybeItemFn) -> Result<TokenStream,
             const METHOD: ::cheers::__internal::axum::http::Method = #method;
         }
 
-        impl #register_impl_generics ::cheers::router::Action<#state> for #struct_name #ty_generics #register_where_clause {
-            fn register(router: ::cheers::__internal::axum::Router<#state>) -> ::cheers::__internal::axum::Router<#state> {
+        impl #register_impl_generics ::cheers::router::Action<#router_state, #handler_state> for #struct_name #ty_generics #register_where_clause {
+            fn register(router: ::cheers::__internal::axum::Router<#router_state>) -> ::cheers::__internal::axum::Router<#router_state> {
                 router.route(#path, ::cheers::__internal::axum::routing::on(#method.try_into().expect("turn method to method filter for action"), #ident))
             }
         }
