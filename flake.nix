@@ -39,6 +39,18 @@
           pre-commit-check,
           ...
         }:
+        let
+          cargo-cheers-dev = pkgs.writeShellApplication {
+            name = "cargo-cheers";
+            runtimeInputs = with pkgs; [
+              cargo
+              rustc
+            ];
+            text = ''
+              exec cargo run --quiet --package cargo-cheers -- "$@"
+            '';
+          };
+        in
         {
           default = pkgs.mkShell {
             env = {
@@ -60,7 +72,7 @@
               cargo-nextest
               rust-analyzer
 
-              inputs.self.packages.${pkgs.stdenv.hostPlatform.system}.default
+              cargo-cheers-dev
             ];
 
             inherit (pre-commit-check) shellHook;
@@ -72,6 +84,16 @@
       checks = forEachSupportedSystem (
         { pkgs, pre-commit-hooks, ... }:
         let
+          cargo-cheers-dev = pkgs.writeShellApplication {
+            name = "cargo-cheers";
+            runtimeInputs = with pkgs; [
+              cargo
+              rustc
+            ];
+            text = ''
+              exec cargo run --quiet --package cargo-cheers -- "$@"
+            '';
+          };
           readme-sync-check = pkgs.writeShellApplication {
             name = "readme-sync-check";
             runtimeInputs = [ pkgs.python3 ];
@@ -91,10 +113,26 @@
               cargo test --doc -p cheers --all-features
             '';
           };
+          nix-package-build-check = pkgs.writeShellApplication {
+            name = "nix-package-build-check";
+            runtimeInputs = [ pkgs.nix ];
+            text = ''
+              if [ -n "''${NIX_BUILD_TOP:-}" ]; then
+                echo "Skipping nix package build inside a Nix build."
+                exit 0
+              fi
+
+              nix build \
+                --extra-experimental-features 'nix-command flakes' \
+                --print-build-logs \
+                --no-link \
+                ".#packages.${pkgs.stdenv.hostPlatform.system}.default"
+            '';
+          };
           skill-rust-block-fmt = pkgs.writeShellApplication {
             name = "skill-rust-block-fmt";
             runtimeInputs = [
-              inputs.self.packages.${pkgs.stdenv.hostPlatform.system}.default
+              cargo-cheers-dev
               pkgs.python3
               pkgs.rustfmt
             ];
@@ -134,6 +172,18 @@
                 };
                 nixfmt = {
                   enable = true;
+                  raw.priority = 0;
+                };
+                nix-package-build = {
+                  enable = true;
+                  name = "nix package build";
+                  entry = "${nix-package-build-check}/bin/nix-package-build-check";
+                  pass_filenames = false;
+                  always_run = true;
+                  stages = [
+                    "pre-push"
+                    "manual"
+                  ];
                   raw.priority = 0;
                 };
                 shellcheck = {
