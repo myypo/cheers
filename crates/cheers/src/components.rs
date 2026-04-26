@@ -43,7 +43,7 @@ impl Render for Doctype {
 ///
 /// This includes the streaming helper script and the `datastar.js` runtime. When the router was
 /// built with a [`crate::track::TrackConfig`], the served runtime also includes the tracking
-/// plugin. In debug builds it also includes the live-reload script.
+/// plugin. In debug builds it also includes the WebSocket live-reload script.
 ///
 /// Include this in pages that use Cheers client-side behaviors such as actions, signals and patching
 ///
@@ -77,11 +77,14 @@ impl Render for Scripts {
 <script>
 (function() {
   let attempts = 0;
+  let reconnectTimer = null;
 
   function connect() {
-    const source = new EventSource("/cheers/live-reload");
+    const url = new URL("/cheers/live-reload", window.location.href);
+    url.protocol = url.protocol === "https:" ? "wss:" : "ws:";
+    const socket = new WebSocket(url.href);
 
-    source.onopen = function() {
+    socket.onopen = function() {
       if (attempts !== 0) {
           window.location.reload();
       }
@@ -89,22 +92,28 @@ impl Render for Scripts {
       attempts = 0;
     };
 
-    source.onmessage = function(event) {
+    socket.onmessage = function(event) {
       if (event.data === "reload") {
         console.log("Cheers reload event received, reloading page...");
         window.location.reload();
       }
     };
 
-    source.onerror = function(err) {
-      console.error("Cheers live-reload connection error:", err);
-
+    socket.onclose = function() {
       const delay = Math.min(50 * Math.pow(1.25, attempts), 1000);
-      source.close();
       attempts++;
-      setTimeout(() => {
+      reconnectTimer = setTimeout(() => {
+        reconnectTimer = null;
         connect();
       }, delay);
+    };
+
+    socket.onerror = function(err) {
+      console.error("Cheers live-reload WebSocket error:", err);
+
+      if (reconnectTimer === null) {
+        socket.close();
+      }
     };
   }
 

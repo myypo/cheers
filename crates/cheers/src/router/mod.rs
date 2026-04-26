@@ -3,6 +3,7 @@ mod assets;
 pub use assets::{CSS_BUNDLER, SVG_SPRITE_BUNDLER};
 pub(crate) use assets::{css_url, js_url, svg_sprite_url};
 mod compression;
+#[cfg(debug_assertions)]
 mod live_reload;
 mod redirect_trailing_slash;
 
@@ -10,8 +11,7 @@ use std::fmt::Display;
 
 use axum::Router;
 
-use crate::router::assets::assets_router;
-use crate::track::TrackConfig;
+use crate::{router::assets::assets_router, track::TrackConfig};
 
 #[derive(Debug)]
 pub enum Error {
@@ -49,6 +49,7 @@ pub fn new<S: Clone + Send + Sync + 'static>(
 ) -> Result<Router<S>, Error> {
     let router = assets_router(config.track.as_ref())?;
 
+    #[cfg(debug_assertions)]
     let router = router.merge(live_reload::router());
     let router = Router::new()
         .nest("/cheers", router)

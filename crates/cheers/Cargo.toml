@@ -17,7 +17,7 @@ categories.workspace = true
 all-features = true
 
 [dependencies]
-axum.workspace = true
+axum = { workspace = true, features = ["ws"] }
 html-escape.workspace = true
 macros.workspace = true
 itoa.workspace = true

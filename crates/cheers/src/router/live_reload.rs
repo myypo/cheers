@@ -1,6 +1,5 @@
 use std::{
     collections::HashSet,
-    convert::Infallible,
     ffi::OsStr,
     path::{Path, PathBuf},
     time::{Duration, Instant},
@@ -8,11 +7,11 @@ use std::{
 
 use axum::{
     Router,
-    response::{Sse, sse::Event},
+    extract::ws::{Message, WebSocket, WebSocketUpgrade},
     routing::get,
 };
-use futures::StreamExt;
 use notify::{RecommendedWatcher, Watcher};
+use tokio::sync::broadcast;
 
 fn is_live_reload_path(path: &Path) -> bool {
     path.extension()
@@ -158,12 +157,33 @@ where
         }
     });
 
-    let handler = async move || {
+    let handler = move |ws: WebSocketUpgrade| {
         let rx = tx.clone().subscribe();
-        let stream = tokio_stream::wrappers::BroadcastStream::new(rx)
-            .map(|_| Ok::<Event, Infallible>(Event::default().data("reload")));
-        Sse::new(stream)
+        async move { ws.on_upgrade(move |socket| handle_socket(socket, rx)) }
     };
 
     Router::new().route("/live-reload", get(handler))
+}
+
+async fn handle_socket(mut socket: WebSocket, mut rx: broadcast::Receiver<()>) {
+    loop {
+        tokio::select! {
+            msg = socket.recv() => match msg {
+                Some(Ok(Message::Close(_))) | None => break,
+                Some(Ok(_)) => {}
+                Some(Err(e)) => {
+                    tracing::debug!("Cheers live-reload WebSocket receive failed: {e}");
+                    break;
+                }
+            },
+            ev = rx.recv() => match ev {
+                Ok(()) | Err(broadcast::error::RecvError::Lagged(_)) => {
+                    if socket.send(Message::Text("reload".into())).await.is_err() {
+                        break;
+                    }
+                }
+                Err(broadcast::error::RecvError::Closed) => break,
+            },
+        }
+    }
 }
