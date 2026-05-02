@@ -9,5 +9,11 @@
       "@utils/*": ["../../../../../vendor/datastar/src/utils/*"]
     }
   },
-  "include": ["./datastar-entry.ts", "track-config.ts", "track-plugin.ts"]
+  "include": [
+    "./datastar-entry.ts",
+    "ssr-stream.ts",
+    "ssr-stream-subsecond.ts",
+    "track-config.ts",
+    "track-plugin.ts"
+  ]
 }

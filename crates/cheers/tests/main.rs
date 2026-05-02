@@ -166,7 +166,41 @@ async fn js_bundle_omits_track_runtime_without_tracking_config() {
         .expect("response body should be readable");
     let body = String::from_utf8(body.into()).expect("response body should be valid UTF-8");
 
+    assert!(body.contains("__ssrStream"));
+    assert_eq!(
+        body.contains("__cheersSettleSsrStreams"),
+        cheers::subsecond::enabled()
+    );
     assert!(!body.contains("/_track"));
+}
+
+#[cfg(all(debug_assertions, feature = "subsecond"))]
+#[test]
+fn scripts_render_subsecond_morph_hot_reload_client() {
+    let rendered = Scripts.render().into_inner();
+
+    assert!(rendered.contains("data-cheers-runtime=\"live-reload\""));
+    assert!(!rendered.contains("data-cheers-runtime=\"stream\""));
+    assert!(rendered.contains("__cheersSubsecondLiveReloadStarted"));
+    assert!(rendered.contains("datastar-patch-elements"));
+    assert!(rendered.contains("patch_applied"));
+    assert!(rendered.contains("AbortController"));
+    assert!(rendered.contains("signal: controller.signal"));
+    assert!(rendered.contains("timed out waiting for rebuilt HTML"));
+    assert!(rendered.contains("CheersDocumentFetchTimeout"));
+    assert!(rendered.contains("asyncPatch.patched && asyncPatch.complete"));
+    assert!(!rendered.contains("Cheers reload event received, reloading page"));
+}
+
+#[cfg(all(debug_assertions, not(feature = "subsecond")))]
+#[test]
+fn scripts_render_reload_client_without_subsecond_feature() {
+    let rendered = Scripts.render().into_inner();
+
+    assert!(rendered.contains("data-cheers-runtime=\"live-reload\""));
+    assert!(!rendered.contains("data-cheers-runtime=\"stream\""));
+    assert!(rendered.contains("Cheers reload event received, reloading page"));
+    assert!(!rendered.contains("__cheersSubsecondLiveReloadStarted"));
 }
 
 #[test]
@@ -656,6 +690,60 @@ fn toggles() {
     );
 }
 
+#[test]
+fn html_macro_supports_self_paths_in_impls() {
+    struct Page;
+
+    impl Page {
+        fn label() -> &'static str {
+            "self path"
+        }
+
+        fn view() -> impl Render {
+            html! { (Self::label()) }
+        }
+    }
+
+    assert_eq!(Page::view().render().into_inner(), "self path");
+}
+
+#[test]
+fn html_macro_supports_generic_type_paths() {
+    #[derive(Default)]
+    struct GenericValue;
+
+    impl Render for GenericValue {
+        fn render_to(&self, buffer: &mut Buffer<Element>) {
+            "generic path".render_to(buffer);
+        }
+    }
+
+    fn render_default<T>() -> impl Render
+    where
+        T: Default + Render,
+    {
+        html! { (T::default()) }
+    }
+
+    fn render_default_qualified<T>() -> impl Render
+    where
+        T: Default + Render,
+    {
+        html! { (<T as Default>::default()) }
+    }
+
+    assert_eq!(
+        render_default::<GenericValue>().render().into_inner(),
+        "generic path"
+    );
+    assert_eq!(
+        render_default_qualified::<GenericValue>()
+            .render()
+            .into_inner(),
+        "generic path"
+    );
+}
+
 #[derive(Cheers)]
 struct Base<T> {
     children: T,
@@ -737,8 +825,420 @@ async fn page_async_block_is_streamed() {
         .into_data_stream();
     let got = next_axum_chunk(&mut result).await;
     assert!(got.contains("Wait for it..."), "{got}");
+    let key = got
+        .split("data-ssr=\"")
+        .nth(1)
+        .and_then(|rest| rest.split('"').next())
+        .expect("async fallback should contain a data-ssr key")
+        .to_owned();
     let got = next_axum_chunk(&mut result).await;
     assert!(got.contains("<div>Here!</div>"), "{got}");
+    assert!(got.contains(&format!(r#"data-ssr="{key}-t""#)), "{got}");
+    assert!(got.contains(&format!("__ssrStream('{key}')")), "{got}");
+}
+
+#[tokio::test]
+async fn whitespace_separated_async_blocks_get_distinct_ssr_keys() {
+    async fn main_page() -> cheers::prelude::AsyncLazy<cheers::prelude::Lazy<impl Fn(&mut Buffer)>>
+    {
+        html! {
+            @ async {
+                div { "First" }
+            } @else {
+                p { "Loading first" }
+            }
+            @ async {
+                div { "Second" }
+            } @else {
+                p { "Loading second" }
+            }
+        }
+    }
+
+    let mut result = main_page()
+        .await
+        .into_response()
+        .into_body()
+        .into_data_stream();
+    let got = next_axum_chunk(&mut result).await;
+    let keys = got
+        .split("data-ssr=\"")
+        .skip(1)
+        .filter_map(|rest| rest.split('"').next())
+        .collect::<std::collections::BTreeSet<_>>();
+
+    assert_eq!(keys.len(), 2, "{got}");
+}
+
+#[tokio::test]
+async fn nested_async_can_use_outer_async_let_binding() {
+    async fn main_page() -> cheers::prelude::AsyncLazy<cheers::prelude::Lazy<impl Fn(&mut Buffer)>>
+    {
+        html! {
+            @async {
+                @let data = async { "outer data" }.await;
+                @async {
+                    div { (data) }
+                } @else {
+                    div { "Inner loading..." }
+                }
+            } @else {
+                div { "Outer loading..." }
+            }
+        }
+    }
+
+    let mut result = main_page()
+        .await
+        .into_response()
+        .into_body()
+        .into_data_stream();
+
+    let got = next_axum_chunk(&mut result).await;
+    assert!(got.contains("Outer loading..."), "{got}");
+
+    let got = next_axum_chunk(&mut result).await;
+    assert!(got.contains("Inner loading..."), "{got}");
+
+    let got = next_axum_chunk(&mut result).await;
+    assert!(got.contains("<div>outer data</div>"), "{got}");
+}
+
+#[tokio::test]
+async fn nested_async_inside_component_body_can_use_outer_binding() {
+    async fn main_page() -> cheers::prelude::AsyncLazy<cheers::prelude::Lazy<impl Fn(&mut Buffer)>>
+    {
+        html! {
+            @async {
+                @let data = async { "component data" }.await;
+                Base {
+                    @async {
+                        div { (data) }
+                    } @else {
+                        div { "Inner loading..." }
+                    }
+                }
+            } @else {
+                div { "Outer loading..." }
+            }
+        }
+    }
+
+    let mut result = main_page()
+        .await
+        .into_response()
+        .into_body()
+        .into_data_stream();
+
+    let got = next_axum_chunk(&mut result).await;
+    assert!(got.contains("Outer loading..."), "{got}");
+
+    let got = next_axum_chunk(&mut result).await;
+    assert!(got.contains("Inner loading..."), "{got}");
+
+    let got = next_axum_chunk(&mut result).await;
+    assert!(got.contains("<div>component data</div>"), "{got}");
+}
+
+#[tokio::test]
+async fn nested_async_can_use_enclosing_for_binding() {
+    async fn main_page() -> cheers::prelude::AsyncLazy<cheers::prelude::Lazy<impl Fn(&mut Buffer)>>
+    {
+        html! {
+            @async {
+                @for data in ::std::iter::once("loop data") {
+                    @async {
+                        div { (data) }
+                    } @else {
+                        div { "Inner loading..." }
+                    }
+                }
+            } @else {
+                div { "Outer loading..." }
+            }
+        }
+    }
+
+    let mut result = main_page()
+        .await
+        .into_response()
+        .into_body()
+        .into_data_stream();
+
+    let got = next_axum_chunk(&mut result).await;
+    assert!(got.contains("Outer loading..."), "{got}");
+
+    let got = next_axum_chunk(&mut result).await;
+    assert!(got.contains("Inner loading..."), "{got}");
+
+    let got = next_axum_chunk(&mut result).await;
+    assert!(got.contains("<div>loop data</div>"), "{got}");
+}
+
+#[tokio::test]
+async fn nested_async_collector_is_scoped_before_later_awaits() {
+    async fn main_page() -> cheers::prelude::AsyncLazy<cheers::prelude::Lazy<impl Fn(&mut Buffer)>>
+    {
+        html! {
+            @async {
+                @async {
+                    div { "first data" }
+                } @else {
+                    div { "First loading..." }
+                }
+
+                @let later = async { "later data" }.await;
+
+                @async {
+                    div { (later) }
+                } @else {
+                    div { "Second loading..." }
+                }
+            } @else {
+                div { "Outer loading..." }
+            }
+        }
+    }
+
+    let mut result = main_page()
+        .await
+        .into_response()
+        .into_body()
+        .into_data_stream();
+
+    let got = next_axum_chunk(&mut result).await;
+    assert!(got.contains("Outer loading..."), "{got}");
+
+    let got = next_axum_chunk(&mut result).await;
+    assert!(got.contains("First loading..."), "{got}");
+    assert!(got.contains("Second loading..."), "{got}");
+
+    let got = format!(
+        "{}{}",
+        next_axum_chunk(&mut result).await,
+        next_axum_chunk(&mut result).await
+    );
+    assert!(got.contains("<div>first data</div>"), "{got}");
+    assert!(got.contains("<div>later data</div>"), "{got}");
+}
+
+#[tokio::test]
+async fn async_leading_let_borrow_dependency_renders() {
+    async fn main_page() -> cheers::prelude::AsyncLazy<cheers::prelude::Lazy<impl Fn(&mut Buffer)>>
+    {
+        html! {
+            @async {
+                @let owner = String::from("borrowed data");
+                @let borrow = owner.as_str();
+                div { (borrow) }
+            } @else {
+                div { "Loading..." }
+            }
+        }
+    }
+
+    let mut result = main_page()
+        .await
+        .into_response()
+        .into_body()
+        .into_data_stream();
+
+    let got = next_axum_chunk(&mut result).await;
+    assert!(got.contains("Loading..."), "{got}");
+
+    let got = next_axum_chunk(&mut result).await;
+    assert!(got.contains("<div>borrowed data</div>"), "{got}");
+}
+
+#[cfg(all(debug_assertions, feature = "subsecond"))]
+#[tokio::test]
+async fn async_block_gets_hot_root_without_cached_syntax() {
+    async fn main_page() -> cheers::prelude::AsyncLazy<cheers::prelude::Lazy<impl Fn(&mut Buffer)>>
+    {
+        html! {
+            Base {
+                article {
+                    @async {
+                        @let data = async { String::from("Here!") }.await;
+                        div { (data.as_str()) }
+                    } @else {
+                        div { "Wait for it..." }
+                    }
+                }
+            }
+        }
+    }
+
+    let mut result = main_page()
+        .await
+        .into_response()
+        .into_body()
+        .into_data_stream();
+    let got = next_axum_chunk(&mut result).await;
+    let key = got
+        .split("data-cheers-async-root=\"")
+        .nth(1)
+        .and_then(|rest| rest.split('"').next())
+        .expect("async fallback should contain a hot async root key")
+        .to_owned();
+    assert!(got.contains("Wait for it..."), "{got}");
+
+    let got = next_axum_chunk(&mut result).await;
+    assert!(got.contains("<div>Here!</div>"), "{got}");
+
+    let islands = cheers::__internal::async_islands::render(std::slice::from_ref(&key));
+    assert!(
+        islands.is_empty(),
+        "data-dependent async blocks should not retain resolved values implicitly"
+    );
+
+    let response = cheers_router()
+        .oneshot(
+            axum::http::Request::post("/cheers/async-islands/render")
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    serde_json::json!({ "keys": [key.clone()] }).to_string(),
+                ))
+                .expect("request should build"),
+        )
+        .await
+        .expect("async island endpoint should respond");
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = read_axum_body(response).await;
+    assert!(body.contains("\"islands\""), "{body}");
+    assert!(!body.contains("<div>Here!</div>"), "{body}");
+}
+
+#[cfg(all(debug_assertions, feature = "subsecond"))]
+#[tokio::test]
+async fn async_block_registers_static_hot_render_continuation() {
+    async fn main_page() -> cheers::prelude::AsyncLazy<cheers::prelude::Lazy<impl Fn(&mut Buffer)>>
+    {
+        html! {
+            Base {
+                article {
+                    @async {
+                        @let _data = async { String::from("loaded") }.await;
+                        div { "Ready!" }
+                    } @else {
+                        div { "Wait for it..." }
+                    }
+                }
+            }
+        }
+    }
+
+    let mut result = main_page()
+        .await
+        .into_response()
+        .into_body()
+        .into_data_stream();
+    let got = next_axum_chunk(&mut result).await;
+    let key = got
+        .split("data-cheers-async-root=\"")
+        .nth(1)
+        .and_then(|rest| rest.split('"').next())
+        .expect("async fallback should contain a hot async root key")
+        .to_owned();
+    assert!(got.contains("Wait for it..."), "{got}");
+
+    let got = next_axum_chunk(&mut result).await;
+    assert!(got.contains("<div>Ready!</div>"), "{got}");
+
+    let islands = cheers::__internal::async_islands::render(std::slice::from_ref(&key));
+    assert_eq!(islands.len(), 1);
+    assert_eq!(islands[0].0, key);
+    assert_eq!(islands[0].1, "<div>Ready!</div>");
+}
+
+#[cfg(all(debug_assertions, feature = "subsecond"))]
+#[tokio::test]
+async fn async_block_with_dynamic_control_flow_does_not_register_hot_render_continuation() {
+    async fn main_page() -> cheers::prelude::AsyncLazy<cheers::prelude::Lazy<impl Fn(&mut Buffer)>>
+    {
+        html! {
+            Base {
+                article {
+                    @async {
+                        @let _data = async { String::from("loaded") }.await;
+                        @for label in ["Ready!", "Really ready!"].iter() {
+                            div { (label) }
+                        }
+                    } @else {
+                        div { "Wait for it..." }
+                    }
+                }
+            }
+        }
+    }
+
+    let mut result = main_page()
+        .await
+        .into_response()
+        .into_body()
+        .into_data_stream();
+    let got = next_axum_chunk(&mut result).await;
+    let key = got
+        .split("data-cheers-async-root=\"")
+        .nth(1)
+        .and_then(|rest| rest.split('"').next())
+        .expect("async fallback should contain a hot async root key")
+        .to_owned();
+    assert!(got.contains("Wait for it..."), "{got}");
+
+    let got = next_axum_chunk(&mut result).await;
+    assert!(got.contains("<div>Ready!</div>"), "{got}");
+    assert!(got.contains("<div>Really ready!</div>"), "{got}");
+
+    let islands = cheers::__internal::async_islands::render(std::slice::from_ref(&key));
+    assert!(
+        islands.is_empty(),
+        "dynamic async render bodies should not be treated as syntactically static hot islands"
+    );
+}
+
+#[cfg(all(debug_assertions, feature = "subsecond"))]
+#[tokio::test]
+async fn async_block_with_outer_capture_does_not_register_hot_render_continuation() {
+    async fn main_page() -> cheers::prelude::AsyncLazy<cheers::prelude::Lazy<impl Fn(&mut Buffer)>>
+    {
+        let title = String::from("Title: ");
+
+        html! {
+            Base {
+                article {
+                    @async {
+                        @let data = async { String::from("Here!") }.await;
+                        div { (title.as_str()) (data.as_str()) }
+                    } @else {
+                        div { "Wait for it..." }
+                    }
+                }
+            }
+        }
+    }
+
+    let mut result = main_page()
+        .await
+        .into_response()
+        .into_body()
+        .into_data_stream();
+    let got = next_axum_chunk(&mut result).await;
+    let key = got
+        .split("data-cheers-async-root=\"")
+        .nth(1)
+        .and_then(|rest| rest.split('"').next())
+        .expect("async fallback should contain a hot async root key")
+        .to_owned();
+
+    let got = next_axum_chunk(&mut result).await;
+    assert!(got.contains("<div>Title: Here!</div>"), "{got}");
+
+    let islands = cheers::__internal::async_islands::render(std::slice::from_ref(&key));
+    assert!(
+        islands.is_empty(),
+        "async blocks that capture outer locals should not register hot render continuations"
+    );
 }
 
 #[derive(Cheers)]

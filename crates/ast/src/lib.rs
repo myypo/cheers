@@ -31,11 +31,26 @@ use crate::generate::Context;
 
 pub type Document = Nodes<ElementNode>;
 
+/// Syntactic staticness for Cheers markup.
+///
+/// Static nodes can be rendered without evaluating caller-provided Rust expressions. This is a
+/// conservative syntax-only property. Any Rust expression, component, or control-flow node is
+/// considered dynamic.
+pub trait SyntaxStatic {
+    fn is_static(&self) -> bool;
+}
+
 pub struct JsSourceNodes(pub Nodes<AttributeValueNode>);
 
 impl Parse for JsSourceNodes {
     fn parse(input: ParseStream) -> syn::Result<Self> {
         input.parse().map(Self)
+    }
+}
+
+impl SyntaxStatic for JsSourceNodes {
+    fn is_static(&self) -> bool {
+        self.0.is_static()
     }
 }
 
@@ -70,6 +85,17 @@ pub enum ElementNode {
 impl Node for ElementNode {
     fn is_control(&self) -> bool {
         matches!(self, Self::Control(_))
+    }
+}
+
+impl SyntaxStatic for ElementNode {
+    fn is_static(&self) -> bool {
+        match self {
+            Self::Element(element) => element.is_static(),
+            Self::Literal(_) => true,
+            Self::Group(group) => group.is_static(),
+            Self::Component(_) | Self::Control(_) | Self::Expr(_) => false,
+        }
     }
 }
 
@@ -250,6 +276,12 @@ impl<N: Node> ToTokens for ParenExpr<N> {
 
 pub struct Group<N: Node>(pub Nodes<N>);
 
+impl<N: Node + SyntaxStatic> SyntaxStatic for Group<N> {
+    fn is_static(&self) -> bool {
+        self.0.is_static()
+    }
+}
+
 impl Parse for Group<AttributeValueNode> {
     fn parse(input: ParseStream) -> syn::Result<Self> {
         let content;
@@ -268,6 +300,12 @@ impl<N: Node> Generate for Group<N> {
 }
 
 pub struct Nodes<N: Node>(pub Vec<N>);
+
+impl<N: Node + SyntaxStatic> SyntaxStatic for Nodes<N> {
+    fn is_static(&self) -> bool {
+        self.0.iter().all(SyntaxStatic::is_static)
+    }
+}
 
 impl<N: Node> Nodes<N> {
     fn block(&mut self, g: &mut Generator<'_>, brace_token: Brace) -> AnyBlock {
@@ -313,6 +351,12 @@ pub struct Element {
     pub body: ElementBody,
 }
 
+impl SyntaxStatic for Element {
+    fn is_static(&self) -> bool {
+        self.attrs.iter().all(SyntaxStatic::is_static) && self.body.is_static()
+    }
+}
+
 impl Generate for Element {
     const CONTEXT: Context = Context::Element;
 
@@ -332,7 +376,7 @@ impl Generate for Element {
         }
 
         match &mut self.body {
-            ElementBody::Normal { children, .. } => {
+            ElementBody::Normal { children } => {
                 g.push_str(">");
 
                 let child_flavour = flavour.child_flavour(&self.name);
@@ -354,11 +398,17 @@ impl Generate for Element {
 }
 
 pub enum ElementBody {
-    Normal {
-        brace_token: Brace,
-        children: Nodes<ElementNode>,
-    },
+    Normal { children: Nodes<ElementNode> },
     Void,
+}
+
+impl SyntaxStatic for ElementBody {
+    fn is_static(&self) -> bool {
+        match self {
+            Self::Normal { children, .. } => children.is_static(),
+            Self::Void => true,
+        }
+    }
 }
 
 impl ElementBody {
@@ -374,6 +424,15 @@ pub enum Attribute {
         kind: AttributeKind,
     },
     Data(Data),
+}
+
+impl SyntaxStatic for Attribute {
+    fn is_static(&self) -> bool {
+        match self {
+            Self::Regular { kind, .. } => kind.is_static(),
+            Self::Data(data) => data.is_static(),
+        }
+    }
 }
 
 impl Attribute {
@@ -586,6 +645,23 @@ pub enum AttributeKind {
     Option(Toggle),
 }
 
+impl SyntaxStatic for AttributeKind {
+    fn is_static(&self) -> bool {
+        match self {
+            Self::Value {
+                value,
+                toggle: None,
+            } => value.is_static(),
+            Self::Empty(None) => true,
+            Self::Value {
+                toggle: Some(_), ..
+            }
+            | Self::Empty(Some(_))
+            | Self::Option(_) => false,
+        }
+    }
+}
+
 #[allow(clippy::large_enum_variant)]
 pub enum AttributeValueNode {
     Literal(Literal),
@@ -598,6 +674,16 @@ pub enum AttributeValueNode {
 impl Node for AttributeValueNode {
     fn is_control(&self) -> bool {
         matches!(self, Self::Control(_))
+    }
+}
+
+impl SyntaxStatic for AttributeValueNode {
+    fn is_static(&self) -> bool {
+        match self {
+            Self::Literal(_) => true,
+            Self::Group(group) => group.is_static(),
+            Self::Control(_) | Self::Expr(_) | Self::Ident(_) => false,
+        }
     }
 }
 
@@ -635,7 +721,9 @@ impl Generate for AttributeValueNode {
             Self::Group(group) => g.push(group),
             Self::Control(control) => g.push(control),
             Self::Expr(paren_expr) => g.push(paren_expr),
-            Self::Ident(ident) => g.push_expr(Paren::default(), Self::CONTEXT, ident),
+            Self::Ident(ident) => {
+                g.push_expr(Paren::default(), Self::CONTEXT, ident);
+            }
         }
     }
 }
@@ -757,6 +845,20 @@ pub enum DataContent {
     Empty,
     /// Fallback for parsing failures that allows rust-analyzer to emit better completions
     Recovered,
+}
+
+impl SyntaxStatic for DataContent {
+    fn is_static(&self) -> bool {
+        match self {
+            Self::Node(node) => node.is_static(),
+            Self::Empty => true,
+            Self::Signals(_)
+            | Self::Kv(_)
+            | Self::Computed(_)
+            | Self::Bind(_)
+            | Self::Recovered => false,
+        }
+    }
 }
 
 pub struct Data {
@@ -885,6 +987,12 @@ impl Parse for Data {
             content,
             recovery_error,
         })
+    }
+}
+
+impl SyntaxStatic for Data {
+    fn is_static(&self) -> bool {
+        self.recovery_error.is_none() && self.content.is_static()
     }
 }
 
@@ -1043,7 +1151,45 @@ impl Generate for Data {
 mod tests {
     use syn::parse_str;
 
-    use super::{Attribute, DataContent, DataName};
+    use super::{Attribute, DataContent, DataName, Document, SyntaxStatic};
+
+    #[test]
+    fn syntax_static_accepts_literal_markup() {
+        let doc = parse_str::<Document>(r#"div class="card" !ignore { "Hello" span { "world" } }"#)
+            .expect("expected document to parse");
+
+        assert!(doc.is_static());
+    }
+
+    #[test]
+    fn syntax_static_rejects_rust_expressions() {
+        let doc = parse_str::<Document>(r#"div { (name) }"#).expect("expected document to parse");
+
+        assert!(!doc.is_static());
+    }
+
+    #[test]
+    fn syntax_static_rejects_control_flow() {
+        let doc = parse_str::<Document>(r#"@if enabled { div { "yes" } }"#)
+            .expect("expected document to parse");
+
+        assert!(!doc.is_static());
+    }
+
+    #[test]
+    fn syntax_static_rejects_components() {
+        let doc = parse_str::<Document>(r#"Card { "Hello" }"#).expect("expected document to parse");
+
+        assert!(!doc.is_static());
+    }
+
+    #[test]
+    fn syntax_static_rejects_dynamic_attributes() {
+        let doc = parse_str::<Document>(r#"button disabled=[is_disabled] { "Save" }"#)
+            .expect("expected document to parse");
+
+        assert!(!doc.is_static());
+    }
 
     #[test]
     fn data_attribute_recovers_missing_name_without_placeholder() {

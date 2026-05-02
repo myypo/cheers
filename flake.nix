@@ -71,6 +71,7 @@
               cargo-machete
               cargo-nextest
               rust-analyzer
+              dioxus-cli
 
               cargo-cheers-dev
             ];
@@ -450,7 +451,7 @@
             src = ./.;
             cargoBuildFlags = [ "-p=cargo-cheers" ];
 
-            cargoHash = "sha256-EMaHz5C/W9p36Mdy8HkG/b9DXqAMweSUFtSe5fqcPyY=";
+            cargoHash = "sha256-1TXunVAIGz5q0iS8G5Vhe7Gq4t/oih4XThrB5gnUUAE=";
 
             doCheck = false;
           };

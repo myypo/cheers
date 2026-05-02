@@ -59,6 +59,7 @@ thirtyfour = { git = "https://github.com/vrtgs/thirtyfour", features = [
   "tokio-multi-threaded",
   "rustls-tls",
 ] }
+dioxus-devtools = { version = "0.7.6", default-features = false }
 
 # Bundler
 swc_common = { version = "17.0.1", features = ["tty-emitter"] }

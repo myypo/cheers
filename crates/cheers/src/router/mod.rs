@@ -4,7 +4,7 @@ pub use assets::{CSS_BUNDLER, SVG_SPRITE_BUNDLER};
 pub(crate) use assets::{css_url, js_url, svg_sprite_url};
 mod compression;
 #[cfg(debug_assertions)]
-mod live_reload;
+mod hot_reload;
 mod redirect_trailing_slash;
 
 use std::fmt::Display;
@@ -50,7 +50,7 @@ pub fn new<S: Clone + Send + Sync + 'static>(
     let router = assets_router(config.track.as_ref())?;
 
     #[cfg(debug_assertions)]
-    let router = router.merge(live_reload::router());
+    let router = router.merge(hot_reload::router());
     let router = Router::new()
         .nest("/cheers", router)
         .merge(actions_and_pages);

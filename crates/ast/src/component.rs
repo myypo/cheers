@@ -9,7 +9,7 @@ use syn::{
 };
 
 use super::{ElementBody, Generate, Generator, Literal, ParenExpr, ParenExprMode};
-use crate::{AttributeValueNode, Context};
+use crate::{AttributeValueNode, Context, SyntaxStatic};
 
 pub struct Component {
     pub name: Ident,
@@ -19,10 +19,16 @@ pub struct Component {
     pub body: ElementBody,
 }
 
+impl SyntaxStatic for Component {
+    fn is_static(&self) -> bool {
+        false
+    }
+}
+
 impl Component {
     fn children_lazy(&mut self, g: &mut Generator<'_>) -> Option<TokenStream> {
         match &mut self.body {
-            ElementBody::Normal { children, .. } => {
+            ElementBody::Normal { children } => {
                 let buffer_ident = Generator::buffer_ident();
 
                 let block = g.block_with(

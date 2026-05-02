@@ -1,14 +1,14 @@
 use std::{collections::BTreeMap, iter};
 
 use proc_macro2::{Ident, Span, TokenStream};
-use quote::{ToTokens, TokenStreamExt, format_ident, quote, quote_spanned};
+use quote::{ToTokens, format_ident, quote, quote_spanned};
 use syn::{
     Error, LitStr, braced,
     parse::Parse,
     token::{Brace, Paren},
 };
 
-use super::{AttributeValueNode, UnquotedName};
+use super::{AttributeValueNode, SyntaxStatic, UnquotedName};
 
 fn pinned_stream_tokens_expr(stream: &TokenStream) -> TokenStream {
     quote! {
@@ -16,18 +16,20 @@ fn pinned_stream_tokens_expr(stream: &TokenStream) -> TokenStream {
     }
 }
 
-pub fn lazy<T: Parse + Generate>(tokens: TokenStream) -> Result<TokenStream, Error> {
+pub fn lazy<T: Parse + Generate + SyntaxStatic>(tokens: TokenStream) -> Result<TokenStream, Error> {
     lazy_with_flavour::<T>(tokens, NodeFlavour::Html)
 }
 
-pub fn lazy_with_flavour<T: Parse + Generate>(
+pub fn lazy_with_flavour<T: Parse + Generate + SyntaxStatic>(
     tokens: TokenStream,
     flavour: NodeFlavour,
 ) -> Result<TokenStream, Error> {
     let mut borrow_state = BorrowState::new();
     let mut g = Generator::new_closure(T::CONTEXT, flavour, &mut borrow_state);
 
-    g.push(syn::parse2::<T>(tokens)?);
+    let mut input = syn::parse2::<T>(tokens)?;
+    let syntax_static = input.is_static();
+    g.push(&mut input);
 
     let block = g.finish();
     let borrow_captures = borrow_state.captures;
@@ -35,52 +37,67 @@ pub fn lazy_with_flavour<T: Parse + Generate>(
     let buffer_ident = Generator::buffer_ident();
 
     let marker_ident = T::CONTEXT.marker_type();
+    let lazy = if !syntax_static {
+        // Dynamic render bodies can contain arbitrary Rust expressions. Keep them as normal
+        // closures instead of guessing whether their paths capture caller locals.
+        quote! {
+            ::cheers::prelude::Lazy::<_, #marker_ident>::dangerously_create(
+                move |#buffer_ident: &mut ::cheers::prelude::Buffer<#marker_ident>| {
+                    ::cheers::__internal::subsecond::call(|| {
+                        #block
+                    })
+                }
+            )
+        }
+    } else {
+        // Syntactically static render bodies cannot reference caller locals. Coerce the generated
+        // closure into a real function pointer so Subsecond has a precise hot boundary.
+        quote! {
+            {
+                let __cheers_subsecond_hot_render: fn(&mut ::cheers::prelude::Buffer<#marker_ident>) = |#buffer_ident| {
+                    #block
+                };
 
-    let mut tokens = block
-        .id
-        .as_ref()
-        .map(|id| {
-            quote! { #id }
-        })
-        .unwrap_or_default();
-    if block.async_stmts.is_empty() {
-        tokens.append_all(quote! {
+                ::cheers::prelude::Lazy::<_, #marker_ident>::dangerously_create(
+                    move |#buffer_ident: &mut ::cheers::prelude::Buffer<#marker_ident>| {
+                        ::cheers::__internal::subsecond::hot_call(
+                            __cheers_subsecond_hot_render,
+                            (#buffer_ident,),
+                        );
+                    }
+                )
+            }
+        }
+    };
+
+    let rendered = if block.async_stmts.is_empty() {
+        quote! {
             {
                 use ::cheers::validation::attributes::*;
                 #(#borrow_captures)*
 
-                ::cheers::prelude::Lazy::<_, #marker_ident>::dangerously_create(
-                    move |#buffer_ident: &mut ::cheers::prelude::Buffer<#marker_ident>| {
-
-                        #block
-                    }
-                )
+                #lazy
             }
-        });
+        }
     } else {
         let streams = &block.async_stmts;
         let streams = streams.iter().map(pinned_stream_tokens_expr);
 
-        tokens.append_all(quote! {
+        quote! {
             {
                 use ::cheers::validation::attributes::*;
                 #(#borrow_captures)*
 
-                let lazy = ::cheers::prelude::Lazy::<_, #marker_ident>::dangerously_create(
-                    move |#buffer_ident: &mut ::cheers::prelude::Buffer<#marker_ident>| {
-
-                        #block
-                    }
-                );
+                let lazy = #lazy;
                 let stream = ::cheers::__internal::futures::stream::select_all([
                     #(#streams),*
                 ]);
                 ::cheers::prelude::AsyncLazy::__select_all(lazy, stream)
             }
-        });
+        }
     };
 
-    Ok(tokens)
+    Ok(rendered)
 }
 
 pub fn literal<T: Parse + Generate>(tokens: TokenStream) -> syn::Result<TokenStream> {
@@ -222,7 +239,7 @@ pub struct Generator<'a> {
     parts: Vec<Part>,
     checks: Checks,
     async_stmts: Vec<TokenStream>,
-    id: Option<TokenStream>,
+    collect_async_stmts_into_buffer: bool,
     context_override: Option<Context>,
     borrow_state: &'a mut BorrowState,
 }
@@ -263,7 +280,7 @@ impl<'a> Generator<'a> {
             parts: Vec::new(),
             checks: Checks::new(),
             async_stmts: Vec::new(),
-            id: None,
+            collect_async_stmts_into_buffer: false,
             context_override: None,
             borrow_state,
         }
@@ -283,7 +300,7 @@ impl<'a> Generator<'a> {
             parts: Vec::new(),
             checks: Checks::new(),
             async_stmts: Vec::new(),
-            id: None,
+            collect_async_stmts_into_buffer: self.collect_async_stmts_into_buffer,
             context_override: self.context_override,
             borrow_state: &mut *self.borrow_state,
         }
@@ -363,7 +380,6 @@ impl<'a> Generator<'a> {
                 #render
             },
             async_stmts: self.async_stmts,
-            id: self.id,
         }
     }
 
@@ -383,21 +399,20 @@ impl<'a> Generator<'a> {
         f: impl for<'b> FnOnce(&mut Generator<'b>),
         append_async: bool,
     ) -> AnyBlock {
-        let (mut child_checks, mut child_async_stmts, block) = {
+        let (mut child_checks, mut block) = {
             let mut g = self.new_child_with_brace(brace_token, flavour, true);
 
             f(&mut g);
 
             let child_checks = std::mem::replace(&mut g.checks, Checks::new());
-            let child_async_stmts = std::mem::take(&mut g.async_stmts);
             let block = g.finish();
 
-            (child_checks, child_async_stmts, block)
+            (child_checks, block)
         };
 
         self.checks.append(&mut child_checks);
         if append_async {
-            self.async_stmts.append(&mut child_async_stmts);
+            self.async_stmts.append(&mut block.async_stmts);
         }
 
         block
@@ -529,7 +544,24 @@ impl<'a> Generator<'a> {
     }
 
     pub fn push_async_stmt(&mut self, async_stmt: impl ToTokens) {
-        self.async_stmts.push(async_stmt.to_token_stream());
+        let async_stmt = async_stmt.to_token_stream();
+        if self.collect_async_stmts_into_buffer {
+            let buffer_ident = Self::buffer_ident();
+            let async_stmt = pinned_stream_tokens_expr(&async_stmt);
+            self.push_stmt(quote! {
+                ::cheers::__internal::async_streams::push(&mut *#buffer_ident, #async_stmt);
+            });
+        } else {
+            self.async_stmts.push(async_stmt);
+        }
+    }
+
+    pub fn with_async_stream_collection<R>(&mut self, f: impl FnOnce(&mut Self) -> R) -> R {
+        let prev = self.collect_async_stmts_into_buffer;
+        self.collect_async_stmts_into_buffer = true;
+        let result = f(self);
+        self.collect_async_stmts_into_buffer = prev;
+        result
     }
 
     pub fn push_stmt(&mut self, stmt: impl ToTokens) {
@@ -796,7 +828,6 @@ pub struct AnyBlock {
     pub brace_token: Brace,
     pub stmts: TokenStream,
     pub async_stmts: Vec<TokenStream>,
-    pub id: Option<TokenStream>,
 }
 
 impl Parse for AnyBlock {
@@ -807,7 +838,6 @@ impl Parse for AnyBlock {
             brace_token: braced!(content in input),
             stmts: content.parse()?,
             async_stmts: Vec::new(),
-            id: None,
         })
     }
 }

@@ -38,6 +38,7 @@ inventory.workspace = true
 async-compression.workspace = true
 tokio-util.workspace = true
 thirtyfour = { workspace = true, optional = true }
+dioxus-devtools = { workspace = true, optional = true }
 
 [dev-dependencies]
 trybuild = "1"
@@ -45,6 +46,7 @@ trybuild = "1"
 [features]
 test = ["dep:thirtyfour"]
 mathml = []
+subsecond = ["dep:dioxus-devtools"]
 
 [lints]
 workspace = true

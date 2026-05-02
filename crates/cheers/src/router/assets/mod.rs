@@ -37,11 +37,20 @@ fn assets_headers(content_type: &'static str) -> HeaderMap {
 
 const DATASTAR_ENTRY_MODULE: &str = "cheers/datastar-entry";
 const RUNTIME_ENTRY_MODULE: &str = "cheers/runtime-entry";
+const SSR_STREAM_MODULE: &str = "cheers/ssr-stream";
+const SSR_STREAM_SUBSECOND_MODULE: &str = "cheers/ssr-stream-subsecond";
 const TRACK_CONFIG_MODULE: &str = "cheers/track-config";
 const TRACK_PLUGIN_MODULE: &str = "cheers/track-plugin";
 
+fn include_subsecond_stream_runtime() -> bool {
+    crate::subsecond::enabled()
+}
+
 fn runtime_entry(track: bool) -> String {
-    let mut entry = String::from("import './datastar-entry';\n");
+    let mut entry = String::from("import './datastar-entry';\nimport './ssr-stream';\n");
+    if include_subsecond_stream_runtime() {
+        entry.push_str("import './ssr-stream-subsecond';\n");
+    }
     if track {
         entry.push_str("import './track-plugin';\n");
     }
@@ -53,7 +62,15 @@ fn datastar_modules(track: Option<&TrackConfig>) -> Result<Vec<bundle::VirtualMo
     let mut modules = vec![
         bundle::VirtualModule::new(RUNTIME_ENTRY_MODULE, runtime_entry(track.is_some())),
         bundle::VirtualModule::new(DATASTAR_ENTRY_MODULE, include_str!("datastar-entry.ts")),
+        bundle::VirtualModule::new(SSR_STREAM_MODULE, include_str!("ssr-stream.ts")),
     ];
+
+    if include_subsecond_stream_runtime() {
+        modules.push(bundle::VirtualModule::new(
+            SSR_STREAM_SUBSECOND_MODULE,
+            include_str!("ssr-stream-subsecond.ts"),
+        ));
+    }
 
     if let Some(track) = track {
         let track_config = track
@@ -561,6 +578,22 @@ mod tests {
             .expect("runtime entry module should be present");
 
         assert!(runtime_entry.content.contains("./datastar-entry"));
+        assert!(runtime_entry.content.contains("./ssr-stream"));
+        assert!(
+            modules
+                .iter()
+                .any(|module| module.specifier == SSR_STREAM_MODULE)
+        );
+        assert_eq!(
+            runtime_entry.content.contains("./ssr-stream-subsecond"),
+            include_subsecond_stream_runtime()
+        );
+        assert_eq!(
+            modules
+                .iter()
+                .any(|module| module.specifier == SSR_STREAM_SUBSECOND_MODULE),
+            include_subsecond_stream_runtime()
+        );
         assert!(!runtime_entry.content.contains("./track-plugin"));
         assert!(
             modules
@@ -588,6 +621,7 @@ mod tests {
             .expect("track config module should be present");
 
         assert!(runtime_entry.content.contains("./track-plugin"));
+        assert!(runtime_entry.content.contains("./ssr-stream"));
         assert!(
             modules
                 .iter()

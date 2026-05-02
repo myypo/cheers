@@ -17,6 +17,8 @@ struct Ctx {
     stocks_tx: tokio::sync::broadcast::Sender<(String, String, u32)>,
 }
 
+type StockRows = Vec<(String, String, u32)>;
+
 #[derive(Cheers)]
 struct Base<T> {
     children: T,
@@ -61,9 +63,16 @@ impl<'a> Render for Stock<'a> {
         html! {
             section id=id {
                 h3 { (SvgSymbol("icon-stock")) " " (self.name) }
-                button type="button" aria:label={ "Increase " (self.name) " stock price by $1.00" } !on:click(increment_action) {
+                button
+                    type="button"
+                    aria:label={ "Increase " (self.name) " stock price by $1.00" }
+                    !on:click(increment_action)
+                {
                     "Price: "
-                    output aria:label={ (self.name) " current price" } !signals(signal_price_cents: self.price_cents) { (dollar_price) }
+                    output
+                        aria:label={ (self.name) " current price" }
+                        !signals(signal_price_cents: self.price_cents)
+                    { (dollar_price) }
                     " (+$1.00)"
                 }
             }
@@ -75,7 +84,12 @@ impl<'a> Render for Stock<'a> {
 async fn home_page(ctx: State<Ctx>) -> AsyncLazy<impl Render> {
     let get_stocks = async move || {
         tokio::time::sleep(Duration::from_millis(500)).await;
-        ctx.stocks.lock().expect("lock")
+        ctx.stocks
+            .lock()
+            .expect("lock")
+            .iter()
+            .map(|(id, (name, price_cents))| (id.clone(), name.clone(), *price_cents))
+            .collect::<StockRows>()
     };
 
     html! {
@@ -84,14 +98,17 @@ async fn home_page(ctx: State<Ctx>) -> AsyncLazy<impl Render> {
                 @async {
                     @let stocks = get_stocks().await;
                     h1 { "Dwarven Stock Exchange" }
-                    @for (id, (name, price_cents)) in stocks.iter() {
-                        Stock id name price_cents=(*price_cents);
+                    @for (id, name, price_cents) in stocks.iter() {
+                        Stock id=(id.as_str()) name=(name.as_str()) price_cents=(*price_cents);
                     }
                     h2 { "Total Value" }
                     p   !text({
                             "'$' + ("
                             0
-                            @for (id, _) in stocks.iter() { "+" (Stock::signal_price_cents(id)) }
+                            @for (id, _, _) in stocks.iter() {
+                                "+"
+                                (Stock::signal_price_cents(id.as_str()))
+                            }
                             ") / 100"
                         }) {}
                 } @else {

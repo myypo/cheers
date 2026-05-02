@@ -4,6 +4,7 @@ extern crate self as cheers;
 #[doc = include_str!("../../../README.md")]
 mod readme_doctests {}
 
+mod async_stream;
 pub mod components;
 mod context;
 mod events;
@@ -12,6 +13,7 @@ mod render;
 mod response;
 pub mod router;
 mod signal_path;
+pub mod subsecond;
 #[cfg(feature = "test")]
 pub mod test;
 mod test_utils;
@@ -31,6 +33,58 @@ pub mod __internal {
     pub use serde;
 
     pub use crate::{render::__render_action_call, signal_path::__push_signal_path_segment};
+
+    pub mod async_streams {
+        pub use crate::async_stream::{AsyncStream, AsyncStreamCollectionGuard, enter, push};
+    }
+
+    pub mod subsecond {
+        pub use crate::subsecond::{call, hot_call, hot_call_with_arg};
+    }
+
+    pub mod async_islands {
+        use std::{
+            collections::HashMap,
+            sync::{Mutex, OnceLock},
+        };
+
+        type Renderer = Box<dyn FnMut() -> String + Send>;
+
+        static ASYNC_ISLANDS: OnceLock<Mutex<HashMap<String, Renderer>>> = OnceLock::new();
+
+        fn async_islands() -> &'static Mutex<HashMap<String, Renderer>> {
+            ASYNC_ISLANDS.get_or_init(|| Mutex::new(HashMap::new()))
+        }
+
+        #[inline]
+        pub const fn enabled() -> bool {
+            crate::subsecond::enabled()
+        }
+
+        pub fn register(key: impl Into<String>, renderer: impl FnMut() -> String + Send + 'static) {
+            if !enabled() {
+                return;
+            }
+
+            let mut islands = async_islands().lock().expect("async island cache poisoned");
+            islands.insert(key.into(), Box::new(renderer));
+        }
+
+        pub fn render(keys: &[String]) -> Vec<(String, String)> {
+            if !enabled() {
+                return Vec::new();
+            }
+
+            let mut islands = async_islands().lock().expect("async island cache poisoned");
+            keys.iter()
+                .filter_map(|key| {
+                    islands
+                        .get_mut(key)
+                        .map(|renderer| (key.clone(), renderer()))
+                })
+                .collect()
+        }
+    }
 
     pub trait Ids {
         type Fields;

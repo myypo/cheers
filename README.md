@@ -21,7 +21,7 @@ It uses [Maud](https://github.com/lambda-fairy/maud)-like macros for HTML templa
 The repository currently contains:
 
 - `cheers` - public library API
-- `cargo-cheers` - Cargo subcommand, currently only includes `cargo cheers fmt` for formatting macros
+- `cargo-cheers` - Cargo subcommand with `cargo cheers fmt` and `cargo cheers subsecond` hot reload support
 - Other crates in the repo are for internal-use only
 
 ## Minimal app

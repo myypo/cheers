@@ -1,9 +1,11 @@
 mod fmt;
+mod subsecond;
 
 use anyhow::Result;
 use clap::{Parser, Subcommand};
 
 use crate::fmt::FmtArgs;
+use crate::subsecond::SubsecondArgs;
 
 #[derive(Parser)]
 #[command(version, about, long_about = None, arg_required_else_help = true)]
@@ -16,6 +18,8 @@ struct Cli {
 enum Commands {
     /// Format cheers macros in Rust files
     Fmt(FmtArgs),
+    /// Run a Cheers app through Subsecond hot-patching and morph hot reloads
+    Subsecond(SubsecondArgs),
 }
 
 fn main() -> Result<()> {
@@ -30,5 +34,6 @@ fn main() -> Result<()> {
 
     match cli.command {
         Commands::Fmt(args) => fmt::run(args),
+        Commands::Subsecond(args) => subsecond::run(args),
     }
 }

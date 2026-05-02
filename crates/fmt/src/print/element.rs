@@ -287,10 +287,7 @@ impl<'a, 'b> Printer<'a, 'b> {
 
     pub fn element_body_block_will_collapse(&self, body: &ElementBody) -> bool {
         match &body {
-            ElementBody::Normal {
-                brace_token: _,
-                children,
-            } => {
+            ElementBody::Normal { children } => {
                 let mut total_len = 0usize;
                 let mut count = 0usize;
                 for node in children.0.iter() {
@@ -335,10 +332,7 @@ impl<'a, 'b> Printer<'a, 'b> {
             ElementBody::Void => {
                 self.write(";");
             }
-            ElementBody::Normal {
-                brace_token: _,
-                children,
-            } => {
+            ElementBody::Normal { children } => {
                 let child_count = children.0.len();
 
                 if child_count == 0 {

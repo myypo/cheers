@@ -97,11 +97,9 @@ impl Parse for ElementBody {
 
         if lookahead.peek(Brace) {
             let content;
-            let brace_token = braced!(content in input);
-            let children = content.parse()?;
+            braced!(content in input);
             Ok(Self::Normal {
-                brace_token,
-                children,
+                children: content.parse()?,
             })
         } else if lookahead.peek(Token![;]) {
             input.parse::<Token![;]>().map(|_| Self::Void)

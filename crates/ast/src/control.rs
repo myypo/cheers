@@ -1,7 +1,7 @@
 use std::hash::{Hash, Hasher};
 
 use base64::Engine;
-use proc_macro2::{Span, TokenStream};
+use proc_macro2::{Ident, Span, TokenStream, TokenTree};
 use quote::{ToTokens, quote};
 use rustc_hash::FxHasher;
 use syn::{
@@ -13,8 +13,290 @@ use syn::{
 use super::{AnyBlock, Generate, Generator, Node, Nodes};
 use crate::{
     Attribute, AttributeKind, AttributeName, AttributeValueNode, Context, ElementNode,
-    basics::Literal,
+    SyntaxStatic, basics::Literal,
 };
+
+fn tokens_contain_ident(tokens: &TokenStream, needle: &str) -> bool {
+    tokens.clone().into_iter().any(|token| match token {
+        TokenTree::Ident(ident) => ident == needle,
+        TokenTree::Group(group) => tokens_contain_ident(&group.stream(), needle),
+        TokenTree::Punct(_) | TokenTree::Literal(_) => false,
+    })
+}
+
+fn tokens_contain_any_ident(tokens: &TokenStream, needles: &[Ident]) -> bool {
+    tokens.clone().into_iter().any(|token| match token {
+        TokenTree::Ident(ident) => needles.iter().any(|needle| needle == &ident),
+        TokenTree::Group(group) => tokens_contain_any_ident(&group.stream(), needles),
+        TokenTree::Punct(_) | TokenTree::Literal(_) => false,
+    })
+}
+
+fn collect_pat_bindings(pat: &Pat, bindings: &mut Vec<(TokenStream, Ident)>) {
+    match pat {
+        Pat::Ident(pat) => {
+            let mut binding = TokenStream::new();
+            pat.mutability.to_tokens(&mut binding);
+            pat.ident.to_tokens(&mut binding);
+
+            if let Some(existing) = bindings.iter_mut().find(|(_, ident)| ident == &pat.ident) {
+                *existing = (binding, pat.ident.clone());
+            } else {
+                bindings.push((binding, pat.ident.clone()));
+            }
+        }
+        Pat::Or(pat) => {
+            for case in &pat.cases {
+                collect_pat_bindings(case, bindings);
+            }
+        }
+        Pat::Paren(pat) => collect_pat_bindings(&pat.pat, bindings),
+        Pat::Reference(pat) => collect_pat_bindings(&pat.pat, bindings),
+        Pat::Slice(pat) => {
+            for elem in &pat.elems {
+                collect_pat_bindings(elem, bindings);
+            }
+        }
+        Pat::Struct(pat) => {
+            for field in &pat.fields {
+                collect_pat_bindings(&field.pat, bindings);
+            }
+        }
+        Pat::Tuple(pat) => {
+            for elem in &pat.elems {
+                collect_pat_bindings(elem, bindings);
+            }
+        }
+        Pat::TupleStruct(pat) => {
+            for elem in &pat.elems {
+                collect_pat_bindings(elem, bindings);
+            }
+        }
+        Pat::Type(pat) => collect_pat_bindings(&pat.pat, bindings),
+        Pat::Const(_)
+        | Pat::Lit(_)
+        | Pat::Macro(_)
+        | Pat::Path(_)
+        | Pat::Range(_)
+        | Pat::Rest(_)
+        | Pat::Verbatim(_)
+        | Pat::Wild(_) => {}
+        _ => {}
+    }
+}
+
+fn leading_let_bindings(
+    nodes: &[ElementNode],
+    leading_let_count: usize,
+) -> Vec<(TokenStream, Ident)> {
+    let mut bindings = Vec::new();
+
+    for node in nodes.iter().take(leading_let_count) {
+        if let ElementNode::Control(Control {
+            kind: ControlKind::Let(Let(local)),
+            ..
+        }) = node
+        {
+            collect_pat_bindings(&local.pat, &mut bindings);
+        }
+    }
+
+    bindings
+}
+
+fn leading_lets_can_be_moved_into_hot_args(
+    nodes: &[ElementNode],
+    leading_let_count: usize,
+) -> bool {
+    let mut prior_bindings = Vec::new();
+
+    for node in nodes.iter().take(leading_let_count) {
+        let ElementNode::Control(Control {
+            kind: ControlKind::Let(Let(local)),
+            ..
+        }) = node
+        else {
+            continue;
+        };
+
+        let Some(init) = &local.init else {
+            return false;
+        };
+
+        if tokens_contain_any_ident(&init.expr.to_token_stream(), &prior_bindings) {
+            return false;
+        }
+
+        let mut bindings = Vec::new();
+        collect_pat_bindings(&local.pat, &mut bindings);
+        prior_bindings.extend(bindings.into_iter().map(|(_, ident)| ident));
+    }
+
+    true
+}
+
+fn source_offset(source: &str, line: usize, column: usize) -> Option<usize> {
+    let mut offset = 0;
+    for (index, segment) in source.split_inclusive('\n').enumerate() {
+        if index + 1 == line {
+            let mut column_offset = column.min(segment.len());
+            while column_offset > 0 && !segment.is_char_boundary(column_offset) {
+                column_offset -= 1;
+            }
+            return Some(offset + column_offset);
+        }
+        offset += segment.len();
+    }
+
+    None
+}
+
+fn skip_rust_block_comment(source: &str, mut offset: usize) -> Option<usize> {
+    let bytes = source.as_bytes();
+    let mut depth = 0usize;
+
+    while offset + 1 < bytes.len() {
+        if bytes[offset] == b'/' && bytes[offset + 1] == b'*' {
+            depth += 1;
+            offset += 2;
+        } else if bytes[offset] == b'*' && bytes[offset + 1] == b'/' {
+            depth = depth.checked_sub(1)?;
+            offset += 2;
+            if depth == 0 {
+                return Some(offset);
+            }
+        } else {
+            offset += 1;
+        }
+    }
+
+    None
+}
+
+fn skip_rust_trivia(source: &str, mut offset: usize) -> usize {
+    loop {
+        let rest = &source[offset..];
+        if let Some(ch) = rest.chars().next()
+            && ch.is_whitespace()
+        {
+            offset += ch.len_utf8();
+            continue;
+        }
+
+        if rest.starts_with("//") {
+            offset += rest.find('\n').map_or(rest.len(), |newline| newline + 1);
+            continue;
+        }
+
+        if rest.starts_with("/*") {
+            offset = skip_rust_block_comment(source, offset).unwrap_or(source.len());
+            continue;
+        }
+
+        return offset;
+    }
+}
+
+fn is_ident_continue(ch: char) -> bool {
+    ch == '_' || ch.is_alphanumeric()
+}
+
+fn starts_with_async_keyword(source: &str, offset: usize) -> bool {
+    let Some(rest) = source.get(offset..) else {
+        return false;
+    };
+    let Some(after_async) = rest.strip_prefix("async") else {
+        return false;
+    };
+
+    after_async
+        .chars()
+        .next()
+        .is_none_or(|ch| !is_ident_continue(ch))
+}
+
+fn async_marker_count(source: &str) -> usize {
+    let mut count = 0;
+    let mut offset = 0;
+
+    while let Some(at_offset) = source[offset..].find('@').map(|rel| offset + rel) {
+        let after_at = skip_rust_trivia(source, at_offset + '@'.len_utf8());
+        if starts_with_async_keyword(source, after_at) {
+            count += 1;
+        }
+        offset = at_offset + '@'.len_utf8();
+    }
+
+    count
+}
+
+fn async_source_ordinal(file: &str, line: usize, column: usize) -> Option<usize> {
+    let source = std::fs::read_to_string(file).ok()?;
+    let offset = source_offset(&source, line, column)?;
+    Some(async_marker_count(&source[..offset]))
+}
+
+fn element_body_contains_async(body: &crate::ElementBody) -> bool {
+    match body {
+        crate::ElementBody::Normal { children } => element_nodes_contain_async(&children.0),
+        crate::ElementBody::Void => false,
+    }
+}
+
+fn element_nodes_contain_async(nodes: &[ElementNode]) -> bool {
+    nodes.iter().any(element_node_contains_async)
+}
+
+fn element_nodes_are_static(nodes: &[ElementNode]) -> bool {
+    nodes.iter().all(SyntaxStatic::is_static)
+}
+
+fn element_node_contains_async(node: &ElementNode) -> bool {
+    match node {
+        ElementNode::Element(element) => element_body_contains_async(&element.body),
+        ElementNode::Component(component) => element_body_contains_async(&component.body),
+        ElementNode::Control(Control { kind, .. }) => element_control_contains_async(kind),
+        ElementNode::Group(group) => element_nodes_contain_async(&group.0.0),
+        ElementNode::Literal(_) | ElementNode::Expr(_) => false,
+    }
+}
+
+fn element_control_contains_async(kind: &ControlKind<ElementNode>) -> bool {
+    match kind {
+        ControlKind::Let(_) => false,
+        ControlKind::If(if_) => {
+            control_block_contains_async(&if_.then_block)
+                || if_
+                    .else_branch
+                    .as_ref()
+                    .is_some_and(|(_, branch)| control_if_or_block_contains_async(branch))
+        }
+        ControlKind::For(for_) => control_block_contains_async(&for_.block),
+        ControlKind::While(while_) => control_block_contains_async(&while_.block),
+        ControlKind::Match(match_) => match_.arms.iter().any(|arm| match &arm.body {
+            MatchNodeArmBody::Block(block) => control_block_contains_async(block),
+            MatchNodeArmBody::Node(node) => element_node_contains_async(node),
+        }),
+        ControlKind::Async(_) => true,
+    }
+}
+
+fn control_block_contains_async(block: &ControlBlock<ElementNode>) -> bool {
+    element_nodes_contain_async(&block.nodes.0)
+}
+
+fn control_if_or_block_contains_async(branch: &ControlIfOrBlock<ElementNode>) -> bool {
+    match branch {
+        ControlIfOrBlock::If(if_) => {
+            control_block_contains_async(&if_.then_block)
+                || if_
+                    .else_branch
+                    .as_ref()
+                    .is_some_and(|(_, branch)| control_if_or_block_contains_async(branch))
+        }
+        ControlIfOrBlock::Block(block) => control_block_contains_async(block),
+    }
+}
 
 #[allow(clippy::large_enum_variant)]
 pub enum ControlKind<N: Node> {
@@ -29,6 +311,12 @@ pub enum ControlKind<N: Node> {
 pub struct Control<N: Node> {
     pub at_token: Token![@],
     pub kind: ControlKind<N>,
+}
+
+impl<N: Node> SyntaxStatic for Control<N> {
+    fn is_static(&self) -> bool {
+        false
+    }
 }
 
 impl<N: Node + Parse> Parse for Control<N> {
@@ -367,7 +655,6 @@ impl<N: Node + Parse> Parse for MatchNodeArmBody<N> {
 pub struct Async {
     pub async_token: Token![async],
     pub async_block: ControlBlock<ElementNode>,
-    pub else_token: Token![else],
     pub else_block: ControlBlock<ElementNode>,
     else_block_first_elem_idx: usize,
 }
@@ -394,7 +681,6 @@ impl Parse for Async {
         Ok(Self {
             async_token,
             async_block,
-            else_token,
             else_block,
             else_block_first_elem_idx,
         })
@@ -409,9 +695,8 @@ impl Async {
     ) -> TokenStream {
         let marker_ident = ElementNode::CONTEXT.marker_type();
         let buffer_ident = Generator::buffer_ident();
-
         let template_start = format!(r#"<template data-ssr="{key}-t">"#);
-        let script =
+        let stream_script =
             format!(r#"</template><script data-ssr="{key}-s">__ssrStream('{key}')</script>"#);
 
         quote! {
@@ -422,7 +707,143 @@ impl Async {
                 let #buffer_ident = &mut buffer;
                 #content_code
                 // XSS SAFETY: the key is computed by us
-                buffer.dangerously_get_string().push_str(#script);
+                buffer.dangerously_get_string().push_str(#stream_script);
+
+                ::cheers::Raw::<_, #marker_ident>::dangerously_create(
+                    buffer.rendered().into_inner()
+                ).render()
+            })
+        }
+    }
+
+    fn stream_with_hot_render_call_tokens_expr(
+        async_token: Token![async],
+        load_code: &TokenStream,
+        render_code: &TokenStream,
+        leading_bindings: &[(TokenStream, Ident)],
+        key: &str,
+    ) -> TokenStream {
+        let marker_ident = ElementNode::CONTEXT.marker_type();
+        let buffer_ident = Generator::buffer_ident();
+        let template_start = format!(r#"<template data-ssr="{key}-t">"#);
+        let stream_script =
+            format!(r#"</template><script data-ssr="{key}-s">__ssrStream('{key}')</script>"#);
+        let binding_params = leading_bindings.iter().map(|(param, _)| param);
+        let binding_args = leading_bindings.iter().map(|(_, arg)| arg);
+
+        quote! {
+            ::cheers::__internal::futures::stream::once(#async_token move {
+                #load_code
+
+                let mut buffer = ::cheers::prelude::Buffer::<#marker_ident>::new();
+                // XSS SAFETY: the key is computed by us
+                buffer.dangerously_get_string().push_str(#template_start);
+                let #buffer_ident = &mut buffer;
+                ::cheers::__internal::subsecond::hot_call_with_arg(
+                    |(#buffer_ident, #(#binding_params),*)| {
+                        use ::cheers::validation::attributes::*;
+                        #render_code
+                    },
+                    (#buffer_ident, #(#binding_args),*),
+                );
+                // XSS SAFETY: the key is computed by us
+                buffer.dangerously_get_string().push_str(#stream_script);
+
+                ::cheers::Raw::<_, #marker_ident>::dangerously_create(
+                    buffer.rendered().into_inner()
+                ).render()
+            })
+        }
+    }
+
+    fn stream_with_nested_tokens_expr(
+        async_token: Token![async],
+        content_code: &TokenStream,
+        key: &str,
+    ) -> TokenStream {
+        let marker_ident = ElementNode::CONTEXT.marker_type();
+        let buffer_ident = Generator::buffer_ident();
+        let template_start = format!(r#"<template data-ssr="{key}-t">"#);
+        let stream_script =
+            format!(r#"</template><script data-ssr="{key}-s">__ssrStream('{key}')</script>"#);
+
+        quote! {
+            ::cheers::__internal::futures::StreamExt::flat_map(
+                ::cheers::__internal::futures::stream::once(#async_token move {
+                    let mut buffer = ::std::boxed::Box::new(
+                        ::cheers::prelude::Buffer::<#marker_ident>::new()
+                    );
+                    let __cheers_async_stream_collection =
+                        ::cheers::__internal::async_streams::enter(&mut *buffer);
+                    // XSS SAFETY: the key is computed by us
+                    buffer.dangerously_get_string().push_str(#template_start);
+                    let #buffer_ident = &mut *buffer;
+                    #content_code
+                    // XSS SAFETY: the key is computed by us
+                    buffer.dangerously_get_string().push_str(#stream_script);
+
+                    let __cheers_nested_streams = __cheers_async_stream_collection.finish();
+                    let buffer = *buffer;
+                    let __cheers_parent_rendered = ::cheers::Raw::<_, #marker_ident>::dangerously_create(
+                        buffer.rendered().into_inner()
+                    ).render();
+
+                    (__cheers_parent_rendered, __cheers_nested_streams)
+                }),
+                |(__cheers_parent_rendered, __cheers_nested_streams)| {
+                    ::cheers::__internal::futures::StreamExt::chain(
+                        ::cheers::__internal::futures::stream::once(async move {
+                            __cheers_parent_rendered
+                        }),
+                        ::cheers::__internal::futures::stream::select_all(
+                            __cheers_nested_streams
+                        ),
+                    )
+                },
+            )
+        }
+    }
+
+    fn hot_island_stream_tokens_expr(
+        async_token: Token![async],
+        load_code: &TokenStream,
+        render_code: &TokenStream,
+        key: &str,
+    ) -> TokenStream {
+        let marker_ident = ElementNode::CONTEXT.marker_type();
+        let buffer_ident = Generator::buffer_ident();
+        let template_start = format!(r#"<template data-ssr="{key}-t">"#);
+        let stream_script =
+            format!(r#"</template><script data-ssr="{key}-s">__ssrStream('{key}')</script>"#);
+
+        quote! {
+            ::cheers::__internal::futures::stream::once(#async_token move {
+                #load_code
+
+                let __cheers_async_island_render_fn: fn() -> ::std::string::String = || {
+                    let mut buffer = ::cheers::prelude::Buffer::<#marker_ident>::new();
+                    let #buffer_ident = &mut buffer;
+                    use ::cheers::validation::attributes::*;
+                    #render_code
+                    buffer.rendered().into_inner()
+                };
+                let mut __cheers_async_island_render = move || {
+                    ::cheers::__internal::subsecond::call(__cheers_async_island_render_fn)
+                };
+
+                let __cheers_async_island_html = __cheers_async_island_render();
+                ::cheers::__internal::async_islands::register(
+                    #key,
+                    __cheers_async_island_render,
+                );
+
+                let mut buffer = ::cheers::prelude::Buffer::<#marker_ident>::new();
+                // XSS SAFETY: the key is computed by us
+                buffer.dangerously_get_string().push_str(#template_start);
+                // XSS SAFETY: the async-island render body is generated by Cheers' renderer.
+                buffer.dangerously_get_string().push_str(&__cheers_async_island_html);
+                // XSS SAFETY: the key is computed by us
+                buffer.dangerously_get_string().push_str(#stream_script);
 
                 ::cheers::Raw::<_, #marker_ident>::dangerously_create(
                     buffer.rendered().into_inner()
@@ -435,12 +856,21 @@ impl Async {
         let key = {
             let span = self.async_token.span;
             let file = span.file();
-            let line = span.start().line;
-            let column = span.start().column;
+            let start = span.start();
+            let line = start.line;
+            let column = start.column;
 
             let mut hasher = FxHasher::default();
             file.hash(&mut hasher);
-            line.hash(&mut hasher);
+            // Keep the browser-side streaming key stable across edits that only move this
+            // `@async` block up or down. Subsecond can temporarily serve a mix of old and new
+            // hot-patched functions; if the fallback anchor and the async stream chunk disagree
+            // because a line above the block was deleted, the page remains stuck on the fallback.
+            // Use the block's source-order ordinal rather than its absolute line number; fall back
+            // to the line only when the source file cannot be read by the proc macro host.
+            async_source_ordinal(&file, line, column)
+                .unwrap_or(line)
+                .hash(&mut hasher);
             column.hash(&mut hasher);
             let hash64 = hasher.finish();
             let hash32 = (hash64 as u32) ^ ((hash64 >> 32) as u32);
@@ -475,48 +905,234 @@ impl Generate for Async {
     const CONTEXT: Context = ElementNode::CONTEXT;
 
     fn generate(&mut self, g: &mut Generator<'_>) {
-        let key = self.add_data_ssr_key();
+        let source_key = self.add_data_ssr_key();
+        let leading_let_count = self
+            .async_block
+            .nodes
+            .0
+            .iter()
+            .take_while(|node| {
+                matches!(
+                    node,
+                    ElementNode::Control(Control {
+                        kind: ControlKind::Let(_),
+                        ..
+                    })
+                )
+            })
+            .count();
+        let render_nodes = &self.async_block.nodes.0[leading_let_count..];
+        let has_nested_async = element_nodes_contain_async(render_nodes);
+        let render_is_static = element_nodes_are_static(render_nodes);
+        let leading_bindings = leading_let_bindings(&self.async_block.nodes.0, leading_let_count);
+        let can_split_leading_lets = leading_let_count > 0 && !has_nested_async;
 
         let async_token = self.async_token;
-        let else_token = self.else_token;
         let else_block = self.else_block.block(g);
+        let buffer_ident = Generator::buffer_ident();
+        let async_root_start =
+            format!(r#"<div data-cheers-async-root="{source_key}" data-ssr="{source_key}">"#);
+        let else_block = quote! {
+            if ::cheers::__internal::async_islands::enabled() {
+                // XSS SAFETY: the key is computed by us
+                #buffer_ident.dangerously_get_string().push_str(#async_root_start);
+                #else_block
+                // XSS SAFETY: static wrapper markup
+                #buffer_ident.dangerously_get_string().push_str("</div>");
+            } else {
+                #else_block
+            }
+        };
 
-        let async_block = g.block_with(
-            self.async_block.brace_token,
-            |g| {
-                g.push(&mut self.async_block.nodes);
-            },
-            false,
-        );
+        let async_block = if has_nested_async {
+            g.with_async_stream_collection(|g| {
+                g.block_with(
+                    self.async_block.brace_token,
+                    |g| {
+                        g.push(&mut self.async_block.nodes);
+                    },
+                    false,
+                )
+            })
+        } else if can_split_leading_lets {
+            g.block_with(
+                self.async_block.brace_token,
+                |g| {
+                    for node in self.async_block.nodes.0.iter_mut().skip(leading_let_count) {
+                        g.push(node);
+                    }
+                },
+                false,
+            )
+        } else {
+            g.block_with(
+                self.async_block.brace_token,
+                |g| {
+                    g.push(&mut self.async_block.nodes);
+                },
+                false,
+            )
+        };
         let content_code = &async_block.stmts;
-        let nested_async_stmts = &async_block.async_stmts;
+        debug_assert!(
+            async_block.async_stmts.is_empty(),
+            "nested @async streams should be emitted through the buffer-scoped collector"
+        );
 
-        let else_filler = quote! { if true {} #else_token {} };
+        let load_code = if can_split_leading_lets {
+            self.async_block
+                .nodes
+                .0
+                .iter()
+                .take(leading_let_count)
+                .map(|node| match node {
+                    ElementNode::Control(Control {
+                        kind: ControlKind::Let(Let(local)),
+                        ..
+                    }) => {
+                        quote!(#local;)
+                    }
+                    _ => TokenStream::new(),
+                })
+                .collect::<TokenStream>()
+        } else {
+            TokenStream::new()
+        };
 
-        let async_stream = if nested_async_stmts.is_empty() {
-            let stream = Self::stream_tokens_expr(async_token, content_code, &key);
+        let render_contains_await = tokens_contain_ident(content_code, "await");
+        let can_register_hot_island = render_is_static && !has_nested_async;
+        let can_move_leading_lets_into_hot_args = can_split_leading_lets
+            && leading_lets_can_be_moved_into_hot_args(
+                &self.async_block.nodes.0,
+                leading_let_count,
+            );
+        // Keep the dynamic async hot boundary when the load phase can be split from
+        // the render phase. Leading `@let` bindings are passed into the hot closure
+        // as arguments so the render body may move them without making the closure
+        // `FnOnce`. Skip this when a leading initializer borrows an earlier leading
+        // binding; moving those bindings into tuple arguments would invalidate the
+        // borrow relationship.
+        let can_hot_call_dynamic_render =
+            can_move_leading_lets_into_hot_args && !render_contains_await;
+
+        let async_stream = if !has_nested_async {
+            let stream = if can_register_hot_island {
+                Self::hot_island_stream_tokens_expr(
+                    async_token,
+                    &load_code,
+                    content_code,
+                    &source_key,
+                )
+            } else if can_hot_call_dynamic_render {
+                Self::stream_with_hot_render_call_tokens_expr(
+                    async_token,
+                    &load_code,
+                    content_code,
+                    &leading_bindings,
+                    &source_key,
+                )
+            } else if can_split_leading_lets {
+                let stream_content_code = quote! {
+                    #load_code
+                    #content_code
+                };
+                Self::stream_tokens_expr(async_token, &stream_content_code, &source_key)
+            } else {
+                Self::stream_tokens_expr(async_token, content_code, &source_key)
+            };
             quote! {
                 {
-                    #else_filler
                     ::std::boxed::Box::pin(#stream) as ::std::pin::Pin<::std::boxed::Box<dyn ::cheers::__internal::futures::stream::Stream<Item = ::cheers::Rendered<::std::string::String>> + ::std::marker::Send>>
                 }
             }
         } else {
-            let parent_stream = Self::stream_tokens_expr(async_token, content_code, &key);
+            let stream =
+                Self::stream_with_nested_tokens_expr(async_token, content_code, &source_key);
             quote! {
                 {
-                    #else_filler
-                    let parent_stream = #parent_stream;
-                    parent_stream.chain(
-                        ::cheers::__internal::futures::stream::select_all([
-                            #(#nested_async_stmts),*
-                        ])
-                    )
+                    #stream
                 }
             }
         };
 
         g.push_async_stmt(async_stream);
         g.push_stmt(else_block);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use quote::quote;
+
+    use super::async_marker_count;
+    use crate::{Document, generate::lazy};
+
+    #[test]
+    fn async_marker_count_accepts_rust_trivia_after_at() {
+        let source = concat!(
+            "@async {}\n",
+            "@ async {}\n",
+            "@\nasync {}\n",
+            "@/* comment */async {}\n",
+            "@ /* nested /* comment */ still comment */ async {}\n",
+            "@asyncness {}\n",
+        );
+
+        assert_eq!(async_marker_count(source), 5);
+    }
+
+    #[test]
+    fn split_dynamic_async_render_uses_argument_hot_call() {
+        let expanded = lazy::<Document>(quote! {
+            div {
+                @async {
+                    @let items = load_items().await;
+                    List items;
+                } @else {
+                    p { "Loading" }
+                }
+            }
+        })
+        .expect("document should generate")
+        .to_string();
+
+        assert!(expanded.contains("hot_call_with_arg"), "{expanded}");
+    }
+
+    #[test]
+    fn dependent_leading_lets_skip_argument_hot_call() {
+        let expanded = lazy::<Document>(quote! {
+            div {
+                @async {
+                    @let owner = String::from("Data");
+                    @let borrow = owner.as_str();
+                    p { (borrow) }
+                } @else {
+                    p { "Loading" }
+                }
+            }
+        })
+        .expect("document should generate")
+        .to_string();
+
+        assert!(!expanded.contains("hot_call_with_arg"), "{expanded}");
+    }
+
+    #[test]
+    fn async_render_with_await_skips_argument_hot_call() {
+        let expanded = lazy::<Document>(quote! {
+            div {
+                @async {
+                    @let items = load_items().await;
+                    p { (render_later(items).await) }
+                } @else {
+                    p { "Loading" }
+                }
+            }
+        })
+        .expect("document should generate")
+        .to_string();
+
+        assert!(!expanded.contains("hot_call_with_arg"), "{expanded}");
     }
 }
