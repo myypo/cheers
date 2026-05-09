@@ -793,10 +793,12 @@ impl AttributeNameCheck {
 
                 if self.data {
                     quote! {
-                        let _: ::cheers::validation::data::#namespace::Namespace = ::cheers::validation::data::#namespace::Namespace;
-                        #[allow(unused_imports)]
-                        use ::cheers::validation::data::#namespace::*;
-                        let _: ::cheers::validation::Attribute = #ident;
+                        {
+                            let _: ::cheers::validation::data::#namespace::Namespace = ::cheers::validation::data::#namespace::Namespace;
+                            #[allow(unused_imports)]
+                            use ::cheers::validation::data::#namespace::*;
+                            let _: ::cheers::validation::Attribute = #ident;
+                        }
                     }
                 } else {
                     quote! {

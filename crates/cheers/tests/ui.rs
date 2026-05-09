@@ -21,3 +21,9 @@ fn unregistered_datastar_event_is_rejected() {
     let tests = trybuild::TestCases::new();
     tests.compile_fail("tests/ui/unregistered_datastar_event.rs");
 }
+
+#[test]
+fn datastar_event_does_not_ambiguous_glob_import() {
+    let tests = trybuild::TestCases::new();
+    tests.pass("tests/ui/datastar_event_does_not_ambiguous_glob_import.rs");
+}
