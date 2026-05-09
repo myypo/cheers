@@ -9,7 +9,9 @@ use crate::{reference::Signal, signal_path::parse_signal_path};
 ///
 /// `PatchSignals` applies [RFC 7386 JSON Merge Patch](https://datatracker.ietf.org/doc/html/rfc7386)
 /// semantics through typed [`Signal`] paths. Use [`PatchSignals::set`] to assign a new value
-/// to a signal and [`PatchSignals::remove`] to remove one by patching `null`.
+/// to a signal and [`PatchSignals::remove`] to remove one by patching `null`. Derived signals
+/// are Datastar-local by default, so their JSON root is prefixed with `_`; mark a signal with
+/// `#[signal(global)]` to use a payload-sent root without that prefix.
 ///
 /// You can return `PatchSignals` directly from an HTTP handler or send it through
 /// [`super::EventSender`] for SSE-driven updates.
@@ -42,7 +44,7 @@ use crate::{reference::Signal, signal_path::parse_signal_path};
 /// )
 /// .unwrap();
 ///
-/// assert_eq!(body, r#"{"project":{"1":{"name":"Website Redesign"}}}"#);
+/// assert_eq!(body, r#"{"_project":{"1":{"name":"Website Redesign"}}}"#);
 /// # });
 /// ```
 #[derive(Debug, Clone)]
@@ -249,7 +251,7 @@ mod tests {
     #[expect(dead_code)]
     #[derive(Cheers)]
     struct Child {
-        #[signal]
+        #[signal(global)]
         value: i32,
     }
 
@@ -303,7 +305,7 @@ mod tests {
         assert!(response.headers().get("datastar-only-if-missing").is_none());
 
         let body = read_axum_body(response).await;
-        assert_eq!(body, r#"{"counter":{"count":5}}"#);
+        assert_eq!(body, r#"{"_counter":{"count":5}}"#);
     }
 
     #[tokio::test]
@@ -315,7 +317,7 @@ mod tests {
         let body = read_sse_body(patch).await;
         assert_eq!(
             body,
-            "event: datastar-patch-signals\ndata: onlyIfMissing true\ndata: signals {\"counter\":{\"count\":5}}\n\n"
+            "event: datastar-patch-signals\ndata: onlyIfMissing true\ndata: signals {\"_counter\":{\"count\":5}}\n\n"
         );
     }
 
@@ -333,7 +335,7 @@ mod tests {
         assert_eq!(
             body,
             json!({
-                "project": {
+                "_project": {
                     "1": {
                         "name": "Website Redesign",
                         "archived": true,
@@ -360,7 +362,7 @@ mod tests {
         let body: Value =
             serde_json::from_str(&body).expect("signal patch response should be valid JSON");
 
-        assert_eq!(body, json!({ "project": { "1": { "name": null } } }));
+        assert_eq!(body, json!({ "_project": { "1": { "name": null } } }));
     }
 
     #[tokio::test]
@@ -377,7 +379,7 @@ mod tests {
         assert_eq!(
             body,
             json!({
-                "project_by_slug": {
+                "_project_by_slug": {
                     "user.123": {
                         "name": "Website Redesign",
                     }
@@ -403,7 +405,7 @@ mod tests {
         assert_eq!(
             body,
             json!({
-                "account": {
+                "_account": {
                     "profile": {
                         "name": "Nick",
                         "age": 42,
@@ -422,7 +424,7 @@ mod tests {
         let body: Value =
             serde_json::from_str(&body).expect("signal patch response should be valid JSON");
 
-        assert_eq!(body, json!({ "parent": { "child": { "value": 7 } } }));
+        assert_eq!(body, json!({ "_parent": { "child": { "value": 7 } } }));
     }
 
     #[tokio::test]

@@ -37,7 +37,8 @@ impl Render for TodoRow {
 
 - Bind all generated names inside `render_to`: `ids!(...)`, `signals!(...)`, `form_names!(...)`.
 - Use associated helpers outside the component: `TodoRow::id(7)`, `TodoRow::id_input(7)`, `TodoRow::signal_editing(7)`.
-- Use generated ids for stable patch targets; use `scoped_signal!` for local UI state.
+- `#[signal]` is client-only by default and is not submitted with Datastar action payloads. Use `#[signal(global)]` only when a handler needs to receive that signal value.
+- Use generated ids for stable patch targets; use `scoped_signal!` for ad-hoc client-only UI state inside a component method.
 - Use `#[prop(default(...))]` with grouped invocation: `Card title="Welcome" [] { ... }` or `[author="myypo"]`.
 - Use `#[form]`, `#[form(name: Type)]`, `#[form_derive(...)]`, and generated action types for forms.
 - Extract repeated or complex markup into `Render` components.
@@ -175,7 +176,7 @@ Choose the smallest layer that works:
 
 1. Normal navigation: anchor, form submit, redirect.
 2. `#[action]` returning `PatchElements`: default for structural server-rendered HTML updates.
-3. Generated signals or `scoped_signal!`: small client-local state/display values.
+3. Generated `#[signal]` values or `scoped_signal!`: small client-side state/display values. Use `#[signal(global)]` only for state a handler must receive from the client.
 4. `EventReceiver`: multiple/coordinated events or long-lived server push.
 5. `JsScript`: last resort.
 

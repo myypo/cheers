@@ -1265,10 +1265,10 @@ fn scoped_signal_hash() {
     let first_rendered = ScopedSignalProbe { id: 7 }.render_signals();
     let second_rendered = ScopedSignalProbe { id: 8 }.render_signals();
 
-    let prefix = r#"<div data-on:interval="@get('/')"></div><p data-signals="{signal_toggle"#;
+    let prefix = r#"<div data-on:interval="@get('/')"></div><p data-signals="{_signal_toggle"#;
     let (first_toggle_hash, rest) = first_rendered
         .strip_prefix(prefix)
-        .and_then(|rest| rest.split_once(":true,signal_typed"))
+        .and_then(|rest| rest.split_once(":true,_signal_typed"))
         .expect(&first_rendered);
     let (first_typed_hash, suffix) = rest.split_once(r#":false}"></p>"#).expect(&first_rendered);
 
@@ -1279,7 +1279,7 @@ fn scoped_signal_hash() {
 
     let (second_toggle_hash, _) = second_rendered
         .strip_prefix(prefix)
-        .and_then(|rest| rest.split_once(":true,signal_typed"))
+        .and_then(|rest| rest.split_once(":true,_signal_typed"))
         .expect(&second_rendered);
 
     assert_ne!(first_toggle_hash, second_toggle_hash);
@@ -1759,7 +1759,7 @@ fn data_indicator() {
 
     assert_eq!(
         result.as_inner(),
-        r#"<button data-indicator="something['fetching']" data-json-signals></button><div data-show="!$something['fetching'] || true">Loaded!</div>"#
+        r#"<button data-indicator="_something['fetching']" data-json-signals></button><div data-show="!$_something['fetching'] || true">Loaded!</div>"#
     );
 }
 
@@ -1804,7 +1804,7 @@ fn data_signals() {
 
     assert_eq!(
         multiple_nested.as_inner(),
-        r#"<div data-signals="{counter:{count:5},other:{value:100}}" data-text="$counter['count']"></div>"#
+        r#"<div data-signals="{_counter:{count:5},_other:{value:100}}" data-text="$_counter['count']"></div>"#
     );
 }
 
@@ -1824,7 +1824,7 @@ fn data_signals_render_vecs_as_js_arrays() {
 
     assert_eq!(
         result.as_inner(),
-        r#"<div data-signals="{example:{values:['bar','baz']}}"></div>"#
+        r#"<div data-signals="{_example:{values:['bar','baz']}}"></div>"#
     );
 }
 
@@ -1846,7 +1846,7 @@ fn data_style() {
 
     assert_eq!(
         result.as_inner(),
-        r#"<pre data-style="{display:$options['hiding'] ? 'none' : 'flex',color:'red'}"></pre>"#
+        r#"<pre data-style="{display:$_options['hiding'] ? 'none' : 'flex',color:'red'}"></pre>"#
     )
 }
 
@@ -1869,7 +1869,7 @@ fn control_flow_inside_js_attributes_uses_js_context() {
 
     assert_eq!(
         result.as_inner(),
-        r#"<div data-show="$options['hiding']"></div>"#
+        r#"<div data-show="$_options['hiding']"></div>"#
     );
 }
 
@@ -1904,7 +1904,6 @@ fn signal_computed() {
 
     #[derive(Cheers)]
     struct Calculator {
-        #[signal(nested)]
         input: Input,
     }
 
@@ -1933,7 +1932,7 @@ fn signal_computed() {
 
     assert_eq!(
         result,
-        r#"<div><p data-computed="{input:{c:()=>$input['a']+$input['b']}}" data-computed="{input:{d:()=>$input['c']- 1}}"></p></div>"#
+        r#"<div><p data-computed="{_input:{c:()=>$_input['a']+$_input['b']}}" data-computed="{_input:{d:()=>$_input['c']- 1}}"></p></div>"#
     )
 }
 
@@ -1966,7 +1965,7 @@ fn signal_outer_without_id() {
 
     assert_eq!(
         result,
-        r#"<p data-bind="ghost['keepsake']" data-on:close="$ghost['keepsake'] + 'noooo'">El</p>"#
+        r#"<p data-bind="_ghost['keepsake']" data-on:close="$_ghost['keepsake'] + 'noooo'">El</p>"#
     )
 }
 
@@ -1986,7 +1985,7 @@ fn signal_outer_with_id() {
             signals!(signal_outside);
             assert_eq!(
                 signal_outside.render().into_inner(),
-                "$outer['42']['outside']"
+                "$_outer['42']['outside']"
             );
         }
     }
@@ -1998,7 +1997,7 @@ fn signal_outer_with_id() {
     outer.assert_signals();
     assert_eq!(
         Outer::signal_outside(42).render().into_inner(),
-        "$outer['42']['outside']"
+        "$_outer['42']['outside']"
     );
 }
 
@@ -2072,7 +2071,7 @@ fn signal_id() {
 
     assert_eq!(
         result,
-        r#"<p data-bind="ghost['69']['name']" data-text="$ghost['69']['name']" data-on:click="console.log($ghost['69']['name'])"></p>"#
+        r#"<p data-bind="_ghost['69']['name']" data-text="$_ghost['69']['name']" data-on:click="console.log($_ghost['69']['name'])"></p>"#
     )
 }
 
@@ -2107,7 +2106,7 @@ fn signal_id_with_inline_js_macro() {
 
     assert_eq!(
         result,
-        r#"<p data-bind="ghost['69']['name']" data-on:click="console.log($ghost['69']['name'])"></p>"#
+        r#"<p data-bind="_ghost['69']['name']" data-on:click="console.log($_ghost['69']['name'])"></p>"#
     )
 }
 
@@ -2142,19 +2141,19 @@ fn signal_id_with_unsafe_segment() {
 
     assert_eq!(
         result,
-        r#"<p data-bind="ghost_user['user.123']['name']" data-on:click="console.log($ghost_user['user.123']['name'])"></p>"#
+        r#"<p data-bind="_ghost_user['user.123']['name']" data-on:click="console.log($_ghost_user['user.123']['name'])"></p>"#
     )
 }
 
 #[test]
 fn signal_deserialized_with_id_scope() {
     #[derive(Cheers)]
-    #[signal(task_status: String)]
+    #[signal(global, task_status: String)]
     #[expect(dead_code)]
     struct Project {
         #[id]
         project_id: i32,
-        #[signal]
+        #[signal(global)]
         name: String,
     }
 
@@ -2173,14 +2172,14 @@ fn signal_deserialized_nested_scope() {
     #[expect(dead_code)]
     #[derive(Cheers)]
     struct Child {
-        #[signal]
+        #[signal(global)]
         value: i32,
     }
 
     #[expect(dead_code)]
     #[derive(Cheers)]
     struct Parent {
-        #[signal(nested)]
+        #[signal(global, nested)]
         child: Child,
     }
 
@@ -2189,6 +2188,33 @@ fn signal_deserialized_nested_scope() {
             .expect("nested signals JSON should deserialize");
 
     assert_eq!(got.parent.child.value, 1);
+}
+
+#[test]
+fn global_nested_signal_preserves_child_generics_used_by_local_signals() {
+    #[expect(dead_code)]
+    #[derive(Cheers)]
+    struct Child<T> {
+        #[signal]
+        draft: T,
+        #[signal(global)]
+        saved: i32,
+    }
+
+    #[expect(dead_code)]
+    #[derive(Cheers)]
+    struct Parent<T> {
+        #[signal(global, nested)]
+        child: Child<T>,
+    }
+
+    let got: ParentSignalsJson<String> =
+        serde_json::from_str(r#"{ "parent": { "child": { "draft": "ignored", "saved": 7 } } }"#)
+            .expect(
+                "nested global signals JSON should deserialize without local child signal generics",
+            );
+
+    assert_eq!(got.parent.child.saved, 7);
 }
 
 #[test]
@@ -2210,7 +2236,7 @@ fn signal_patch_with_id_scope() {
 
     assert_eq!(
         result.as_inner(),
-        r#"<div data-signals="{project:{1:{name:'Website Redesign'}}}"></div>"#
+        r#"<div data-signals="{_project:{1:{name:'Website Redesign'}}}"></div>"#
     );
 }
 
@@ -2227,11 +2253,37 @@ fn signal_without_id() {
         fn assert_signals(&self) {
             signals!(signal_num);
 
-            assert_eq!(signal_num.render().into_inner(), "$flare['num']");
+            assert_eq!(signal_num.render().into_inner(), "$_flare['num']");
         }
     }
 
     Flare { num: 5 }.assert_signals();
+}
+
+#[test]
+fn global_signal_opt_in_uses_payload_root_and_json_omits_local_signals() {
+    #[expect(dead_code)]
+    #[derive(Cheers)]
+    struct Preferences {
+        #[signal]
+        draft: String,
+        #[signal(global)]
+        saved: String,
+    }
+
+    assert_eq!(
+        Preferences::signal_draft().render().into_inner(),
+        "$_preferences['draft']"
+    );
+    assert_eq!(
+        Preferences::signal_saved().render().into_inner(),
+        "$preferences['saved']"
+    );
+
+    let got: PreferencesSignalsJson =
+        serde_json::from_str(r#"{ "preferences": { "draft": "ignored", "saved": "payload" } }"#)
+            .expect("global signal JSON should deserialize");
+    assert_eq!(got.preferences.saved, "payload");
 }
 
 #[test]

@@ -52,8 +52,10 @@ fn expand_js_lazy(tokens: proc_macro::TokenStream) -> proc_macro::TokenStream {
 ///
 /// - DOM id associated functions from `#[id]` and `#[id("namespace")]`; inside the component,
 ///   bind those ids with [`ids!`]
-/// - signal associated functions and deserialization types from `#[signal]` and
-///   `#[signal(name: Type)]`; inside the component, bind those signals with [`signals!`]
+/// - signal associated functions from `#[signal]` and `#[signal(name: Type)]`; inside the
+///   component, bind those signals with [`signals!`]. Signals are Datastar-local by default;
+///   use `#[signal(global)]` or `#[signal(global, name: Type)]` to include them in Datastar
+///   JSON payload deserialization types.
 /// - form field-name bindings and a deserializable `...Form` type from `#[form]` and
 ///   `#[form_derive(...)]`; inside the component, bind those names with [`form_names!`]
 /// - support for `#[prop(default(...))]`
@@ -73,10 +75,14 @@ fn expand_js_lazy(tokens: proc_macro::TokenStream) -> proc_macro::TokenStream {
 ///
 /// - `#[id]` on at most one field marks the component instance id.
 /// - `#[id("namespace")]` on the struct generates additional namespaced ids.
-/// - `#[signal]` on a field generates a signal accessor for that field.
-/// - `#[signal(nested)]` on a field nests another component's signal scope.
-/// - `#[signal(name: Type)]` on the struct generates an extra signal that is not backed by a
-///   field.
+/// - `#[signal]` on a field generates a Datastar-local signal accessor for that field.
+/// - `#[signal(global)]` on a field generates a payload-sent signal accessor for that field.
+/// - `#[signal(nested)]` / `#[signal(global, nested)]` on a field nests another component's
+///   signal scope.
+/// - `#[signal(name: Type)]` on the struct generates an extra Datastar-local signal that is
+///   not backed by a field.
+/// - `#[signal(global, name: Type)]` on the struct generates an extra payload-sent signal that
+///   is not backed by a field.
 /// - `#[form]` on a field includes that field in the generated form type.
 /// - `#[form(...)]` on a field forwards additional field attributes, such as serde
 ///   attributes, to the generated form field.
@@ -128,7 +134,7 @@ fn expand_js_lazy(tokens: proc_macro::TokenStream) -> proc_macro::TokenStream {
 ///
 /// assert!(rendered.contains("id=\"todo_item-1\""));
 /// assert!(rendered.contains("for=\"todo_item-1-input\""));
-/// assert!(rendered.contains("data-bind=\"todo_item['1']['done']\""));
+/// assert!(rendered.contains("data-bind=\"_todo_item['1']['done']\""));
 /// assert!(rendered.contains("name=\"title\""));
 /// ```
 pub fn cheers_derive(item: proc_macro::TokenStream) -> proc_macro::TokenStream {
@@ -323,9 +329,10 @@ pub fn action(
 /// This macro is the way to acquire generated component signals inside the component that
 /// defines them.
 ///
-/// For component-local state created inside a component, use `scoped_signal!`.
-/// Outside the component, use the generated associated functions such as
-/// `YourComponent::signal_name(...)` instead.
+/// Derived signals are Datastar-local by default, so their root is prefixed with `_` and
+/// Datastar omits them from JSON request payloads. Outside the component, use the generated
+/// associated functions such as `YourComponent::signal_name(...)` instead. Use
+/// `#[signal(global)]` for signals that should be included in Datastar JSON payloads.
 ///
 /// This macro is intentionally exhaustive: if your component derives signals, you are
 /// expected to bind all of them explicitly.
@@ -357,7 +364,7 @@ pub fn action(
 ///
 /// assert_eq!(
 ///     Counter { count: 3 }.render().into_inner(),
-///     r#"<span data-text="$counter['count']"></span>"#,
+///     r#"<span data-text="$_counter['count']"></span>"#,
 /// );
 /// ```
 pub fn signals(tokens: proc_macro::TokenStream) -> proc_macro::TokenStream {

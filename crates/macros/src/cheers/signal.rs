@@ -16,23 +16,49 @@ use crate::{
 };
 
 struct OuterSignalArgs {
+    scope: SignalScope,
     name: Ident,
     ty: Type,
 }
 
 impl Parse for OuterSignalArgs {
     fn parse(input: ParseStream) -> syn::Result<Self> {
-        let (name, ty) = parse_named_type(
-            input,
-            r#"expected a colon and type after signal name, like #[signal(name: Type)]"#,
-        )?;
+        let first: Ident = input.parse()?;
+        let (scope, name, ty) = if first == "global" && input.peek(Token![,]) {
+            input.parse::<Token![,]>()?;
+            let (name, ty) = parse_named_type(
+                input,
+                r#"expected a colon and type after signal name, like #[signal(global, name: Type)]"#,
+            )?;
+            (SignalScope::Global, name, ty)
+        } else {
+            input.parse::<Token![:]>().map_err(|_| {
+                Error::new_spanned(
+                    &first,
+                    r#"expected a colon and type after signal name, like #[signal(name: Type)]"#,
+                )
+            })?;
+            let ty = input.parse()?;
+            (SignalScope::Local, first, ty)
+        };
 
-        Ok(Self { name, ty })
+        if !input.is_empty() {
+            return Err(input.error("unexpected tokens in #[signal(...)]"));
+        }
+
+        Ok(Self { scope, name, ty })
     }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum SignalScope {
+    Local,
+    Global,
 }
 
 #[derive(Default)]
 struct SignalFieldArgs {
+    scope: Option<SignalScope>,
     nested: bool,
 }
 
@@ -50,7 +76,14 @@ impl Parse for SignalFieldArgs {
                 continue;
             }
 
-            return Err(Error::new_spanned(ident, "expected `nested`"));
+            if ident == "global" {
+                if args.scope.replace(SignalScope::Global).is_some() {
+                    return Err(Error::new_spanned(ident, "duplicate signal scope"));
+                }
+                continue;
+            }
+
+            return Err(Error::new_spanned(ident, "expected `global` or `nested`"));
         }
 
         Ok(args)
@@ -61,6 +94,7 @@ impl Parse for SignalFieldArgs {
 struct SignalSpec {
     name: Ident,
     leaf_ty: Type,
+    scope: SignalScope,
 }
 
 fn signal_method_ident(name: &Ident) -> Ident {
@@ -111,6 +145,7 @@ fn process_outer_signal_attrs(
         specs.push(SignalSpec {
             name: args.name,
             leaf_ty: args.ty,
+            scope: args.scope,
         });
     }
 
@@ -119,6 +154,11 @@ fn process_outer_signal_attrs(
 
 fn signals_json_nested_ident(ident: &Ident) -> Ident {
     let ident = format!("{}SignalsJsonNested", ident);
+    Ident::new(&ident, ident.span())
+}
+
+fn signals_json_payload_ident(ident: &Ident) -> Ident {
+    let ident = format!("{}SignalsJsonPayload", ident);
     Ident::new(&ident, ident.span())
 }
 
@@ -140,6 +180,8 @@ fn process_inner_signal_fields(
                 "expected #[signal] or #[signal(...)]",
             )),
         }?;
+
+        let scope = args.scope.unwrap_or(SignalScope::Local);
 
         if args.nested {
             let ty_path = match &mut f.ty {
@@ -169,6 +211,7 @@ fn process_inner_signal_fields(
         specs.push(SignalSpec {
             name,
             leaf_ty: f.ty.clone(),
+            scope,
         });
     }
 
@@ -185,7 +228,8 @@ pub(crate) fn generate_signal_impl(
     let ident_str = item.ident.to_string();
     let signal_names_ident = Ident::new(&format!("{}Signals", ident_str), item.ident.span());
     let signal_json_ident = Ident::new(&format!("{}SignalsJson", ident_str), item.ident.span());
-    let signal_json_scope_ident = signals_json_nested_ident(&item.ident);
+    let signal_nested_scope_ident = signals_json_nested_ident(&item.ident);
+    let signal_json_scope_ident = signals_json_payload_ident(&item.ident);
     let signal_json_component_field_ident = Ident::new_raw(&struct_snake_case, item.ident.span());
     let signal_json_component_name = LitStr::new(&struct_snake_case, item.ident.span());
 
@@ -224,6 +268,8 @@ pub(crate) fn generate_signal_impl(
     let mut signals_struct_fields = Vec::new();
     let mut signals_method_fields = Vec::new();
     let mut signals_struct_decl_tys = Vec::new();
+    let mut signal_nested_scope_fields = Vec::new();
+    let mut signal_nested_scope_decl_tys = Vec::new();
     let mut signal_json_scope_fields = Vec::new();
     let mut signal_json_scope_decl_tys = Vec::new();
 
@@ -232,6 +278,11 @@ pub(crate) fn generate_signal_impl(
         let method_ident = signal_method_ident(&spec.name);
         let leaf_ty = to_owned_type(&spec.leaf_ty);
         let signal_ty: Type = parse_quote! { ::cheers::prelude::Signal::<#leaf_ty> };
+        let signal_root = match spec.scope {
+            SignalScope::Local => format!("_{struct_snake_case}"),
+            SignalScope::Global => struct_snake_case.clone(),
+        };
+        let signal_root = LitStr::new(&signal_root, spec.name.span());
 
         if let Some(id_field) = &id_field {
             let id_ident = &id_field.ident;
@@ -239,7 +290,7 @@ pub(crate) fn generate_signal_impl(
                 let mut __cheers_signal_path = ::std::string::String::new();
                 ::cheers::__internal::__push_signal_path_segment(
                     &mut __cheers_signal_path,
-                    #struct_snake_case,
+                    #signal_root,
                 );
                 ::cheers::__internal::__push_signal_path_segment(
                     &mut __cheers_signal_path,
@@ -259,7 +310,10 @@ pub(crate) fn generate_signal_impl(
             });
             signals_method_fields.push(quote! { #method_ident: #string_constructor });
         } else {
-            let full_name = format!("{struct_snake_case}['{signal_name}']");
+            let full_name = format!(
+                "{signal_root}['{signal_name}']",
+                signal_root = signal_root.value()
+            );
             let static_constructor =
                 quote! { ::cheers::prelude::Signal::<#leaf_ty>::__static(#full_name) };
 
@@ -275,8 +329,13 @@ pub(crate) fn generate_signal_impl(
         signals_struct_decl_tys.push(signal_ty);
 
         let field_ident = &spec.name;
-        signal_json_scope_fields.push(quote! { #vis #field_ident: #leaf_ty });
-        signal_json_scope_decl_tys.push(leaf_ty);
+        signal_nested_scope_fields.push(quote! { #vis #field_ident: #leaf_ty });
+        signal_nested_scope_decl_tys.push(leaf_ty.clone());
+
+        if spec.scope == SignalScope::Global {
+            signal_json_scope_fields.push(quote! { #vis #field_ident: #leaf_ty });
+            signal_json_scope_decl_tys.push(leaf_ty);
+        }
     }
 
     let signal_names_generics =
@@ -314,56 +373,85 @@ pub(crate) fn generate_signal_impl(
         }
     };
 
-    let signal_json_scope_generics = filter_generics(
+    let signal_nested_scope_generics = filter_generics(
         item.generics.clone(),
-        signal_json_scope_decl_tys.iter(),
+        signal_nested_scope_decl_tys.iter(),
         false,
     );
-    let signal_json_scope_ty_generics = generic_args_from(&signal_json_scope_generics);
-    let signal_json_scope_struct = {
-        let (scope_generics, _, scope_where_clause) = signal_json_scope_generics.split_for_impl();
+    let signal_nested_scope_struct = {
+        let (scope_generics, _, scope_where_clause) = signal_nested_scope_generics.split_for_impl();
         quote! {
             #[derive(
                 ::cheers::__internal::serde::Serialize,
                 ::cheers::__internal::serde::Deserialize,
             )]
             #[serde(crate = "::cheers::__internal::serde")]
-            #vis struct #signal_json_scope_ident #scope_generics #scope_where_clause {
-                #(#signal_json_scope_fields,)*
+            #vis struct #signal_nested_scope_ident #scope_generics #scope_where_clause {
+                #(#signal_nested_scope_fields,)*
             }
         }
     };
 
-    let signal_json_component_scope_ty: Type = parse_quote! {
-        #signal_json_scope_ident #signal_json_scope_ty_generics
-    };
-    let signal_json_component_ty: Type = if let Some(id_field) = &id_field {
-        let id_ty = to_owned_type(&id_field.ty);
-        parse_quote! {
-            ::std::collections::BTreeMap<#id_ty, #signal_json_component_scope_ty>
-        }
+    let signal_json_impl = if signal_json_scope_fields.is_empty() {
+        TokenStream::new()
     } else {
-        signal_json_component_scope_ty
-    };
-
-    let signal_json_struct = {
-        let signal_json_generics = filter_generics(
+        let signal_json_scope_generics = filter_generics(
             item.generics.clone(),
-            std::iter::once(&signal_json_component_ty),
+            signal_json_scope_decl_tys.iter(),
             false,
         );
-        let (json_generics, _, json_where_clause) = signal_json_generics.split_for_impl();
+        let signal_json_scope_ty_generics = generic_args_from(&signal_json_scope_generics);
+        let signal_json_scope_struct = {
+            let (scope_generics, _, scope_where_clause) =
+                signal_json_scope_generics.split_for_impl();
+            quote! {
+                #[derive(
+                    ::cheers::__internal::serde::Serialize,
+                    ::cheers::__internal::serde::Deserialize,
+                )]
+                #[serde(crate = "::cheers::__internal::serde")]
+                #vis struct #signal_json_scope_ident #scope_generics #scope_where_clause {
+                    #(#signal_json_scope_fields,)*
+                }
+            }
+        };
+
+        let signal_json_component_scope_ty: Type = parse_quote! {
+            #signal_json_scope_ident #signal_json_scope_ty_generics
+        };
+        let signal_json_component_ty: Type = if let Some(id_field) = &id_field {
+            let id_ty = to_owned_type(&id_field.ty);
+            parse_quote! {
+                ::std::collections::BTreeMap<#id_ty, #signal_json_component_scope_ty>
+            }
+        } else {
+            signal_json_component_scope_ty
+        };
+
+        let signal_json_struct = {
+            let signal_json_generics = filter_generics(
+                item.generics.clone(),
+                std::iter::once(&signal_json_component_ty),
+                false,
+            );
+            let (json_generics, _, json_where_clause) = signal_json_generics.split_for_impl();
+
+            quote! {
+                #[derive(
+                    ::cheers::__internal::serde::Serialize,
+                    ::cheers::__internal::serde::Deserialize,
+                )]
+                #[serde(crate = "::cheers::__internal::serde")]
+                #vis struct #signal_json_ident #json_generics #json_where_clause {
+                    #[serde(rename = #signal_json_component_name)]
+                    #vis #signal_json_component_field_ident: #signal_json_component_ty
+                }
+            }
+        };
 
         quote! {
-            #[derive(
-                ::cheers::__internal::serde::Serialize,
-                ::cheers::__internal::serde::Deserialize,
-            )]
-            #[serde(crate = "::cheers::__internal::serde")]
-            #vis struct #signal_json_ident #json_generics #json_where_clause {
-                #[serde(rename = #signal_json_component_name)]
-                #vis #signal_json_component_field_ident: #signal_json_component_ty
-            }
+            #signal_json_scope_struct
+            #signal_json_struct
         }
     };
 
@@ -383,8 +471,8 @@ pub(crate) fn generate_signal_impl(
 
     Ok(quote! {
         #signal_names_struct
-        #signal_json_scope_struct
-        #signal_json_struct
+        #signal_nested_scope_struct
+        #signal_json_impl
         #methods_impl
     })
 }
