@@ -117,15 +117,14 @@ html! {
     button !indicator(fetching_signal) {}
     div !signals(count: 5) !computed(total: { (price) " + " (tax) }) {}
     button !on:click((SaveUserAction { id })) { "Save" }
+    div !on_interval({ (count_signal) "++" }) {}
     textarea
         !bind(draft_signal)
         !on:focusout({ "localStorage.setItem('draft', " (draft_signal) ")" }) {}
     details !attr("open": { (open_signal) " ? '' : null" }) {}
     div !signals(signal_message: String::new()) {
         textarea !bind(signal_message) {}
-        div !on:emoji_click({ (signal_message) " += evt.detail.unicode" }) {
-            "emoji picker widget"
-        }
+        div !on:emoji_click({ (signal_message) " += evt.detail.unicode" }) { "emoji picker widget" }
     }
 }
 ```

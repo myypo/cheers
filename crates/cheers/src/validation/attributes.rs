@@ -707,6 +707,84 @@ pub mod data {
     /// ```
     pub const text: Attribute = Attribute;
 
+    /// Runs an expression when the element intersects with the viewport.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use cheers::prelude::*;
+    /// # #[derive(Cheers)]
+    /// # #[signal(intersected: bool)]
+    /// # struct Example {
+    /// #     #[id]
+    /// #     id: u8,
+    /// # }
+    /// # impl Render for Example {
+    /// #     fn render_to(&self, buffer: &mut Buffer<Element>) {
+    /// #         signals!(signal_intersected);
+    /// html! {
+    ///     div !on_intersect({ (signal_intersected) " = true" }) {}
+    /// }
+    /// #         .render_to(buffer);
+    /// #     }
+    /// # }
+    /// # let _ = Example { id: 0 }.render();
+    /// ```
+    pub const on_intersect: Attribute = Attribute;
+
+    /// Runs an expression at a regular interval.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use cheers::prelude::*;
+    /// # #[derive(Cheers)]
+    /// # #[signal(count: i32)]
+    /// # struct Example {
+    /// #     #[id]
+    /// #     id: u8,
+    /// # }
+    /// # impl Render for Example {
+    /// #     fn render_to(&self, buffer: &mut Buffer<Element>) {
+    /// #         signals!(signal_count);
+    /// html! {
+    ///     div !on_interval({ (signal_count) "++" }) {}
+    /// }
+    /// #         .render_to(buffer);
+    /// #     }
+    /// # }
+    /// # let _ = Example { id: 0 }.render();
+    /// ```
+    pub const on_interval: Attribute = Attribute;
+
+    /// Runs an expression whenever any signals are patched.
+    ///
+    /// This is useful for tracking changes, updating computed values, or
+    /// triggering side effects when data updates.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use cheers::prelude::*;
+    /// html! {
+    ///     div !on_signal_patch("console.log('A signal changed!')") {}
+    /// };
+    /// ```
+    pub const on_signal_patch: Attribute = Attribute;
+
+    /// Filters which signals to watch when using the
+    /// [`data-on-signal-patch`](#data-on-signal-patch) attribute.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use cheers::prelude::*;
+    /// html! {
+    ///     div !on_signal_patch_filter("{include: /^counter$/}") {}
+    /// };
+    /// ```
+    pub const on_signal_patch_filter: Attribute = Attribute;
+
     /// Event listener attribute namespace.
     ///
     /// In addition to the documented events below, custom events can be
@@ -1059,85 +1137,6 @@ pub mod data {
         /// Fired when the text selection in a `<textarea>` or `<input>` element has
         /// changed.
         pub const selectionchange: Attribute = Attribute;
-
-        // Custom datastar events
-        /// Runs an expression when the element intersects with the viewport.
-        ///
-        /// # Examples
-        ///
-        /// ```
-        /// # use cheers::prelude::*;
-        /// # #[derive(Cheers)]
-        /// # #[signal(intersected: bool)]
-        /// # struct Example {
-        /// #     #[id]
-        /// #     id: u8,
-        /// # }
-        /// # impl Render for Example {
-        /// #     fn render_to(&self, buffer: &mut Buffer<Element>) {
-        /// #         signals!(signal_intersected);
-        /// html! {
-        ///     div !on:intersect({ (signal_intersected) " = true" }) {}
-        /// }
-        /// #         .render_to(buffer);
-        /// #     }
-        /// # }
-        /// # let _ = Example { id: 0 }.render();
-        /// ```
-        pub const intersect: Attribute = Attribute;
-
-        /// Runs an expression at a regular interval.
-        ///
-        /// # Examples
-        ///
-        /// ```
-        /// # use cheers::prelude::*;
-        /// # #[derive(Cheers)]
-        /// # #[signal(count: i32)]
-        /// # struct Example {
-        /// #     #[id]
-        /// #     id: u8,
-        /// # }
-        /// # impl Render for Example {
-        /// #     fn render_to(&self, buffer: &mut Buffer<Element>) {
-        /// #         signals!(signal_count);
-        /// html! {
-        ///     div !on:interval({ (signal_count) "++" }) {}
-        /// }
-        /// #         .render_to(buffer);
-        /// #     }
-        /// # }
-        /// # let _ = Example { id: 0 }.render();
-        /// ```
-        pub const interval: Attribute = Attribute;
-
-        /// Runs an expression whenever any signals are patched.
-        ///
-        /// This is useful for tracking changes, updating computed values, or
-        /// triggering side effects when data updates.
-        ///
-        /// # Examples
-        ///
-        /// ```
-        /// # use cheers::prelude::*;
-        /// html! {
-        ///     div !on:signal_patch("console.log('A signal changed!')") {}
-        /// };
-        /// ```
-        pub const signal_patch: Attribute = Attribute;
-
-        /// Filters which signals to watch when using the
-        /// [`data-on-signal-patch`](#data-on-signal-patch) attribute.
-        ///
-        /// # Examples
-        ///
-        /// ```
-        /// # use cheers::prelude::*;
-        /// html! {
-        ///     div !on:signal_patch_filter("{include: /^counter$/}") {}
-        /// };
-        /// ```
-        pub const signal_patch_filter: Attribute = Attribute;
     }
 }
 

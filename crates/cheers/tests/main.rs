@@ -243,6 +243,36 @@ fn custom_datastar_on_event_uses_js_context() {
 }
 
 #[test]
+fn datastar_on_plugins_render_as_top_level_data_attributes() {
+    let result = html! {
+        div
+            !on_interval("count++")
+            !on_intersect("visible = true")
+            !on_signal_patch("console.log(patch)")
+            !on_signal_patch_filter("{include: /^counter$/}") {}
+    }
+    .render();
+
+    assert_eq!(
+        result.as_inner(),
+        r#"<div data-on-interval="count++" data-on-intersect="visible = true" data-on-signal-patch="console.log(patch)" data-on-signal-patch-filter="{include: /^counter$/}"></div>"#
+    );
+}
+
+#[test]
+fn generic_datastar_on_event_still_uses_event_namespace() {
+    let result = html! {
+        button !on:click("count++") {}
+    }
+    .render();
+
+    assert_eq!(
+        result.as_inner(),
+        r#"<button data-on:click="count++"></button>"#
+    );
+}
+
+#[test]
 fn control() {
     let cond = true;
 
@@ -1280,7 +1310,7 @@ impl ScopedSignalProbe {
         scoped_signal!(signal_toggle);
         scoped_signal!(signal_typed: bool);
         html! {
-            div !on:interval("@get('/')") {}
+            div !on_interval("@get('/')") {}
             p !signals(signal_toggle: true, signal_typed: false) {}
         }
         .render()
@@ -1293,7 +1323,7 @@ fn scoped_signal_hash() {
     let first_rendered = ScopedSignalProbe { id: 7 }.render_signals();
     let second_rendered = ScopedSignalProbe { id: 8 }.render_signals();
 
-    let prefix = r#"<div data-on:interval="@get('/')"></div><p data-signals="{_signal_toggle"#;
+    let prefix = r#"<div data-on-interval="@get('/')"></div><p data-signals="{_signal_toggle"#;
     let (first_toggle_hash, rest) = first_rendered
         .strip_prefix(prefix)
         .and_then(|rest| rest.split_once(":true,_signal_typed"))
