@@ -122,3 +122,48 @@ mod sealed {
 /// A standard attribute.
 #[derive(Debug, Clone, Copy)]
 pub struct Attribute;
+
+/// Defines custom Datastar event names for `!on:<event>` validation.
+///
+/// The generated constants must be in scope where `html!` is invoked. Defining them at module
+/// scope makes them available to markup in that module; otherwise import the module containing
+/// them with `use your_events::*`.
+///
+/// # Example
+///
+/// ```
+/// use cheers::prelude::*;
+///
+/// cheers::define_events! {
+///     emoji_click
+/// }
+///
+/// # #[derive(Cheers)]
+/// # struct Composer;
+/// # impl Render for Composer {
+/// #     fn render_to(&self, buffer: &mut Buffer<Element>) {
+/// scoped_signal!(signal_message: String);
+///
+/// html! {
+///     div !signals(signal_message: String::new()) {
+///         textarea !bind(signal_message) {}
+///         div !on:emoji_click({ (signal_message) " += evt.detail.unicode" }) {}
+///     }
+/// }
+/// #         .render_to(buffer);
+/// #     }
+/// # }
+/// # let rendered = Composer.render();
+/// # assert!(rendered.as_inner().contains("data-on:emoji-click="));
+/// # assert!(rendered.as_inner().contains(" += evt.detail.unicode"));
+/// ```
+#[macro_export]
+macro_rules! define_events {
+    ($($event:ident),* $(,)?) => {
+        $(
+            #[doc(hidden)]
+            #[allow(missing_docs, non_upper_case_globals)]
+            pub const $event: $crate::validation::Attribute = $crate::validation::Attribute;
+        )*
+    };
+}

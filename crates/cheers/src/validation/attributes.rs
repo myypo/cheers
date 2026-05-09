@@ -708,6 +708,10 @@ pub mod data {
     pub const text: Attribute = Attribute;
 
     /// Event listener attribute namespace.
+    ///
+    /// In addition to the documented events below, custom events can be
+    /// registered with [`define_events!`](crate::define_events)
+    /// and then used as `!on:my_custom_event(...)`
     pub mod on {
         #[derive(Debug, Clone, Copy)]
         pub struct Namespace;

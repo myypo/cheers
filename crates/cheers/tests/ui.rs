@@ -15,3 +15,9 @@ fn unsupported_ref_expr_is_rejected() {
     let tests = trybuild::TestCases::new();
     tests.compile_fail("tests/ui/unsupported_ref_expr.rs");
 }
+
+#[test]
+fn unregistered_datastar_event_is_rejected() {
+    let tests = trybuild::TestCases::new();
+    tests.compile_fail("tests/ui/unregistered_datastar_event.rs");
+}

@@ -1,0 +1,5 @@
+error[E0425]: cannot find value `not_registered` in this scope
+ --> tests/ui/unregistered_datastar_event.rs:5:17
+  |
+5 |         div !on:not_registered("console.log('nope')") {}
+  |                 ^^^^^^^^^^^^^^ not found in this scope

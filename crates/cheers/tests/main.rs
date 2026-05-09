@@ -27,6 +27,10 @@ use crate::test_utils::read_axum_body;
 #[path = "../src/test_utils.rs"]
 mod test_utils;
 
+cheers::define_events! {
+    chat_appended
+}
+
 #[test]
 fn can_render_vec() {
     let groceries = ["milk", "eggs", "bread"]
@@ -215,6 +219,26 @@ fn correct_attr_escape() {
     assert_eq!(
         result.as_inner(),
         r#"<div data-code="&quot;alert('XSS')"></div>"#
+    );
+}
+
+#[test]
+fn custom_datastar_on_event_uses_js_context() {
+    let detail = "<payload>";
+    let handle_append = js! {
+        "console.log("
+        (detail)
+        ")"
+    };
+
+    let result = html! {
+        section !on:chat_appended(handle_append) {}
+    }
+    .render();
+
+    assert_eq!(
+        result.as_inner(),
+        r#"<section data-on:chat-appended="console.log('&lt;payload&gt;')"></section>"#
     );
 }
 
@@ -700,7 +724,9 @@ fn html_macro_supports_self_paths_in_impls() {
         }
 
         fn view() -> impl Render {
-            html! { (Self::label()) }
+            html! {
+                (Self::label())
+            }
         }
     }
 
@@ -722,14 +748,18 @@ fn html_macro_supports_generic_type_paths() {
     where
         T: Default + Render,
     {
-        html! { (T::default()) }
+        html! {
+            (T::default())
+        }
     }
 
     fn render_default_qualified<T>() -> impl Render
     where
         T: Default + Render,
     {
-        html! { (<T as Default>::default()) }
+        html! {
+            (<T as Default>::default())
+        }
     }
 
     assert_eq!(
@@ -842,12 +872,12 @@ async fn whitespace_separated_async_blocks_get_distinct_ssr_keys() {
     async fn main_page() -> cheers::prelude::AsyncLazy<cheers::prelude::Lazy<impl Fn(&mut Buffer)>>
     {
         html! {
-            @ async {
+            @async {
                 div { "First" }
             } @else {
                 p { "Loading first" }
             }
-            @ async {
+            @async {
                 div { "Second" }
             } @else {
                 p { "Loading second" }
@@ -986,9 +1016,7 @@ async fn nested_async_collector_is_scoped_before_later_awaits() {
                 } @else {
                     div { "First loading..." }
                 }
-
                 @let later = async { "later data" }.await;
-
                 @async {
                     div { (later) }
                 } @else {

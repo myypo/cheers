@@ -104,6 +104,12 @@ Keep branches small and move complex computation out of templates. Use `@for` wh
 Datastar attributes:
 
 ```rust
+cheers::define_events! {
+    emoji_click
+}
+
+scoped_signal!(signal_message: String);
+
 html! {
     input !bind(name_signal);
     span !text(name_signal) {}
@@ -115,10 +121,16 @@ html! {
         !bind(draft_signal)
         !on:focusout({ "localStorage.setItem('draft', " (draft_signal) ")" }) {}
     details !attr("open": { (open_signal) " ? '' : null" }) {}
+    div !signals(signal_message: String::new()) {
+        textarea !bind(signal_message) {}
+        div !on:emoji_click({ (signal_message) " += evt.detail.unicode" }) {
+            "emoji picker widget"
+        }
+    }
 }
 ```
 
-Use generated action structs in `!on:*`; do not hardcode generated URLs and signal paths. Datastar expressions are JavaScript fragments. Use signals for small client-visible values, patches for structural HTML.
+Use generated action structs in `!on:*`; do not hardcode generated URLs and signal paths. Register custom Datastar events with `cheers::define_events! { my_event }` before using `!on:my_event(...)`; Datastar expressions are JavaScript fragments. Use signals for small client-visible values, patches for structural HTML.
 
 Common attributes: `!bind` for two-way input binding, `!signals` for initial/local values, `!computed` for read-only derived values, `!text`/`!show`/`!attr`/`!class`/`!style` for reactive DOM state, `!indicator` for fetch state, `!init`/`!effect` for side effects, `!preserve_attr` and `!ignore_morph` for morphing edge cases, and `!on:event` for events. Use the cheers crate docs when additional Datastar attribute details are needed.
 
