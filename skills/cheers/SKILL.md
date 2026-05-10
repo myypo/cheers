@@ -40,7 +40,7 @@ impl Render for TodoRow {
 - `#[signal]` is client-only by default and is not submitted with Datastar action payloads. Use `#[signal(global)]` only when a handler needs to receive that signal value.
 - Use generated ids for stable patch targets; use `scoped_signal!` for ad-hoc client-only UI state inside a component method.
 - Use `#[prop(default(...))]` with grouped invocation: `Card title="Welcome" [] { ... }` or `[author="myypo"]`.
-- Use `#[form]`, `#[form(name: Type)]`, `#[form_derive(...)]`, and generated action types for forms.
+- Use `#[form]`, `#[form(name: Type)]`, and `#[form_derive(...)]` for generated form types.
 - Extract repeated or complex markup into `Render` components.
 
 # Template syntax
@@ -130,7 +130,7 @@ html! {
 }
 ```
 
-Use generated action structs in `!on:*`; do not hardcode generated URLs and signal paths. Register custom Datastar events with `cheers::define_events! { my_event }` before using `!on:my_event(...)`; Datastar expressions are JavaScript fragments. Datastar modifiers go before value parentheses, e.g. `!on:click[prevent]("...")` or `!on_interval[duration("1s")]("...")`; unquoted modifier names are checked against known plugin modifiers, while quoted names like `["future"]` opt out for custom/new modifiers. Use signals for small client-visible values, patches for structural HTML.
+Use generated action structs in `!on:*`; do not hardcode generated URLs and signal paths. Register custom Datastar events with `cheers::define_events! { my_event }` before using `!on:my_event(...)`; Datastar expressions are JavaScript fragments. Datastar modifiers go before value parentheses, e.g. `!on:click[prevent]("...")` or `!on_interval[duration("1s")]("...")`; unquoted modifier names are checked against known plugin modifiers, while quoted names like `["future"]` opt out for custom/new modifiers.
 
 Common attributes: `!bind` for two-way input binding, `!signals` for initial/local values, `!computed` for read-only derived values, `!text`/`!show`/`!attr`/`!class`/`!style` for reactive DOM state, `!indicator` for fetch state, `!init`/`!effect` for side effects, `!preserve_attr` and `!ignore_morph` for morphing edge cases, and `!on:event` for events. Use the cheers crate docs when additional Datastar attribute details are needed.
 
@@ -188,7 +188,7 @@ Choose the smallest layer that works:
 
 1. Normal navigation: anchor, form submit, redirect.
 2. `#[action]` returning `PatchElements`: default for structural server-rendered HTML updates.
-3. Generated `#[signal]` values or `scoped_signal!`: small client-side state/display values. Use `#[signal(global)]` only for state a handler must receive from the client.
+3. Generated `#[signal]` values or `scoped_signal!`: small client-side state/display values.
 4. `EventReceiver`: multiple/coordinated events or long-lived server push.
 5. `JsScript`: last resort for dynamic/server-pushed imperative code.
 6. Const JS bundle: reusable static client helpers when there is a lot of JS.
@@ -198,6 +198,8 @@ Keep backend state authoritative; do not mirror broad backend state into signals
 # Actions, patches, signals, streams
 
 Actions generate `...Action` types. `Path<_>` arguments become action fields/path segments. `Form<_>` or `#[form]` makes the generated action string include form content-type options; do not add those manually.
+
+When adding a field to a generated form, keep the `#[form(...)]` declaration, `form_names!(...)` bindings, input `name=...` attributes, and handler `Form<GeneratedForm>` type in sync.
 
 ```rust
 #[action(PUT)]
@@ -231,9 +233,5 @@ Before finishing, run the app's normal checks, such as relevant `cargo test`, `c
 
 # Pitfalls
 
-- `#[derive(Cheers)]` does not implement `Render`.
-- Include `Scripts` for actions, signals, patches, streams, and Datastar client behavior.
-- Use module-scope `const NAME: JsBundle = include_js_bundle!("./file.js")` for reusable JS; do not create local/non-const bundle handles.
 - Use generated `...Action` types and generated ids; do not hardcode generated action URLs or specific patch ids.
 - Keep semantic HTML and ARIA correct.
-- Use browser tests only when real client behavior matters.
