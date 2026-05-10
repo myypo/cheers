@@ -117,7 +117,8 @@ html! {
     button !indicator(fetching_signal) {}
     div !signals(count: 5) !computed(total: { (price) " + " (tax) }) {}
     button !on:click((SaveUserAction { id })) { "Save" }
-    div !on_interval({ (count_signal) "++" }) {}
+    button !on:click[prevent, debounce("250ms")]("save()") { "Save" }
+    div !on_interval[duration("1s")]({ (count_signal) "++" }) {}
     textarea
         !bind(draft_signal)
         !on:focusout({ "localStorage.setItem('draft', " (draft_signal) ")" }) {}
@@ -129,7 +130,7 @@ html! {
 }
 ```
 
-Use generated action structs in `!on:*`; do not hardcode generated URLs and signal paths. Register custom Datastar events with `cheers::define_events! { my_event }` before using `!on:my_event(...)`; Datastar expressions are JavaScript fragments. Use signals for small client-visible values, patches for structural HTML.
+Use generated action structs in `!on:*`; do not hardcode generated URLs and signal paths. Register custom Datastar events with `cheers::define_events! { my_event }` before using `!on:my_event(...)`; Datastar expressions are JavaScript fragments. Datastar modifiers go before value parentheses, e.g. `!on:click[prevent]("...")` or `!on_interval[duration("1s")]("...")`; unquoted modifier names are checked against known plugin modifiers, while quoted names like `["future"]` opt out for custom/new modifiers. Use signals for small client-visible values, patches for structural HTML.
 
 Common attributes: `!bind` for two-way input binding, `!signals` for initial/local values, `!computed` for read-only derived values, `!text`/`!show`/`!attr`/`!class`/`!style` for reactive DOM state, `!indicator` for fetch state, `!init`/`!effect` for side effects, `!preserve_attr` and `!ignore_morph` for morphing edge cases, and `!on:event` for events. Use the cheers crate docs when additional Datastar attribute details are needed.
 

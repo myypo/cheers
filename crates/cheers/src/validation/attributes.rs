@@ -179,6 +179,269 @@ pub mod data {
 
     use crate::validation::Attribute;
 
+    /// A known Datastar modifier for an attribute plugin.
+    ///
+    /// This zero-sized marker is used by `html!` for compile-time validation of
+    /// unquoted modifier names. Modifier tags and arguments are passed through
+    /// to Datastar without semantic validation.
+    #[derive(Debug, Clone, Copy)]
+    pub struct Modifier;
+
+    /// Known Datastar modifiers by attribute plugin.
+    ///
+    /// In `html!`, modifiers are written in brackets before the value, such as
+    /// `!on:click[prevent, debounce("250ms", leading)]("$count++")`. This
+    /// renders Datastar's `__modifier.tag` attribute suffixes. Unquoted modifier
+    /// names are checked against this table; quoted names, such as `["future"]`,
+    /// are emitted without known-name validation.
+    #[allow(missing_docs, non_upper_case_globals)]
+    pub mod modifiers {
+        use super::Modifier;
+
+        /// Modifiers for `data-attr`.
+        pub mod attr {}
+
+        /// Modifiers for `data-bind`.
+        pub mod bind {
+            use super::Modifier;
+
+            /// Converts the signal name casing.
+            ///
+            /// Tags: `camel`, `kebab`, `snake`, or `pascal`.
+            pub const case: Modifier = Modifier;
+            /// Defines which events sync the element property back to the
+            /// signal.
+            ///
+            /// Tags are event names, for example `event(input, change)`.
+            pub const event: Modifier = Modifier;
+            /// Binds to a specific element property instead of the default
+            /// binding.
+            ///
+            /// Tags are property names, for example `prop(checked)`.
+            pub const prop: Modifier = Modifier;
+        }
+
+        /// Modifiers for `data-class`.
+        pub mod class {
+            use super::Modifier;
+
+            /// Converts the class name casing.
+            ///
+            /// Tags: `camel`, `kebab`, `snake`, or `pascal`.
+            pub const case: Modifier = Modifier;
+        }
+
+        /// Modifiers for `data-computed`.
+        pub mod computed {
+            use super::Modifier;
+
+            /// Converts the computed signal name casing.
+            ///
+            /// Tags: `camel`, `kebab`, `snake`, or `pascal`.
+            pub const case: Modifier = Modifier;
+        }
+
+        /// Modifiers for `data-effect`.
+        pub mod effect {}
+
+        /// Modifiers for `data-ignore`.
+        pub mod ignore {
+            use super::Modifier;
+
+            /// Ignores only the element itself, not its descendants.
+            ///
+            /// Write this as `self`, for example `!ignore[self]`.
+            pub const self_: Modifier = Modifier;
+        }
+
+        /// Modifiers for `data-ignore-morph`.
+        pub mod ignore_morph {}
+
+        /// Modifiers for `data-indicator`.
+        pub mod indicator {
+            use super::Modifier;
+
+            /// Converts the indicator signal name casing.
+            ///
+            /// Tags: `camel`, `kebab`, `snake`, or `pascal`.
+            pub const case: Modifier = Modifier;
+        }
+
+        /// Modifiers for `data-init`.
+        pub mod init {
+            use super::Modifier;
+
+            /// Delays running the expression.
+            ///
+            /// Tags are durations, for example `delay("500ms")` or
+            /// `delay("1s")`.
+            pub const delay: Modifier = Modifier;
+            /// Wraps the expression in `document.startViewTransition()` when
+            /// the View Transition API is available.
+            pub const viewtransition: Modifier = Modifier;
+        }
+
+        /// Modifiers for `data-json-signals`.
+        pub mod json_signals {
+            use super::Modifier;
+
+            /// Outputs compact JSON without extra whitespace.
+            pub const terse: Modifier = Modifier;
+        }
+
+        /// Modifiers for `data-on`.
+        pub mod on {
+            use super::Modifier;
+
+            /// Uses a capture event listener.
+            pub const capture: Modifier = Modifier;
+            /// Converts the event name casing.
+            ///
+            /// Tags: `camel`, `kebab`, `snake`, or `pascal`.
+            pub const case: Modifier = Modifier;
+            /// Debounces the event listener.
+            ///
+            /// Tags include a duration such as `"500ms"` or `"1s"`, followed
+            /// optionally by `leading` or `notrailing`.
+            pub const debounce: Modifier = Modifier;
+            /// Delays the event listener.
+            ///
+            /// Tags are durations, for example `delay("500ms")` or
+            /// `delay("1s")`.
+            pub const delay: Modifier = Modifier;
+            /// Attaches the event listener to `document`.
+            pub const document: Modifier = Modifier;
+            /// Runs the event listener only once.
+            pub const once: Modifier = Modifier;
+            /// Triggers when the event occurs outside the element.
+            pub const outside: Modifier = Modifier;
+            /// Uses a passive event listener.
+            pub const passive: Modifier = Modifier;
+            /// Calls `preventDefault()` before running the expression.
+            pub const prevent: Modifier = Modifier;
+            /// Calls `stopPropagation()` before running the expression.
+            pub const stop: Modifier = Modifier;
+            /// Throttles the event listener.
+            ///
+            /// Tags include a duration such as `"500ms"` or `"1s"`, followed
+            /// optionally by `noleading` or `trailing`.
+            pub const throttle: Modifier = Modifier;
+            /// Wraps the expression in `document.startViewTransition()` when
+            /// the View Transition API is available.
+            pub const viewtransition: Modifier = Modifier;
+            /// Attaches the event listener to `window`.
+            pub const window: Modifier = Modifier;
+        }
+
+        /// Modifiers for `data-on-intersect`.
+        pub mod on_intersect {
+            use super::Modifier;
+
+            /// Debounces the intersection listener.
+            ///
+            /// Tags include a duration such as `"500ms"` or `"1s"`, followed
+            /// optionally by `leading` or `notrailing`.
+            pub const debounce: Modifier = Modifier;
+            /// Delays the intersection listener.
+            ///
+            /// Tags are durations, for example `delay("500ms")` or
+            /// `delay("1s")`.
+            pub const delay: Modifier = Modifier;
+            /// Triggers when the element exits the viewport.
+            pub const exit: Modifier = Modifier;
+            /// Triggers when the full element is visible.
+            pub const full: Modifier = Modifier;
+            /// Triggers when half of the element is visible.
+            pub const half: Modifier = Modifier;
+            /// Runs the expression only once.
+            pub const once: Modifier = Modifier;
+            /// Triggers when the element is visible by a percentage threshold.
+            ///
+            /// Tags are percentages such as `25` or `75`.
+            pub const threshold: Modifier = Modifier;
+            /// Throttles the intersection listener.
+            ///
+            /// Tags include a duration such as `"500ms"` or `"1s"`, followed
+            /// optionally by `noleading` or `trailing`.
+            pub const throttle: Modifier = Modifier;
+            /// Wraps the expression in `document.startViewTransition()` when
+            /// the View Transition API is available.
+            pub const viewtransition: Modifier = Modifier;
+        }
+
+        /// Modifiers for `data-on-interval`.
+        pub mod on_interval {
+            use super::Modifier;
+
+            /// Sets the interval duration.
+            ///
+            /// Tags include a duration such as `"500ms"` or `"1s"`. Add
+            /// `leading` to run the first interval immediately, for example
+            /// `duration("500ms", leading)`.
+            pub const duration: Modifier = Modifier;
+            /// Wraps the expression in `document.startViewTransition()` when
+            /// the View Transition API is available.
+            pub const viewtransition: Modifier = Modifier;
+        }
+
+        /// Modifiers for `data-on-signal-patch`.
+        pub mod on_signal_patch {
+            use super::Modifier;
+
+            /// Delays the signal patch listener.
+            ///
+            /// Tags are durations, for example `delay("500ms")` or
+            /// `delay("1s")`.
+            pub const delay: Modifier = Modifier;
+            /// Debounces the signal patch listener.
+            ///
+            /// Tags include a duration such as `"500ms"` or `"1s"`, followed
+            /// optionally by `leading` or `notrailing`.
+            pub const debounce: Modifier = Modifier;
+            /// Throttles the signal patch listener.
+            ///
+            /// Tags include a duration such as `"500ms"` or `"1s"`, followed
+            /// optionally by `noleading` or `trailing`.
+            pub const throttle: Modifier = Modifier;
+        }
+
+        /// Modifiers for `data-on-signal-patch-filter`.
+        pub mod on_signal_patch_filter {}
+
+        /// Modifiers for `data-preserve-attr`.
+        pub mod preserve_attr {}
+
+        /// Modifiers for `data-ref`.
+        pub mod r#ref {
+            use super::Modifier;
+
+            /// Converts the reference signal name casing.
+            ///
+            /// Tags: `camel`, `kebab`, `snake`, or `pascal`.
+            pub const case: Modifier = Modifier;
+        }
+
+        /// Modifiers for `data-show`.
+        pub mod show {}
+
+        /// Modifiers for `data-signals`.
+        pub mod signals {
+            use super::Modifier;
+
+            /// Converts the signal name casing.
+            ///
+            /// Tags: `camel`, `kebab`, `snake`, or `pascal`.
+            pub const case: Modifier = Modifier;
+            /// Only patches signals if their keys do not already exist.
+            pub const ifmissing: Modifier = Modifier;
+        }
+
+        /// Modifiers for `data-style`.
+        pub mod style {}
+        /// Modifiers for `data-text`.
+        pub mod text {}
+    }
+
     /// Sets the value of any HTML attribute to an expression, and keeps it in
     /// sync.
     ///

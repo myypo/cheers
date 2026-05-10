@@ -245,8 +245,7 @@ fn custom_datastar_on_event_uses_js_context() {
 #[test]
 fn datastar_on_plugins_render_as_top_level_data_attributes() {
     let result = html! {
-        div
-            !on_interval("count++")
+        div !on_interval("count++")
             !on_intersect("visible = true")
             !on_signal_patch("console.log(patch)")
             !on_signal_patch_filter("{include: /^counter$/}") {}
@@ -260,15 +259,53 @@ fn datastar_on_plugins_render_as_top_level_data_attributes() {
 }
 
 #[test]
-fn generic_datastar_on_event_still_uses_event_namespace() {
+fn datastar_attributes_render_modifiers_before_value_syntax() {
     let result = html! {
-        button !on:click("count++") {}
+        div !on_interval[duration("1s", leading), viewtransition]("count++")
+            !on_intersect[once, half]("visible = true")
+            !json_signals[terse] {}
     }
     .render();
 
     assert_eq!(
         result.as_inner(),
-        r#"<button data-on:click="count++"></button>"#
+        r#"<div data-on-interval__duration.1s.leading__viewtransition="count++" data-on-intersect__once__half="visible = true" data-json-signals__terse></div>"#
+    );
+}
+
+#[test]
+fn quoted_datastar_modifier_names_bypass_known_name_validation() {
+    let result = html! {
+        div !on_interval["future"]("count++") {}
+    }
+    .render();
+
+    assert_eq!(
+        result.as_inner(),
+        r#"<div data-on-interval__future="count++"></div>"#
+    );
+}
+
+#[test]
+fn datastar_keyword_modifier_names_are_validated() {
+    let result = html! {
+        div !ignore[self] {}
+    }
+    .render();
+
+    assert_eq!(result.as_inner(), r#"<div data-ignore__self></div>"#);
+}
+
+#[test]
+fn generic_datastar_on_event_still_uses_event_namespace() {
+    let result = html! {
+        button !on:click[prevent, debounce("250ms", leading)]("count++") {}
+    }
+    .render();
+
+    assert_eq!(
+        result.as_inner(),
+        r#"<button data-on:click__prevent__debounce.250ms.leading="count++"></button>"#
     );
 }
 

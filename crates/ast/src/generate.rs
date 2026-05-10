@@ -8,7 +8,7 @@ use syn::{
     token::{Brace, Paren},
 };
 
-use super::{AttributeValueNode, SyntaxStatic, UnquotedName};
+use super::{AttributeValueNode, DataModifierPart, DataModifiers, SyntaxStatic, UnquotedName};
 
 fn pinned_stream_tokens_expr(stream: &TokenStream) -> TokenStream {
     quote! {
@@ -779,14 +779,69 @@ pub struct AttributeNameCheck {
     kind: AttributeNameCheckKind,
     ident: UnquotedName,
     data: bool,
+    data_modifiers: Vec<UnquotedName>,
+}
+
+struct DataModifierNameCheck<'a>(&'a UnquotedName);
+
+impl ToTokens for DataModifierNameCheck<'_> {
+    fn to_tokens(&self, tokens: &mut TokenStream) {
+        if self.0 == &"self" {
+            // `self` cannot be used as an item name, so the validation table stores it as
+            // `self_` while rendering still emits the Datastar modifier name `self`.
+            format_ident!("self_", span = self.0.span()).to_tokens(tokens);
+        } else {
+            self.0.to_tokens(tokens);
+        }
+    }
 }
 
 impl AttributeNameCheck {
-    pub const fn new(kind: AttributeNameCheckKind, ident: UnquotedName, data: bool) -> Self {
-        Self { kind, ident, data }
+    pub fn new(kind: AttributeNameCheckKind, ident: UnquotedName, data: bool) -> Self {
+        Self {
+            kind,
+            ident,
+            data,
+            data_modifiers: Vec::new(),
+        }
+    }
+
+    pub fn push_data_modifiers(&mut self, modifiers: Option<&DataModifiers>) {
+        if let Some(modifiers) = modifiers {
+            self.data_modifiers
+                .extend(
+                    modifiers
+                        .modifiers
+                        .iter()
+                        .filter_map(|modifier| match &modifier.name {
+                            DataModifierPart::Ident(ident) => Some(ident.clone()),
+                            DataModifierPart::Literal(_) => None,
+                        }),
+                );
+        }
+    }
+
+    fn data_modifier_checks(&self) -> TokenStream {
+        if !self.data || self.data_modifiers.is_empty() {
+            return TokenStream::new();
+        }
+
+        let plugin = match &self.kind {
+            AttributeNameCheckKind::Normal => &self.ident,
+            AttributeNameCheckKind::Namespace(namespace) => namespace,
+        };
+        let modifiers = self.data_modifiers.iter().map(DataModifierNameCheck);
+
+        quote! {
+            #(
+                let _: ::cheers::validation::data::Modifier = ::cheers::validation::data::modifiers::#plugin::#modifiers;
+            )*
+        }
     }
 
     fn to_token_stream_with_el(&self, el: &UnquotedName) -> TokenStream {
+        let data_modifier_checks = self.data_modifier_checks();
+
         match &self.kind {
             AttributeNameCheckKind::Namespace(namespace) => {
                 let ident = &self.ident;
@@ -798,6 +853,7 @@ impl AttributeNameCheck {
                             #[allow(unused_imports)]
                             use ::cheers::validation::data::#namespace::*;
                             let _: ::cheers::validation::Attribute = #ident;
+                            #data_modifier_checks
                         }
                     }
                 } else {
@@ -812,6 +868,7 @@ impl AttributeNameCheck {
                 if self.data {
                     quote! {
                         let _: ::cheers::validation::Attribute = ::cheers::validation::data::#ident;
+                        #data_modifier_checks
                     }
                 } else {
                     quote! {

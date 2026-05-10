@@ -1,6 +1,6 @@
 use ast::{
     Attribute, AttributeKind, AttributeName, AttributeValueNode, DataContent, DataExpr,
-    DataExprValue, Element, ElementBody,
+    DataExprValue, DataModifierPart, DataModifiers, Element, ElementBody,
 };
 use quote::ToTokens;
 use syn::{Expr, Token, punctuated::Punctuated};
@@ -104,6 +104,12 @@ impl<'a, 'b> Printer<'a, 'b> {
                         indent_level
                     };
 
+                    let has_parens = data.has_parens();
+
+                    if let Some(modifiers) = data.modifiers {
+                        self.print_data_modifiers(modifiers, attr_indent_level);
+                    }
+
                     match data.content {
                         DataContent::Signals(decls) => {
                             self.write("(");
@@ -178,7 +184,7 @@ impl<'a, 'b> Printer<'a, 'b> {
                         }
                         DataContent::Empty => {}
                         DataContent::Recovered => {
-                            if data.has_parens() {
+                            if has_parens {
                                 self.write("(");
                                 self.write(")");
                             }
@@ -189,6 +195,45 @@ impl<'a, 'b> Printer<'a, 'b> {
         }
 
         self.print_element_body(body, should_wrap, indent_level, preserve_blank_lines);
+    }
+
+    fn print_data_modifier_part(&mut self, part: DataModifierPart) {
+        match part {
+            DataModifierPart::Ident(ident) => self.write(&ident.lit().value()),
+            DataModifierPart::Literal(literal) => self.print_tokens(literal),
+        }
+    }
+
+    fn print_data_modifiers(&mut self, modifiers: DataModifiers, _indent_level: usize) {
+        self.write("[");
+
+        let mut first = true;
+        for modifier in modifiers.modifiers.into_iter() {
+            if !first {
+                self.write(", ");
+            }
+
+            self.print_data_modifier_part(modifier.name);
+
+            if modifier.paren_token.is_some() {
+                self.write("(");
+
+                let mut first_tag = true;
+                for tag in modifier.tags.into_iter() {
+                    if !first_tag {
+                        self.write(", ");
+                    }
+                    self.print_data_modifier_part(tag);
+                    first_tag = false;
+                }
+
+                self.write(")");
+            }
+
+            first = false;
+        }
+
+        self.write("]");
     }
 
     fn print_data_decl_expr(
@@ -971,6 +1016,20 @@ mod test {
         r#"
         html! {
             p !on:click("console.log('text')") { "text" }
+        }
+        "#
+    );
+
+    test_default!(
+        data_attribute_modifiers,
+        r#"
+        html! {
+            p !on:click[ prevent, debounce( "250ms", leading ) ]( "count++" ) { "text" }
+        }
+        "#,
+        r#"
+        html! {
+            p !on:click[prevent, debounce("250ms", leading)]("count++") { "text" }
         }
         "#
     );

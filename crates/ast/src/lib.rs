@@ -440,16 +440,21 @@ impl Attribute {
         match &self {
             Attribute::Regular { name, .. } => name.check(false),
             Attribute::Data(data) => match (&data.namespace, data.name.ident()) {
-                (Some(namespace), Some(name)) => Some(AttributeNameCheck::new(
-                    AttributeNameCheckKind::Namespace(namespace.clone()),
-                    name.clone(),
-                    true,
-                )),
-                (None, Some(name)) => Some(AttributeNameCheck::new(
-                    AttributeNameCheckKind::Normal,
-                    name.clone(),
-                    true,
-                )),
+                (Some(namespace), Some(name)) => {
+                    let mut check = AttributeNameCheck::new(
+                        AttributeNameCheckKind::Namespace(namespace.clone()),
+                        name.clone(),
+                        true,
+                    );
+                    check.push_data_modifiers(data.modifiers.as_ref());
+                    Some(check)
+                }
+                (None, Some(name)) => {
+                    let mut check =
+                        AttributeNameCheck::new(AttributeNameCheckKind::Normal, name.clone(), true);
+                    check.push_data_modifiers(data.modifiers.as_ref());
+                    Some(check)
+                }
                 _ => None,
             },
         }
@@ -835,6 +840,149 @@ impl DataName {
     }
 }
 
+pub enum DataModifierPart {
+    Ident(UnquotedName),
+    Literal(Literal),
+}
+
+impl DataModifierPart {
+    fn lit(&self) -> LitStr {
+        match self {
+            Self::Ident(ident) => ident.lit(),
+            Self::Literal(literal) => literal.lit_str(),
+        }
+    }
+
+    fn span(&self) -> Span {
+        match self {
+            Self::Ident(ident) => ident.span(),
+            Self::Literal(literal) => literal.lit_str().span(),
+        }
+    }
+
+    fn validate(&self) -> syn::Result<()> {
+        let lit = self.lit();
+        let value = lit.value();
+
+        if value.is_empty() {
+            return Err(Error::new(
+                self.span(),
+                "Datastar modifier parts cannot be empty",
+            ));
+        }
+
+        for c in value.chars() {
+            if c.is_whitespace() {
+                return Err(Error::new(
+                    self.span(),
+                    "Datastar modifier parts cannot contain whitespace",
+                ));
+            } else if c.is_control() {
+                return Err(Error::new(
+                    self.span(),
+                    "Datastar modifier parts cannot contain control characters",
+                ));
+            } else if c == '>' || c == '/' || c == '=' || c == '.' {
+                return Err(Error::new(
+                    self.span(),
+                    format!("Datastar modifier parts cannot contain '{c}' characters"),
+                ));
+            } else if c == '"' || c == '\'' {
+                return Err(Error::new(
+                    self.span(),
+                    "Datastar modifier parts cannot contain quotes",
+                ));
+            }
+        }
+
+        Ok(())
+    }
+}
+
+impl Parse for DataModifierPart {
+    fn parse(input: ParseStream) -> syn::Result<Self> {
+        let lookahead = input.lookahead1();
+
+        let part = if lookahead.peek(Ident::peek_any) {
+            Self::Ident(input.parse()?)
+        } else if lookahead.peek(LitStr)
+            || lookahead.peek(LitInt)
+            || lookahead.peek(LitBool)
+            || lookahead.peek(LitFloat)
+            || lookahead.peek(LitChar)
+        {
+            Self::Literal(input.parse()?)
+        } else {
+            return Err(lookahead.error());
+        };
+
+        part.validate()?;
+        Ok(part)
+    }
+}
+
+pub struct DataModifier {
+    pub name: DataModifierPart,
+    pub paren_token: Option<Paren>,
+    pub tags: Punctuated<DataModifierPart, Token![,]>,
+}
+
+impl Parse for DataModifier {
+    fn parse(input: ParseStream) -> syn::Result<Self> {
+        let name = input.parse()?;
+
+        if input.peek(Paren) {
+            let content;
+            let paren_token = parenthesized!(content in input);
+            Ok(Self {
+                name,
+                paren_token: Some(paren_token),
+                tags: Punctuated::parse_terminated(&content)?,
+            })
+        } else {
+            Ok(Self {
+                name,
+                paren_token: None,
+                tags: Punctuated::new(),
+            })
+        }
+    }
+}
+
+pub struct DataModifiers {
+    pub bracket_token: Bracket,
+    pub modifiers: Punctuated<DataModifier, Token![,]>,
+}
+
+impl DataModifiers {
+    fn literals(&self) -> Vec<LitStr> {
+        let mut literals = Vec::new();
+
+        for modifier in &self.modifiers {
+            literals.push(LitStr::new("__", modifier.name.span()));
+            literals.push(modifier.name.lit());
+
+            for tag in &modifier.tags {
+                literals.push(LitStr::new(".", tag.span()));
+                literals.push(tag.lit());
+            }
+        }
+
+        literals
+    }
+}
+
+impl Parse for DataModifiers {
+    fn parse(input: ParseStream) -> syn::Result<Self> {
+        let content;
+
+        Ok(Self {
+            bracket_token: bracketed!(content in input),
+            modifiers: Punctuated::parse_terminated(&content)?,
+        })
+    }
+}
+
 #[allow(clippy::large_enum_variant)]
 pub enum DataContent {
     Node(AttributeValueNode),
@@ -865,6 +1013,7 @@ pub struct Data {
     pub namespace: Option<UnquotedName>,
     pub name: DataName,
     paren_token: Option<Paren>,
+    pub modifiers: Option<DataModifiers>,
     pub content: DataContent,
     recovery_error: Option<Error>,
 }
@@ -944,11 +1093,18 @@ impl Parse for Data {
             }
         };
 
+        let modifiers = if input.peek(Bracket) {
+            Some(input.parse()?)
+        } else {
+            None
+        };
+
         if !input.peek(Paren) {
             return Ok(Data {
                 name,
                 namespace,
                 paren_token: None,
+                modifiers,
                 content: if recovery_error.is_some() {
                     DataContent::Recovered
                 } else {
@@ -966,6 +1122,7 @@ impl Parse for Data {
                 namespace,
                 name,
                 paren_token: Some(paren_token),
+                modifiers,
                 content: DataContent::Recovered,
                 recovery_error,
             });
@@ -984,6 +1141,7 @@ impl Parse for Data {
             namespace,
             name,
             paren_token: Some(paren_token),
+            modifiers,
             content,
             recovery_error,
         })
@@ -1014,6 +1172,10 @@ impl Data {
             // TODO: I think, we should update everything to use snake_case
             let name = LitStr::new(&name_str.replace('_', "-"), name.span());
             literals.push(name);
+        }
+
+        if let Some(modifiers) = &self.modifiers {
+            literals.extend(modifiers.literals());
         }
 
         literals

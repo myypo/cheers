@@ -1,6 +1,7 @@
 use ast::{
     Attribute, AttributeKind, AttributeName, AttributeValueNode, DataContent, DataExpr,
-    DataExprValue, ElementBody, ElementNode, Node, ParenExpr, Toggle,
+    DataExprValue, DataModifierPart, DataModifiers, ElementBody, ElementNode, Node, ParenExpr,
+    Toggle,
     component::{ComponentAttribute, ComponentAttributeValue, ComponentDefaultAttributes},
     control::{self, ControlBlock},
 };
@@ -13,6 +14,48 @@ fn paren_expr_len<N: Node>(paren_expr: &ParenExpr<N>) -> Option<usize> {
 fn data_expr_len(expr: &DataExpr) -> Option<usize> {
     span_len(&expr.expr)
         .map(|len| len + expr.mode.prefix_len() + if expr.paren_token.is_some() { 2 } else { 0 })
+}
+
+fn data_modifier_part_len(part: &DataModifierPart) -> Option<usize> {
+    match part {
+        DataModifierPart::Ident(ident) => span_len(&ident.0),
+        DataModifierPart::Literal(literal) => span_len(&literal.lit_str()),
+    }
+}
+
+fn data_modifiers_len(modifiers: &DataModifiers) -> Option<usize> {
+    // `[` + `]`
+    let mut len = 2;
+
+    let mut first_modifier = true;
+    for modifier in &modifiers.modifiers {
+        if !first_modifier {
+            // `, `
+            len += 2;
+        }
+
+        len += data_modifier_part_len(&modifier.name)?;
+
+        if modifier.paren_token.is_some() {
+            // `(` + `)`
+            len += 2;
+
+            let mut first_tag = true;
+            for tag in &modifier.tags {
+                if !first_tag {
+                    // `, `
+                    len += 2;
+                }
+
+                len += data_modifier_part_len(tag)?;
+                first_tag = false;
+            }
+        }
+
+        first_modifier = false;
+    }
+
+    Some(len)
 }
 
 fn component_attr_value_len(value: &ComponentAttributeValue) -> Option<usize> {
@@ -117,6 +160,10 @@ pub fn element_len(ident: &Ident, attrs: &[Attribute], body: &ElementBody) -> Op
                         element_len += data_decl_len_attr_values(decls)?;
                     }
                     DataContent::Empty | DataContent::Recovered => {}
+                }
+
+                if let Some(modifiers) = &data.modifiers {
+                    element_len += data_modifiers_len(modifiers)?;
                 }
             }
         }
