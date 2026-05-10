@@ -104,7 +104,7 @@ pub mod __internal {
     }
 
     pub mod assets {
-        #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+        #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
         pub struct AssetSourceLocation {
             pub manifest_dir: &'static str,
             pub file: &'static str,
@@ -120,6 +120,15 @@ pub mod __internal {
         }
 
         inventory::collect!(CssRegistration);
+
+        #[derive(Debug)]
+        pub struct JsBundleRegistration {
+            pub location: AssetSourceLocation,
+            pub js_file: &'static str,
+            pub contents: &'static str,
+        }
+
+        inventory::collect!(JsBundleRegistration);
 
         #[derive(Debug)]
         pub struct SvgSpriteRegistration {
@@ -148,7 +157,7 @@ pub mod prelude {
             Event, EventReceiver, EventSender, JsScript, PatchElements, PatchElementsMode,
             PatchSignals, events,
         },
-        include_css, include_svg_sprite,
+        include_css, include_js_bundle, include_svg_sprite,
         reference::{ElementId, FormName, Signal},
         render::{Buffer, Lazy, LazyAttribute, RawJs, Render, RenderExt as _},
         response::AsyncLazy,

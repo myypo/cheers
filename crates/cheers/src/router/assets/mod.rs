@@ -1,8 +1,11 @@
 use std::{
+    collections::HashSet,
     hash::{DefaultHasher, Hash, Hasher},
-    path::{Component, PathBuf},
     sync::OnceLock,
 };
+
+#[cfg(debug_assertions)]
+use std::path::{Component, PathBuf};
 
 use axum::{
     Router,
@@ -15,7 +18,10 @@ use lightningcss::{
     stylesheet::{ParserFlags, ParserOptions, StyleSheet},
 };
 
-use crate::__internal::assets::{CssRegistration, SvgSpriteRegistration};
+use crate::__internal::assets::{
+    AssetSourceLocation, CssRegistration, JsBundleRegistration, SvgSpriteRegistration,
+};
+use crate::components::JsBundle;
 use crate::router::Error;
 use crate::track::TrackConfig;
 
@@ -100,6 +106,9 @@ where
     #[cfg(not(debug_assertions))]
     let sprite_sheet = SVG_SPRITE_BUNDLER.bundle()?;
 
+    #[cfg(not(debug_assertions))]
+    let js_bundles = JS_BUNDLE_BUNDLER.bundle_all()?;
+
     let css_path = css_path();
 
     let css_handler = || async move {
@@ -124,8 +133,12 @@ where
     let datastar_modules = datastar_modules(track)?;
 
     let js_path = make_js_path(RUNTIME_ENTRY_MODULE, &datastar_modules);
-    let bundle = bundle::bundle_and_minify(RUNTIME_ENTRY_MODULE, datastar_modules)
-        .map_err(|e| Error::Bundling(format!("bundle javascript: {e}")))?;
+    let bundle = bundle::bundle(
+        RUNTIME_ENTRY_MODULE,
+        datastar_modules,
+        bundle::BundleOptions::runtime(),
+    )
+    .map_err(|e| Error::Bundling(format!("bundle javascript: {e}")))?;
     set_static_path(&JS_PATH, &js_path, "JS_PATH")?;
     let bundle: &'static str = bundle.leak();
     let datastar_handler = move || async move {
@@ -137,6 +150,49 @@ where
     let mut router = Router::new()
         .route(css_path, get(css_handler))
         .route(js_path.as_str(), get(datastar_handler));
+
+    #[cfg(debug_assertions)]
+    let mut js_bundle_paths = HashSet::new();
+
+    #[cfg(debug_assertions)]
+    for registration in JsBundleBundler::js_bundle_registrations() {
+        let js_path = make_js_bundle_path(
+            registration.location,
+            registration.js_file,
+            registration.contents,
+        );
+        if !js_bundle_paths.insert(js_path.clone()) {
+            continue;
+        }
+
+        let handler = move || async move {
+            match JS_BUNDLE_BUNDLER.bundle(registration) {
+                Ok(bundle) => {
+                    let headers = assets_headers("text/javascript");
+                    (StatusCode::OK, headers, bundle).into_response()
+                }
+                Err(e) => (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    [(header::CONTENT_TYPE, "text/plain")],
+                    format!("Error bundling JavaScript in dev mode: {e}"),
+                )
+                    .into_response(),
+            }
+        };
+
+        router = router.route(js_path.as_str(), get(handler));
+    }
+
+    #[cfg(not(debug_assertions))]
+    for (js_path, bundle) in js_bundles {
+        let bundle: &'static str = bundle.leak();
+        let handler = move || async move {
+            let headers = assets_headers("text/javascript");
+            (StatusCode::OK, headers, bundle).into_response()
+        };
+
+        router = router.route(js_path.as_str(), get(handler));
+    }
 
     #[cfg(debug_assertions)]
     if SVG_SPRITE_BUNDLER.has_registrations() {
@@ -227,6 +283,14 @@ pub(crate) fn js_url() -> String {
     public_asset_url(js_path())
 }
 
+pub(crate) fn js_bundle_url(bundle: &JsBundle) -> String {
+    public_asset_url(&make_js_bundle_path(
+        bundle.location,
+        bundle.js_file,
+        bundle.contents,
+    ))
+}
+
 fn css_path() -> &'static str {
     if cfg!(debug_assertions) {
         "/assets/bundle.css"
@@ -303,6 +367,26 @@ fn make_js_path(entry_specifier: &str, modules: &[bundle::VirtualModule]) -> Str
     }
 }
 
+fn make_js_bundle_path(
+    location: AssetSourceLocation,
+    js_file: &'static str,
+    contents: &'static str,
+) -> String {
+    let mut hasher = DefaultHasher::new();
+    location.hash(&mut hasher);
+    js_file.hash(&mut hasher);
+
+    if !cfg!(debug_assertions) {
+        contents.hash(&mut hasher);
+    }
+
+    use base64::Engine;
+    let hash =
+        base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(hasher.finish().to_le_bytes());
+
+    format!("/assets/{hash}.js")
+}
+
 fn make_single_stylesheet<'a>(
     stylesheets: impl IntoIterator<Item = &'a str>,
 ) -> Result<String, Error> {
@@ -344,6 +428,35 @@ fn make_svg_path(contents: &str) -> String {
 }
 
 pub struct SvgSpriteBundler;
+
+#[cfg(debug_assertions)]
+fn registered_asset_file_path(location: AssetSourceLocation, asset_file: &str) -> PathBuf {
+    let manifest_dir = PathBuf::from(location.manifest_dir);
+    let mut file_path = PathBuf::from(location.file);
+    file_path.pop();
+
+    let manifest_components: Vec<_> = manifest_dir
+        .components()
+        .filter_map(|component| match component {
+            Component::Normal(name) => Some(name.to_owned()),
+            _ => None,
+        })
+        .collect();
+
+    let mut filtered_path = PathBuf::new();
+    for component in file_path.components() {
+        match component {
+            Component::Normal(name) => {
+                if !manifest_components.iter().any(|mc| mc == name) {
+                    filtered_path.push(name);
+                }
+            }
+            _ => filtered_path.push(component.as_os_str()),
+        }
+    }
+
+    manifest_dir.join(filtered_path).join(asset_file)
+}
 
 impl SvgSpriteBundler {
     fn has_registrations(&self) -> bool {
@@ -417,32 +530,9 @@ impl CssBundler {
         registrations
     }
 
+    #[cfg(debug_assertions)]
     fn css_file_path(registration: &CssRegistration) -> PathBuf {
-        let manifest_dir = PathBuf::from(registration.location.manifest_dir);
-        let mut file_path = PathBuf::from(registration.location.file);
-        file_path.pop();
-
-        let manifest_components: Vec<_> = manifest_dir
-            .components()
-            .filter_map(|component| match component {
-                Component::Normal(name) => Some(name.to_owned()),
-                _ => None,
-            })
-            .collect();
-
-        let mut filtered_path = PathBuf::new();
-        for component in file_path.components() {
-            match component {
-                Component::Normal(name) => {
-                    if !manifest_components.iter().any(|mc| mc == name) {
-                        filtered_path.push(name);
-                    }
-                }
-                _ => filtered_path.push(component.as_os_str()),
-            }
-        }
-
-        manifest_dir.join(filtered_path).join(registration.css_file)
+        registered_asset_file_path(registration.location, registration.css_file)
     }
 
     pub(crate) fn bundle(&self) -> Result<String, Error> {
@@ -477,8 +567,98 @@ impl CssBundler {
     }
 }
 
+pub struct JsBundleBundler;
+
+impl JsBundleBundler {
+    fn js_bundle_registrations() -> Vec<&'static JsBundleRegistration> {
+        let mut registrations = inventory::iter::<JsBundleRegistration>
+            .into_iter()
+            .collect::<Vec<_>>();
+
+        registrations.sort_by_key(|registration| {
+            (
+                registration.location.manifest_dir,
+                registration.location.file,
+                registration.location.line,
+                registration.location.column,
+                registration.js_file,
+            )
+        });
+
+        registrations
+    }
+
+    #[cfg(debug_assertions)]
+    fn js_file_path(registration: &JsBundleRegistration) -> PathBuf {
+        registered_asset_file_path(registration.location, registration.js_file)
+    }
+
+    fn entry_specifier(registration: &JsBundleRegistration) -> String {
+        let mut hasher = DefaultHasher::new();
+        registration.location.hash(&mut hasher);
+        registration.js_file.hash(&mut hasher);
+
+        use base64::Engine;
+        let hash =
+            base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(hasher.finish().to_le_bytes());
+
+        format!("cheers/app/{hash}")
+    }
+
+    pub(crate) fn bundle(&self, registration: &JsBundleRegistration) -> Result<String, Error> {
+        #[cfg(debug_assertions)]
+        let source = {
+            let path = Self::js_file_path(registration);
+            std::fs::read_to_string(&path).map_err(|e| {
+                Error::Bundling(format!("open JavaScript file: {}: {e}", path.display()))
+            })?
+        };
+
+        #[cfg(not(debug_assertions))]
+        let source = registration.contents.to_owned();
+
+        let entry_specifier = Self::entry_specifier(registration);
+        bundle::bundle(
+            &entry_specifier,
+            [bundle::VirtualModule::new(entry_specifier.clone(), source)],
+            bundle::BundleOptions::classic_script(),
+        )
+        .map_err(|e| {
+            Error::Bundling(format!(
+                "bundle JavaScript file `{}`: {e}",
+                registration.js_file
+            ))
+        })
+    }
+
+    #[cfg(not(debug_assertions))]
+    pub(crate) fn bundle_all(&self) -> Result<Vec<(String, String)>, Error> {
+        let registrations = Self::js_bundle_registrations();
+        let mut bundles = Vec::with_capacity(registrations.len());
+        let mut paths = HashSet::new();
+
+        for registration in registrations {
+            let path = make_js_bundle_path(
+                registration.location,
+                registration.js_file,
+                registration.contents,
+            );
+            if !paths.insert(path.clone()) {
+                continue;
+            }
+
+            let bundle = self.bundle(registration)?;
+            bundles.push((path, bundle));
+        }
+
+        Ok(bundles)
+    }
+}
+
 #[doc(hidden)]
 pub static CSS_BUNDLER: CssBundler = CssBundler;
+#[doc(hidden)]
+pub static JS_BUNDLE_BUNDLER: JsBundleBundler = JsBundleBundler;
 #[doc(hidden)]
 pub static SVG_SPRITE_BUNDLER: SvgSpriteBundler = SvgSpriteBundler;
 
@@ -514,6 +694,56 @@ macro_rules! include_css {
             }
         }
     };
+}
+
+/// Creates a renderable application JavaScript bundle handle and registers the file with the
+/// Cheers asset router.
+///
+/// Assign the macro result to a `const`, then render that const on pages that need the bundle.
+///
+/// # Example
+///
+/// ```ignore
+/// use cheers::{components::{JsBundle, Scripts}, prelude::*};
+///
+/// const CHAT_JS: JsBundle = cheers::include_js_bundle!("./chat.js");
+///
+/// let page = html! {
+///     html {
+///         body {
+///             (CHAT_JS)
+///             Scripts;
+///         }
+///     }
+/// };
+/// ```
+#[macro_export]
+macro_rules! include_js_bundle {
+    ($js_file:expr $(;)?) => {{
+        $crate::__internal::inventory::submit! {
+            $crate::__internal::assets::JsBundleRegistration {
+                location: $crate::__internal::assets::AssetSourceLocation {
+                    manifest_dir: env!("CARGO_MANIFEST_DIR"),
+                    file: file!(),
+                    line: line!(),
+                    column: column!(),
+                },
+                js_file: $js_file,
+                contents: include_str!($js_file),
+            }
+        }
+
+        $crate::components::JsBundle::__new(
+            $crate::__internal::assets::AssetSourceLocation {
+                manifest_dir: env!("CARGO_MANIFEST_DIR"),
+                file: file!(),
+                line: line!(),
+                column: column!(),
+            },
+            $js_file,
+            include_str!($js_file),
+        )
+    }};
 }
 
 /// Declares the single global SVG sprite sheet.
@@ -634,8 +864,12 @@ mod tests {
     #[test]
     fn bundles_vendor_datastar_runtime() {
         let modules = datastar_modules(None).expect("datastar modules should build");
-        let bundle = bundle::bundle_and_minify(RUNTIME_ENTRY_MODULE, modules)
-            .expect("vendored datastar runtime should bundle");
+        let bundle = bundle::bundle(
+            RUNTIME_ENTRY_MODULE,
+            modules,
+            bundle::BundleOptions::runtime(),
+        )
+        .expect("vendored datastar runtime should bundle");
 
         assert!(!bundle.is_empty());
     }

@@ -180,7 +180,7 @@ Keep traits use-case-specific, not generic `Backend`. Handlers should extract st
 
 Full pages are better rendered through a shared layout/base component with `Doctype`, `CssStylesheet`, and `Scripts`. Include `Scripts` on pages using actions, patches, signals, Datastar attributes, streams, or other Cheers client behavior; pure read-only pages do not need it.
 
-Use `include_css!("./path.css")` and `include_svg_sprite! { ... }` following the app's existing organization. Build app and test routers with `cheers::router::new(...)`, and register generated actions explicitly on the Axum router with `.action::<SomeAction>()` before calling `.with_state(...)`.
+Use `include_css!("./path.css")` for global CSS, `include_svg_sprite! { ... }` for global SVG, and `const PATH_JS_BUNDLE: JsBundle = include_js_bundle!("./path.js")` for scoped optimized JS.
 
 # Dynamic behavior
 
@@ -190,7 +190,8 @@ Choose the smallest layer that works:
 2. `#[action]` returning `PatchElements`: default for structural server-rendered HTML updates.
 3. Generated `#[signal]` values or `scoped_signal!`: small client-side state/display values. Use `#[signal(global)]` only for state a handler must receive from the client.
 4. `EventReceiver`: multiple/coordinated events or long-lived server push.
-5. `JsScript`: last resort.
+5. `JsScript`: last resort for dynamic/server-pushed imperative code.
+6. Const JS bundle: reusable static client helpers when there is a lot of JS.
 
 Keep backend state authoritative; do not mirror broad backend state into signals by default.
 
@@ -232,6 +233,7 @@ Before finishing, run the app's normal checks, such as relevant `cargo test`, `c
 
 - `#[derive(Cheers)]` does not implement `Render`.
 - Include `Scripts` for actions, signals, patches, streams, and Datastar client behavior.
+- Use module-scope `const NAME: JsBundle = include_js_bundle!("./file.js")` for reusable JS; do not create local/non-const bundle handles.
 - Use generated `...Action` types and generated ids; do not hardcode generated action URLs or specific patch ids.
 - Keep semantic HTML and ARIA correct.
 - Use browser tests only when real client behavior matters.

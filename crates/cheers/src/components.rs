@@ -5,7 +5,7 @@ use macros::Cheers;
 use crate::{
     context::{AttributeValue, Context, Element},
     render::{Buffer, Render},
-    router::{css_url, js_url, svg_sprite_url},
+    router::{css_url, js_bundle_url, js_url, svg_sprite_url},
 };
 
 /// Renders `<!DOCTYPE html>`.
@@ -370,6 +370,50 @@ impl Render for CssStylesheet {
         let link = format!(r#"<link rel="stylesheet" href="{}">"#, css_url());
         // XSS SAFETY: CSS URL is computed by us
         buffer.dangerously_get_string().push_str(&link);
+    }
+}
+
+/// A framework-served application JavaScript bundle.
+///
+/// Declare const values with [`include_js_bundle!`](crate::include_js_bundle) and render them on
+/// pages that need the bundle:
+///
+/// ```ignore
+/// use cheers::prelude::*;
+///
+/// const CHAT_JS: cheers::components::JsBundle = cheers::include_js_bundle!("./chat.js");
+///
+/// html! {
+///     (CHAT_JS)
+/// };
+/// ```
+#[derive(Debug, Clone, Copy, Eq, Hash, PartialEq)]
+pub struct JsBundle {
+    pub(crate) location: crate::__internal::assets::AssetSourceLocation,
+    pub(crate) js_file: &'static str,
+    pub(crate) contents: &'static str,
+}
+
+impl JsBundle {
+    #[doc(hidden)]
+    pub const fn __new(
+        location: crate::__internal::assets::AssetSourceLocation,
+        js_file: &'static str,
+        contents: &'static str,
+    ) -> Self {
+        Self {
+            location,
+            js_file,
+            contents,
+        }
+    }
+}
+
+impl Render for JsBundle {
+    fn render_to(&self, buffer: &mut Buffer<Element>) {
+        let script = format!(r#"<script src="{}"></script>"#, js_bundle_url(self));
+        // XSS SAFETY: JS bundle URL is computed by us
+        buffer.dangerously_get_string().push_str(&script);
     }
 }
 

@@ -15,6 +15,71 @@ use swc_ecma_transforms_base::fixer::fixer;
 use swc_ecma_transforms_typescript::typescript;
 use swc_ecma_visit::VisitMutWith;
 
+/// Semantic bundling profile.
+///
+/// Keep this enum high-level: callers should choose the kind of JavaScript they are producing,
+/// not tune SWC's individual compression and mangling booleans.
+#[derive(Debug, Clone, Copy, Eq, PartialEq)]
+pub enum BundleProfile {
+    /// Cheers-owned runtime module where all call sites are inside the bundle.
+    ///
+    /// Enables tree-shaking plus aggressive SWC compression and mangling, including top-level
+    /// names.
+    Runtime,
+
+    /// Application-owned classic script loaded with a normal `<script>` tag.
+    ///
+    /// Performs syntax minification only. Top-level declarations and externally visible names are
+    /// preserved because inline/event scripts or later classic scripts may reference them.
+    ClassicScript,
+}
+
+/// Options for [`bundle`].
+#[derive(Debug, Clone, Copy, Eq, PartialEq)]
+pub struct BundleOptions {
+    pub profile: BundleProfile,
+}
+
+impl BundleOptions {
+    pub const fn runtime() -> Self {
+        Self {
+            profile: BundleProfile::Runtime,
+        }
+    }
+
+    pub const fn classic_script() -> Self {
+        Self {
+            profile: BundleProfile::ClassicScript,
+        }
+    }
+}
+
+impl Default for BundleOptions {
+    fn default() -> Self {
+        Self::runtime()
+    }
+}
+
+impl BundleProfile {
+    const fn disable_dce(self) -> bool {
+        match self {
+            Self::Runtime => false,
+            Self::ClassicScript => true,
+        }
+    }
+
+    const fn optimize_ast(self) -> bool {
+        match self {
+            Self::Runtime => true,
+            Self::ClassicScript => false,
+        }
+    }
+
+    const fn minify_syntax(self) -> bool {
+        true
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct VirtualModule {
     pub specifier: String,
@@ -235,9 +300,10 @@ impl Load for Loader {
     }
 }
 
-pub fn bundle_and_minify(
+pub fn bundle(
     entry_specifier: &str,
     virtual_modules: impl IntoIterator<Item = VirtualModule>,
+    options: BundleOptions,
 ) -> Result<String, Error> {
     let mut modules_by_specifier = HashMap::new();
     for module in virtual_modules {
@@ -276,7 +342,7 @@ pub fn bundle_and_minify(
             external_modules: Default::default(),
             disable_fixer: true,
             disable_hygiene: true,
-            disable_dce: false,
+            disable_dce: options.profile.disable_dce(),
             module: Default::default(),
         },
         Box::new(NoopHook),
@@ -294,27 +360,29 @@ pub fn bundle_and_minify(
     }
 
     bundle = GLOBALS.set(&globals, || {
-        bundle.module = swc_ecma_minifier::optimize(
-            bundle.module.into(),
-            cm.clone(),
-            None,
-            None,
-            &MinifyOptions {
-                compress: Some(CompressOptions::default()),
-                mangle: Some(MangleOptions {
-                    top_level: Some(true),
+        if options.profile.optimize_ast() {
+            bundle.module = swc_ecma_minifier::optimize(
+                bundle.module.into(),
+                cm.clone(),
+                None,
+                None,
+                &MinifyOptions {
+                    compress: Some(CompressOptions::default()),
+                    mangle: Some(MangleOptions {
+                        top_level: Some(true),
+                        ..Default::default()
+                    }),
                     ..Default::default()
-                }),
-                ..Default::default()
-            },
-            &ExtraOptions {
-                unresolved_mark: Mark::new(),
-                top_level_mark: Mark::new(),
-                mangle_name_cache: None,
-            },
-        )
-        .module()
-        .expect("expected a module to come out of optimizing module");
+                },
+                &ExtraOptions {
+                    unresolved_mark: Mark::new(),
+                    top_level_mark: Mark::new(),
+                    mangle_name_cache: None,
+                },
+            )
+            .module()
+            .expect("expected a module to come out of optimizing module");
+        }
 
         bundle.module.visit_mut_with(&mut fixer(None));
         bundle
@@ -324,7 +392,7 @@ pub fn bundle_and_minify(
     {
         let wr = JsWriter::new(cm.clone(), "\n", &mut buf, None);
         let mut emitter = Emitter {
-            cfg: swc_ecma_codegen::Config::default().with_minify(true),
+            cfg: swc_ecma_codegen::Config::default().with_minify(options.profile.minify_syntax()),
             cm: cm.clone(),
             comments: None,
             wr: Box::new(omit_trailing_semi(wr)) as Box<dyn WriteJs>,
@@ -337,16 +405,17 @@ pub fn bundle_and_minify(
 
 #[cfg(test)]
 mod tests {
-    use super::{VirtualModule, bundle_and_minify};
+    use super::{BundleOptions, VirtualModule, bundle};
 
     #[test]
     fn bundles_virtual_modules_with_relative_imports() {
-        let bundle = bundle_and_minify(
+        let bundle = bundle(
             "cheers/entry",
             [
                 VirtualModule::new("cheers/entry", "import './dep'"),
                 VirtualModule::new("cheers/dep", "globalThis.__cheers_bundle_test = 1"),
             ],
+            BundleOptions::runtime(),
         )
         .expect("bundle should succeed");
 
@@ -355,12 +424,13 @@ mod tests {
 
     #[test]
     fn resolves_virtual_modules_with_ts_extensions() {
-        let bundle = bundle_and_minify(
+        let bundle = bundle(
             "cheers/entry",
             [
                 VirtualModule::new("cheers/entry", "import './dep.ts'"),
                 VirtualModule::new("cheers/dep", "globalThis.__cheers_bundle_test_ts = 1"),
             ],
+            BundleOptions::runtime(),
         )
         .expect("bundle should succeed");
 
@@ -369,7 +439,7 @@ mod tests {
 
     #[test]
     fn preserves_http_and_json_property_names() {
-        let bundle = bundle_and_minify(
+        let bundle = bundle(
             "cheers/entry",
             [VirtualModule::new(
                 "cheers/entry",
@@ -388,6 +458,7 @@ mod tests {
                 });
                 "#,
             )],
+            BundleOptions::runtime(),
         )
         .expect("bundle should succeed");
 
@@ -395,5 +466,60 @@ mod tests {
         assert!(bundle.contains("sent_at_ms"), "{bundle}");
         assert!(bundle.contains("timestamp_ms"), "{bundle}");
         assert!(bundle.contains("props"), "{bundle}");
+    }
+
+    #[test]
+    fn classic_script_minification_preserves_top_level_api_names() {
+        let bundle = bundle(
+            "cheers/entry",
+            [VirtualModule::new(
+                "cheers/entry",
+                r#"
+                function CheersTopLevelApiForInlineHandlers() {
+                    return true;
+                }
+
+                var CheersTopLevelValueForInlineHandlers = 1;
+                window.CheersExplicitApi = {
+                    call: CheersTopLevelApiForInlineHandlers,
+                    value: CheersTopLevelValueForInlineHandlers,
+                };
+                "#,
+            )],
+            BundleOptions::classic_script(),
+        )
+        .expect("bundle should succeed");
+
+        assert!(
+            bundle.contains("CheersTopLevelApiForInlineHandlers"),
+            "{bundle}"
+        );
+        assert!(
+            bundle.contains("CheersTopLevelValueForInlineHandlers"),
+            "{bundle}"
+        );
+        assert!(bundle.contains("CheersExplicitApi"), "{bundle}");
+    }
+
+    #[test]
+    fn classic_script_minification_preserves_externally_referenced_top_level_names() {
+        let bundle = bundle(
+            "cheers/entry",
+            [VirtualModule::new(
+                "cheers/entry",
+                r#"
+                function CalledFromInlineOnClick() {
+                    return true;
+                }
+
+                var ReadFromLaterScript = 1;
+                "#,
+            )],
+            BundleOptions::classic_script(),
+        )
+        .expect("bundle should succeed");
+
+        assert!(bundle.contains("CalledFromInlineOnClick"), "{bundle}");
+        assert!(bundle.contains("ReadFromLaterScript"), "{bundle}");
     }
 }

@@ -16,7 +16,7 @@ use axum::{
 };
 use cheers::{
     ActionDef,
-    components::{CssStylesheet, Debugged, Displayed, Doctype, Scripts, SvgSymbol},
+    components::{CssStylesheet, Debugged, Displayed, Doctype, JsBundle, Scripts, SvgSymbol},
     prelude::*,
 };
 use tokio::sync::{Barrier, Mutex};
@@ -176,6 +176,39 @@ async fn js_bundle_omits_track_runtime_without_tracking_config() {
         cheers::subsecond::enabled()
     );
     assert!(!body.contains("/_track"));
+}
+
+const TEST_APP_BUNDLE: JsBundle = cheers::include_js_bundle!("./fixtures/app_bundle.js");
+
+#[tokio::test]
+async fn app_js_bundle_component_points_to_served_bundle() {
+    let app = cheers_router();
+
+    let rendered = TEST_APP_BUNDLE.render();
+    let src = extract_src(rendered.as_inner());
+
+    assert!(src.starts_with("/cheers/assets/"));
+
+    let request = axum::http::Request::builder()
+        .uri(src)
+        .body(Body::empty())
+        .expect("request should build");
+
+    let response = app
+        .clone()
+        .oneshot(request)
+        .await
+        .expect("router should return a response");
+
+    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(response.headers()["content-type"], "text/javascript");
+
+    let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+        .await
+        .expect("response body should be readable");
+    let body = String::from_utf8(body.into()).expect("response body should be valid UTF-8");
+
+    assert!(body.contains("__cheers_test_app_bundle"), "{body}");
 }
 
 #[cfg(all(debug_assertions, feature = "subsecond"))]
