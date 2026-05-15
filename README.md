@@ -222,5 +222,9 @@ mod tests {
 
 ## Acknowledgements
 
+See [NOTICE.md](NOTICE.md) for third-party license notices.
+
+- Cheers uses and vendors [Datastar](https://github.com/starfederation/datastar) modified runtime code.
 - Most of the current templating code was taken from [vidhanio/hypertext](https://github.com/vidhanio/hypertext).
-- `cargo cheers fmt` formatter was based on [Jeosas/maudfmt](https://github.com/Jeosas/maudfmt).
+- `cargo cheers fmt` formatter is based on [Jeosas/maudfmt](https://github.com/Jeosas/maudfmt).
+- `skills/cheers-design` adapts ideas and structure from [pbakaus/impeccable](https://github.com/pbakaus/impeccable).
