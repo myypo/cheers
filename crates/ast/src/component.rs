@@ -28,7 +28,7 @@ impl SyntaxStatic for Component {
 impl Component {
     fn children_lazy(&mut self, g: &mut Generator<'_>) -> Option<TokenStream> {
         match &mut self.body {
-            ElementBody::Normal { children } => {
+            ElementBody::Normal { children, .. } => {
                 let buffer_ident = Generator::buffer_ident();
 
                 let block = g.block_with(
@@ -46,7 +46,7 @@ impl Component {
                     )
                 })
             }
-            ElementBody::Void => None,
+            ElementBody::Void { .. } => None,
         }
     }
 

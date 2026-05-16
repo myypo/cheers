@@ -7,6 +7,7 @@ use rustc_hash::FxHasher;
 use syn::{
     Expr, LitStr, Local, Pat, Stmt, Token, braced,
     parse::{Parse, ParseStream},
+    spanned::Spanned as _,
     token::Brace,
 };
 
@@ -238,8 +239,8 @@ fn async_source_ordinal(file: &str, line: usize, column: usize) -> Option<usize>
 
 fn element_body_contains_async(body: &crate::ElementBody) -> bool {
     match body {
-        crate::ElementBody::Normal { children } => element_nodes_contain_async(&children.0),
-        crate::ElementBody::Void => false,
+        crate::ElementBody::Normal { children, .. } => element_nodes_contain_async(&children.0),
+        crate::ElementBody::Void { .. } => false,
     }
 }
 
@@ -256,7 +257,7 @@ fn element_node_contains_async(node: &ElementNode) -> bool {
         ElementNode::Element(element) => element_body_contains_async(&element.body),
         ElementNode::Component(component) => element_body_contains_async(&component.body),
         ElementNode::Control(Control { kind, .. }) => element_control_contains_async(kind),
-        ElementNode::Group(group) => element_nodes_contain_async(&group.0.0),
+        ElementNode::Group(group) => element_nodes_contain_async(&group.nodes.0),
         ElementNode::Literal(_) | ElementNode::Expr(_) => false,
     }
 }
@@ -269,7 +270,7 @@ fn element_control_contains_async(kind: &ControlKind<ElementNode>) -> bool {
                 || if_
                     .else_branch
                     .as_ref()
-                    .is_some_and(|(_, branch)| control_if_or_block_contains_async(branch))
+                    .is_some_and(|(_, _, branch)| control_if_or_block_contains_async(branch))
         }
         ControlKind::For(for_) => control_block_contains_async(&for_.block),
         ControlKind::While(while_) => control_block_contains_async(&while_.block),
@@ -292,7 +293,7 @@ fn control_if_or_block_contains_async(branch: &ControlIfOrBlock<ElementNode>) ->
                 || if_
                     .else_branch
                     .as_ref()
-                    .is_some_and(|(_, branch)| control_if_or_block_contains_async(branch))
+                    .is_some_and(|(_, _, branch)| control_if_or_block_contains_async(branch))
         }
         ControlIfOrBlock::Block(block) => control_block_contains_async(block),
     }
@@ -407,7 +408,13 @@ pub struct If<N: Node> {
     if_token: Token![if],
     pub cond: Expr,
     pub then_block: ControlBlock<N>,
-    pub else_branch: Option<(Token![else], Box<ControlIfOrBlock<N>>)>,
+    pub else_branch: Option<(Token![@], Token![else], Box<ControlIfOrBlock<N>>)>,
+}
+
+impl<N: Node> If<N> {
+    pub fn if_token(&self) -> &Token![if] {
+        &self.if_token
+    }
 }
 
 impl<N: Node + Parse> Parse for If<N> {
@@ -417,9 +424,7 @@ impl<N: Node + Parse> Parse for If<N> {
             cond: input.call(Expr::parse_without_eager_brace)?,
             then_block: input.parse()?,
             else_branch: if input.peek(Token![@]) && input.peek2(Token![else]) {
-                input.parse::<Token![@]>()?;
-
-                Some((input.parse()?, input.parse()?))
+                Some((input.parse()?, input.parse()?, input.parse()?))
             } else {
                 None
             },
@@ -435,16 +440,19 @@ impl<N: Node> Generate for If<N> {
             let if_token = if_.if_token;
             let cond = &if_.cond;
             let then_block = if_.then_block.block(g);
-            let else_branch = if_.else_branch.as_mut().map(|(else_token, if_or_block)| {
-                let else_block = match &mut **if_or_block {
-                    ControlIfOrBlock::If(if_) => to_expr(if_, g),
-                    ControlIfOrBlock::Block(block) => block.block(g).to_token_stream(),
-                };
+            let else_branch = if_
+                .else_branch
+                .as_mut()
+                .map(|(_, else_token, if_or_block)| {
+                    let else_block = match &mut **if_or_block {
+                        ControlIfOrBlock::If(if_) => to_expr(if_, g),
+                        ControlIfOrBlock::Block(block) => block.block(g).to_token_stream(),
+                    };
 
-                quote! {
-                    #else_token #else_block
-                }
-            });
+                    quote! {
+                        #else_token #else_block
+                    }
+                });
 
             quote! {
                 #if_token #cond
@@ -621,6 +629,12 @@ pub struct MatchNodeArm<N: Node> {
     comma_token: Option<Token![,]>,
 }
 
+impl<N: Node> MatchNodeArm<N> {
+    pub fn fat_arrow_span(&self) -> Span {
+        self.fat_arrow_token.span()
+    }
+}
+
 impl<N: Node + Parse> Parse for MatchNodeArm<N> {
     fn parse(input: ParseStream) -> syn::Result<Self> {
         Ok(Self {
@@ -655,6 +669,8 @@ impl<N: Node + Parse> Parse for MatchNodeArmBody<N> {
 pub struct Async {
     pub async_token: Token![async],
     pub async_block: ControlBlock<ElementNode>,
+    pub else_at_token: Token![@],
+    pub else_token: Token![else],
     pub else_block: ControlBlock<ElementNode>,
     else_block_first_elem_idx: usize,
 }
@@ -663,7 +679,7 @@ impl Parse for Async {
     fn parse(input: ParseStream) -> syn::Result<Self> {
         let async_token = input.parse::<Token![async]>()?;
         let async_block = input.parse()?;
-        input.parse::<Token![@]>()?;
+        let else_at_token = input.parse::<Token![@]>()?;
         let else_token = input.parse::<Token![else]>()?;
         let mut else_block: ControlBlock<ElementNode> = input.parse()?;
         let else_block_first_elem_idx = else_block
@@ -681,6 +697,8 @@ impl Parse for Async {
         Ok(Self {
             async_token,
             async_block,
+            else_at_token,
+            else_token,
             else_block,
             else_block_first_elem_idx,
         })

@@ -39,9 +39,7 @@ html! {
         !on:click({ (signal_open) " = !" (signal_open) })
         !attr("aria-expanded": { (signal_open) " ? 'true' : 'false'" })
     { "Details" }
-    div class="reveal" !show(signal_open) {
-        "More information"
-    }
+    div class="reveal" !show(signal_open) { "More information" }
 }
 ```
 

@@ -67,9 +67,12 @@ impl Parse for ElementNode {
 impl Parse for Group<ElementNode> {
     fn parse(input: ParseStream) -> syn::Result<Self> {
         let content;
-        braced!(content in input);
+        let brace_token = braced!(content in input);
 
-        Ok(Self(content.parse()?))
+        Ok(Self {
+            brace_token,
+            nodes: content.parse()?,
+        })
     }
 }
 
@@ -97,12 +100,15 @@ impl Parse for ElementBody {
 
         if lookahead.peek(Brace) {
             let content;
-            braced!(content in input);
+            let brace_token = braced!(content in input);
             Ok(Self::Normal {
+                brace_token,
                 children: content.parse()?,
             })
         } else if lookahead.peek(Token![;]) {
-            input.parse::<Token![;]>().map(|_| Self::Void)
+            input
+                .parse::<Token![;]>()
+                .map(|semi_token| Self::Void { semi_token })
         } else {
             Err(lookahead.error())
         }

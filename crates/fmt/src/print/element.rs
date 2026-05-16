@@ -2,16 +2,98 @@ use ast::{
     Attribute, AttributeKind, AttributeName, AttributeValueNode, DataContent, DataExpr,
     DataExprValue, DataModifierPart, DataModifiers, Element, ElementBody,
 };
+use proc_macro2::LineColumn;
 use quote::ToTokens;
-use syn::{Expr, Token, punctuated::Punctuated};
+use syn::{Expr, Token, punctuated::Punctuated, spanned::Spanned as _};
 
 use crate::{
     line_length::{
         data_decl_len_attr_value, data_decl_len_attr_values, data_decl_len_expr, element_len,
         node_len,
     },
-    print::Printer,
+    print::{
+        NodePrinter, Printer,
+        element_node::{element_node_end, element_node_start},
+    },
 };
+
+fn attribute_name_start(name: &AttributeName) -> LineColumn {
+    match name {
+        AttributeName::Namespace { namespace, .. } => namespace.span().start(),
+        AttributeName::Normal { name } => name.span().start(),
+        AttributeName::Unchecked(lit) => lit.span().start(),
+    }
+}
+
+fn attribute_name_end(name: &AttributeName) -> LineColumn {
+    match name {
+        AttributeName::Namespace { rest, .. } => rest.span().end(),
+        AttributeName::Normal { name } => name.span().end(),
+        AttributeName::Unchecked(lit) => lit.span().end(),
+    }
+}
+
+fn attribute_value_end(value: &AttributeValueNode) -> LineColumn {
+    match value {
+        AttributeValueNode::Literal(literal) => literal.span().end(),
+        AttributeValueNode::Group(group) => group.brace_token.span.close().end(),
+        AttributeValueNode::Control(control) => control.at_token.span().end(),
+        AttributeValueNode::Expr(expr) => expr.paren_token.span.close().end(),
+        AttributeValueNode::Ident(ident) => ident.span().end(),
+    }
+}
+
+fn toggle_end(toggle: &ast::Toggle) -> LineColumn {
+    toggle.bracket_token.span.close().end()
+}
+
+fn data_end(data: &ast::Data) -> LineColumn {
+    if let Some(paren_span) = data.paren_span() {
+        return paren_span.close().end();
+    }
+
+    match &data.content {
+        DataContent::Node(node) => attribute_value_end(node),
+        DataContent::Signals(decls) => decls
+            .last()
+            .map(|decl| decl.value.span().end())
+            .unwrap_or_else(|| data.name.span().end()),
+        DataContent::Kv(decls) | DataContent::Computed(decls) => decls
+            .last()
+            .map(|decl| attribute_value_end(&decl.value))
+            .unwrap_or_else(|| data.name.span().end()),
+        DataContent::Bind(expr) => expr.expr.span().end(),
+        DataContent::Empty | DataContent::Recovered => data
+            .modifiers
+            .as_ref()
+            .map(|modifiers| modifiers.bracket_token.span.close().end())
+            .unwrap_or_else(|| data.name.span().end()),
+    }
+}
+
+fn attribute_start(attr: &Attribute) -> LineColumn {
+    match attr {
+        Attribute::Regular { name, .. } => attribute_name_start(name),
+        Attribute::Data { bang_token, .. } => bang_token.span().start(),
+    }
+}
+
+fn attribute_end(attr: &Attribute) -> LineColumn {
+    match attr {
+        Attribute::Regular { name, kind } => match kind {
+            AttributeKind::Value { value, toggle } => toggle
+                .as_ref()
+                .map(toggle_end)
+                .unwrap_or_else(|| attribute_value_end(value)),
+            AttributeKind::Empty(toggle) => toggle
+                .as_ref()
+                .map(toggle_end)
+                .unwrap_or_else(|| attribute_name_end(name)),
+            AttributeKind::Option(toggle) => toggle_end(toggle),
+        },
+        Attribute::Data { data, .. } => data_end(data),
+    }
+}
 
 impl<'a, 'b> Printer<'a, 'b> {
     pub fn print_element_with_contents(
@@ -20,33 +102,36 @@ impl<'a, 'b> Printer<'a, 'b> {
         indent_level: usize,
         preserve_blank_lines: bool,
     ) {
-        let will_collapse_block = self.element_body_block_will_collapse(&body);
-
-        // Don't preserve blank lines if this element's block will be collapsed
-        let preserve_blank_lines = preserve_blank_lines && !will_collapse_block;
-
-        let element_opening_len = element_len(&name.0, &attrs, &body);
-        let should_wrap = if let Some(element_opening_len) = element_opening_len {
-            (self.line_len() + element_opening_len) > self.options.line_length
-        } else {
-            true
-        };
+        let opening = self.element_opening_layout(
+            name.span().end(),
+            &body,
+            element_len(&name.0, &attrs, &body),
+            preserve_blank_lines,
+        );
+        let should_wrap = opening.should_wrap;
 
         let element_name_len = name.lit().value().len();
 
         self.write(&name.lit().value());
+        if opening.contains_comments {
+            self.print_trailing_comment(name.span().end());
+        }
 
         let mut first = true;
         for attr in attrs.into_iter() {
-            if !should_wrap {
-                self.write(" ");
-            } else if first && element_name_len < 4 {
-                // First attribute of short element name: pad with spaces for alignment
-                self.write(&" ".repeat(4 - element_name_len));
-            } else if should_wrap {
-                self.new_line(indent_level + 1);
-            }
+            let attr_start = attribute_start(&attr);
+            let attr_end = attribute_end(&attr);
+
+            self.print_opening_item_separator(
+                should_wrap,
+                opening.contains_comments,
+                first,
+                element_name_len,
+                indent_level,
+            );
             first = false;
+
+            self.print_leading_comments(attr_start, indent_level + 1);
 
             match attr {
                 Attribute::Regular { name, kind } => {
@@ -86,7 +171,7 @@ impl<'a, 'b> Printer<'a, 'b> {
                         }
                     }
                 }
-                Attribute::Data(data) => {
+                Attribute::Data { data, .. } => {
                     self.write("!");
 
                     if let Some(namespace) = &data.namespace {
@@ -107,7 +192,7 @@ impl<'a, 'b> Printer<'a, 'b> {
                     let has_parens = data.has_parens();
 
                     if let Some(modifiers) = data.modifiers {
-                        self.print_data_modifiers(modifiers, attr_indent_level);
+                        self.print_data_modifiers(modifiers);
                     }
 
                     match data.content {
@@ -192,9 +277,22 @@ impl<'a, 'b> Printer<'a, 'b> {
                     }
                 }
             }
+
+            self.print_trailing_comment(attr_end);
         }
 
-        self.print_element_body(body, should_wrap, indent_level, preserve_blank_lines);
+        if opening.contains_comments
+            && let Some(range) = opening.comment_range
+        {
+            self.print_remaining_comments_in_range(range, indent_level + 1);
+        }
+
+        self.print_element_body(
+            body,
+            should_wrap,
+            indent_level,
+            opening.preserve_body_blank_lines,
+        );
     }
 
     fn print_data_modifier_part(&mut self, part: DataModifierPart) {
@@ -204,7 +302,7 @@ impl<'a, 'b> Printer<'a, 'b> {
         }
     }
 
-    fn print_data_modifiers(&mut self, modifiers: DataModifiers, _indent_level: usize) {
+    fn print_data_modifiers(&mut self, modifiers: DataModifiers) {
         self.write("[");
 
         let mut first = true;
@@ -332,7 +430,14 @@ impl<'a, 'b> Printer<'a, 'b> {
 
     pub fn element_body_block_will_collapse(&self, body: &ElementBody) -> bool {
         match &body {
-            ElementBody::Normal { children } => {
+            ElementBody::Normal {
+                brace_token,
+                children,
+            } => {
+                if self.delim_contains_comments(brace_token.span) {
+                    return false;
+                }
+
                 let mut total_len = 0usize;
                 let mut count = 0usize;
                 for node in children.0.iter() {
@@ -374,96 +479,87 @@ impl<'a, 'b> Printer<'a, 'b> {
         preserve_blank_lines: bool,
     ) {
         match body {
-            ElementBody::Void => {
+            ElementBody::Void { semi_token } => {
                 self.write(";");
+                self.print_trailing_comment(semi_token.span().end());
             }
-            ElementBody::Normal { children } => {
+            ElementBody::Normal {
+                brace_token,
+                children,
+            } => {
+                let contains_comments = self.delim_contains_comments(brace_token.span);
                 let child_count = children.0.len();
 
-                if child_count == 0 {
+                if child_count == 0 && !contains_comments {
                     self.write(" {}");
-                } else {
-                    // Calculate if all children can fit on one line
-                    let children_fit_inline = {
-                        // Calculate total length of all children
-                        let mut total_len = 0usize;
-                        let mut count = 0usize;
-                        let mut can_inline = true;
+                    self.print_trailing_comment(brace_token.span.close().end());
+                    return;
+                }
 
-                        for child in &children.0 {
-                            if let Some(len) = node_len(child) {
-                                total_len += len;
-                                count += 1;
-                            } else {
-                                can_inline = false;
-                                break;
-                            }
-                        }
+                // Calculate if all children can fit on one line. Comments force expansion so they
+                // have a stable line to attach to.
+                let children_fit_inline = !contains_comments && {
+                    let mut total_len = 0usize;
+                    let mut count = 0usize;
+                    let mut can_inline = true;
 
-                        let body_len = total_len + count + 3; // braces + spaces
-                        let prefix_len = if should_wrap {
-                            self.indent_str.len() * (self.base_indent + indent_level)
+                    for child in &children.0 {
+                        if let Some(len) = node_len(child) {
+                            total_len += len;
+                            count += 1;
                         } else {
-                            self.line_len()
-                        };
+                            can_inline = false;
+                            break;
+                        }
+                    }
 
-                        can_inline && (prefix_len + body_len) <= self.options.line_length
+                    let body_len = total_len + count + 3; // braces + spaces
+                    let prefix_len = if should_wrap {
+                        self.indent_str.len() * (self.base_indent + indent_level)
+                    } else {
+                        self.line_len()
                     };
 
-                    if should_wrap {
-                        // Attributes wrapped: always put body on new line
-                        self.new_line(indent_level);
-                        if children_fit_inline {
-                            // Body fits inline: collapse it
-                            self.write("{");
-                            let mut children = children.0.into_iter().peekable();
-                            while let Some(ch) = children.next() {
-                                self.write(" ");
-                                self.print_element_node(ch, indent_level + 1, preserve_blank_lines);
-                                if children.peek().is_none() {
-                                    self.write(" ");
-                                }
-                            }
-                            self.write("}");
-                        } else {
-                            // Body doesn't fit: expand it
-                            self.write("{");
-                            self.new_line(indent_level + 1);
+                    can_inline && (prefix_len + body_len) <= self.options.line_length
+                };
 
-                            for (idx, ch) in children.0.into_iter().enumerate() {
-                                if idx > 0 {
-                                    self.new_line(indent_level + 1);
-                                }
-                                self.print_element_node(ch, indent_level + 1, preserve_blank_lines);
-                            }
-
-                            self.new_line(indent_level);
-                            self.write("}");
-                        }
-                    } else if !children_fit_inline {
-                        self.write(" {");
-                        self.new_line(indent_level + 1);
-
-                        for (idx, ch) in children.0.into_iter().enumerate() {
-                            if idx > 0 {
-                                self.new_line(indent_level + 1);
-                            }
-                            self.print_element_node(ch, indent_level + 1, preserve_blank_lines);
-                        }
-
-                        self.new_line(indent_level);
-                        self.write("}");
-                    } else {
-                        self.write(" { ");
-                        for (idx, child) in children.0.into_iter().enumerate() {
-                            if idx > 0 {
-                                self.write(" ");
-                            }
-                            self.print_element_node(child, indent_level + 1, preserve_blank_lines);
-                        }
-                        self.write(" }");
-                    }
+                if should_wrap {
+                    // Attributes wrapped: always put body on new line
+                    self.new_line(indent_level);
+                } else {
+                    self.write(" ");
                 }
+
+                if children_fit_inline {
+                    self.write("{ ");
+                    for (idx, child) in children.0.into_iter().enumerate() {
+                        if idx > 0 {
+                            self.write(" ");
+                        }
+                        self.print_element_node(child, indent_level + 1, preserve_blank_lines);
+                    }
+                    self.write(" }");
+                } else {
+                    self.write("{");
+                    self.print_trailing_comment(brace_token.span.open().end());
+
+                    self.print_expanded_nodes(
+                        children.0,
+                        brace_token.span,
+                        indent_level + 1,
+                        preserve_blank_lines,
+                        NodePrinter {
+                            start: element_node_start,
+                            end: element_node_end,
+                            print: |p: &mut Self, ch, i, pb| p.print_element_node(ch, i, pb),
+                        },
+                    );
+
+                    self.new_line(indent_level);
+                    self.write("}");
+                }
+
+                self.print_trailing_comment(brace_token.span.close().end());
             }
         }
     }

@@ -124,7 +124,7 @@ pub fn element_len(ident: &Ident, attrs: &[Attribute], body: &ElementBody) -> Op
                     }
                 }
             }
-            Attribute::Data(data) => {
+            Attribute::Data { data, .. } => {
                 // `!`
                 element_len += 1;
 
@@ -170,7 +170,7 @@ pub fn element_len(ident: &Ident, attrs: &[Attribute], body: &ElementBody) -> Op
     }
 
     match body {
-        ElementBody::Void => {
+        ElementBody::Void { .. } => {
             // `;`
             element_len += 1;
         }
@@ -224,7 +224,7 @@ pub fn component_len(
     }
 
     match body {
-        ElementBody::Void => {
+        ElementBody::Void { .. } => {
             // `;`
             element_len += 1;
         }
@@ -311,7 +311,7 @@ fn control_attribute_value_len(control: &control::Control<AttributeValueNode>) -
 
             len += control_block_len_with(&if_.then_block, attribute_value_len)?;
 
-            if let Some((_, if_or_block)) = &if_.else_branch {
+            if let Some((_, _, if_or_block)) = &if_.else_branch {
                 // ` @else `
                 len += 7;
 
@@ -371,7 +371,7 @@ fn if_attribute_value_len(if_: &control::If<AttributeValueNode>) -> Option<usize
 
     len += control_block_len_with(&if_.then_block, attribute_value_len)?;
 
-    if let Some((_, if_or_block)) = &if_.else_branch {
+    if let Some((_, _, if_or_block)) = &if_.else_branch {
         // ` @else `
         len += 7;
 
@@ -393,7 +393,7 @@ pub fn attribute_value_len(value: &AttributeValueNode) -> Option<usize> {
         AttributeValueNode::Literal(lit) => span_len(lit),
         AttributeValueNode::Ident(ident) => span_len(ident),
         AttributeValueNode::Expr(paren_expr) => paren_expr_len(paren_expr),
-        AttributeValueNode::Group(group) => attribute_value_group_len(&group.0.0),
+        AttributeValueNode::Group(group) => attribute_value_group_len(&group.nodes.0),
         AttributeValueNode::Control(control) => control_attribute_value_len(control),
     }
 }

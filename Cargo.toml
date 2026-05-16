@@ -43,6 +43,7 @@ clap = { version = "4", features = ["derive"] }
 glob = "0.3"
 crop = "0.4"
 prettyplease = { version = "0.2", features = ["verbatim"] }
+rustc_lexer = "0.1"
 pretty_assertions = "1"
 predicates = "3"
 assert_fs = "1"

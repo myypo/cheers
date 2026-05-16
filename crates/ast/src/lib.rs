@@ -274,20 +274,26 @@ impl<N: Node> ToTokens for ParenExpr<N> {
     }
 }
 
-pub struct Group<N: Node>(pub Nodes<N>);
+pub struct Group<N: Node> {
+    pub brace_token: Brace,
+    pub nodes: Nodes<N>,
+}
 
 impl<N: Node + SyntaxStatic> SyntaxStatic for Group<N> {
     fn is_static(&self) -> bool {
-        self.0.is_static()
+        self.nodes.is_static()
     }
 }
 
 impl Parse for Group<AttributeValueNode> {
     fn parse(input: ParseStream) -> syn::Result<Self> {
         let content;
-        braced!(content in input);
+        let brace_token = braced!(content in input);
 
-        Ok(Self(content.parse()?))
+        Ok(Self {
+            brace_token,
+            nodes: content.parse()?,
+        })
     }
 }
 
@@ -295,7 +301,7 @@ impl<N: Node> Generate for Group<N> {
     const CONTEXT: Context = N::CONTEXT;
 
     fn generate(&mut self, g: &mut Generator<'_>) {
-        g.push(&mut self.0);
+        g.push(&mut self.nodes);
     }
 }
 
@@ -376,7 +382,7 @@ impl Generate for Element {
         }
 
         match &mut self.body {
-            ElementBody::Normal { children } => {
+            ElementBody::Normal { children, .. } => {
                 g.push_str(">");
 
                 let child_flavour = flavour.child_flavour(&self.name);
@@ -390,7 +396,7 @@ impl Generate for Element {
                 g.push_literal(self.name.lit());
                 g.push_str(">");
             }
-            ElementBody::Void => g.push_str(flavour.void_close()),
+            ElementBody::Void { .. } => g.push_str(flavour.void_close()),
         }
 
         g.record_element(el_checks);
@@ -398,22 +404,27 @@ impl Generate for Element {
 }
 
 pub enum ElementBody {
-    Normal { children: Nodes<ElementNode> },
-    Void,
+    Normal {
+        brace_token: Brace,
+        children: Nodes<ElementNode>,
+    },
+    Void {
+        semi_token: Token![;],
+    },
 }
 
 impl SyntaxStatic for ElementBody {
     fn is_static(&self) -> bool {
         match self {
             Self::Normal { children, .. } => children.is_static(),
-            Self::Void => true,
+            Self::Void { .. } => true,
         }
     }
 }
 
 impl ElementBody {
     const fn kind(&self, flavour: NodeFlavour) -> ElementKind {
-        flavour.element_kind(matches!(self, Self::Void))
+        flavour.element_kind(matches!(self, Self::Void { .. }))
     }
 }
 
@@ -423,14 +434,17 @@ pub enum Attribute {
         name: AttributeName,
         kind: AttributeKind,
     },
-    Data(Data),
+    Data {
+        bang_token: Token![!],
+        data: Data,
+    },
 }
 
 impl SyntaxStatic for Attribute {
     fn is_static(&self) -> bool {
         match self {
             Self::Regular { kind, .. } => kind.is_static(),
-            Self::Data(data) => data.is_static(),
+            Self::Data { data, .. } => data.is_static(),
         }
     }
 }
@@ -439,7 +453,7 @@ impl Attribute {
     fn check(&self) -> Option<AttributeNameCheck> {
         match &self {
             Attribute::Regular { name, .. } => name.check(false),
-            Attribute::Data(data) => match (&data.namespace, data.name.ident()) {
+            Attribute::Data { data, .. } => match (&data.namespace, data.name.ident()) {
                 (Some(namespace), Some(name)) => {
                     let mut check = AttributeNameCheck::new(
                         AttributeNameCheckKind::Namespace(namespace.clone()),
@@ -463,9 +477,11 @@ impl Attribute {
 
 impl Parse for Attribute {
     fn parse(input: ParseStream) -> syn::Result<Self> {
-        let data = input.parse::<Token![!]>().is_ok();
-        if data {
-            Ok(Self::Data(input.parse()?))
+        if let Some(bang_token) = input.parse::<Option<Token![!]>>()? {
+            Ok(Self::Data {
+                bang_token,
+                data: input.parse()?,
+            })
         } else {
             let name = input.parse::<AttributeName>()?;
             let kind = if input.peek(Token![=]) {
@@ -537,7 +553,7 @@ impl Generate for Attribute {
                     g.push_literals(name.literals());
                 }
             },
-            Attribute::Data(data) => g.push(data),
+            Attribute::Data { data, .. } => g.push(data),
         }
     }
 }
@@ -1159,6 +1175,10 @@ impl Data {
         self.paren_token.is_some()
     }
 
+    pub fn paren_span(&self) -> Option<proc_macro2::extra::DelimSpan> {
+        self.paren_token.map(|paren_token| paren_token.span)
+    }
+
     fn name_literals(&self) -> Vec<LitStr> {
         let mut literals = Vec::new();
 
@@ -1357,7 +1377,7 @@ mod tests {
     fn data_attribute_recovers_missing_name_without_placeholder() {
         let attr = parse_str::<Attribute>("!").expect("expected attribute to parse");
 
-        let Attribute::Data(data) = attr else {
+        let Attribute::Data { data, .. } = attr else {
             panic!("expected data attribute");
         };
 
@@ -1371,7 +1391,7 @@ mod tests {
     fn data_attribute_recovers_invalid_payload() {
         let attr = parse_str::<Attribute>("!on:click()").expect("expected attribute to parse");
 
-        let Attribute::Data(data) = attr else {
+        let Attribute::Data { data, .. } = attr else {
             panic!("expected data attribute");
         };
 
@@ -1390,7 +1410,7 @@ mod tests {
     fn data_attribute_flags_remain_distinct_from_recovery() {
         let attr = parse_str::<Attribute>("!ignore").expect("expected attribute to parse");
 
-        let Attribute::Data(data) = attr else {
+        let Attribute::Data { data, .. } = attr else {
             panic!("expected data attribute");
         };
 

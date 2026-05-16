@@ -15,7 +15,7 @@ use crate::{
 };
 
 impl<'a, 'b> Printer<'a, 'b> {
-    fn source_text(&self, span: Span) -> String {
+    pub(super) fn source_text(&self, span: Span) -> String {
         let start_byte = line_column_to_byte(self.source, span.start());
         let end_byte = line_column_to_byte(self.source, span.end());
         self.source.byte_slice(start_byte..end_byte).to_string()
@@ -146,6 +146,14 @@ impl<'a, 'b> Printer<'a, 'b> {
     }
 
     pub fn print_expr(&mut self, expr: Expr, indent_level: usize) {
+        let span = expr.span();
+        if self.span_contains_comments(span) {
+            let original_text = self.source_text(span);
+            self.consume_comments_in_span(span);
+            self.write(original_text.trim());
+            return;
+        }
+
         let lines = self.lines_from_expr(expr, indent_level);
 
         match lines.len() {
@@ -161,6 +169,14 @@ impl<'a, 'b> Printer<'a, 'b> {
     }
 
     pub fn print_toggle_expr(&mut self, expr: Expr, indent_level: usize) {
+        let span = expr.span();
+        if self.span_contains_comments(span) {
+            let original_text = self.source_text(span);
+            self.consume_comments_in_span(span);
+            self.write(original_text.trim());
+            return;
+        }
+
         if let Some(lines) = self.macro_expr_lines(&expr, indent_level + 1) {
             match lines.len() {
                 0 => {}
@@ -206,13 +222,38 @@ impl<'a, 'b> Printer<'a, 'b> {
     }
 
     pub fn print_paren_expr<N: Node>(&mut self, paren_expr: ParenExpr<N>, indent_level: usize) {
+        let paren_span = paren_expr.paren_token.span.span();
         let expr: Expr =
             parse2(paren_expr.expr.clone()).unwrap_or_else(|_| Expr::Verbatim(paren_expr.expr));
+        let has_comments = self.span_contains_comments(paren_span);
+
+        if has_comments && let Some(lines) = self.macro_expr_lines(&expr, indent_level) {
+            self.consume_comments_in_span(paren_span);
+            self.print_paren_expr_lines(paren_expr.mode.is_ref(), false, lines, indent_level);
+            return;
+        }
+
+        if has_comments {
+            let original_text = self.source_text(paren_span);
+            self.consume_comments_in_span(paren_span);
+            self.write(original_text.trim());
+            return;
+        }
+
         let is_block = matches!(expr, Expr::Block(_));
         let lines = self.lines_from_expr(expr, indent_level);
+        self.print_paren_expr_lines(paren_expr.mode.is_ref(), is_block, lines, indent_level);
+    }
 
+    fn print_paren_expr_lines(
+        &mut self,
+        is_ref: bool,
+        is_block: bool,
+        lines: Vec<String>,
+        indent_level: usize,
+    ) {
         self.write("(");
-        if paren_expr.mode.is_ref() {
+        if is_ref {
             self.write("@&");
         }
         match lines.len() {

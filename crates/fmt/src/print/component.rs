@@ -1,8 +1,18 @@
-use ast::component::{Component, ComponentAttributeValue};
+use ast::component::{Component, ComponentAttribute, ComponentAttributeValue};
+use proc_macro2::LineColumn;
+use syn::spanned::Spanned as _;
 
 use crate::{line_length::component_len, print::Printer};
 
-// TODO: abstract over components and elements to dedup code
+fn component_attr_end(attr: &ComponentAttribute) -> LineColumn {
+    match &attr.value {
+        Some(ComponentAttributeValue::Literal(literal)) => literal.span().end(),
+        Some(ComponentAttributeValue::Ident(ident)) => ident.span().end(),
+        Some(ComponentAttributeValue::Expr(expr)) => expr.paren_token.span.close().end(),
+        None => attr.name.span().end(),
+    }
+}
+
 impl<'a, 'b> Printer<'a, 'b> {
     fn print_component_attr_value(
         &mut self,
@@ -44,26 +54,26 @@ impl<'a, 'b> Printer<'a, 'b> {
         indent_level: usize,
         preserve_blank_lines: bool,
     ) {
-        let will_collapse_block = self.element_body_block_will_collapse(&body);
-
-        let preserve_blank_lines = preserve_blank_lines && !will_collapse_block;
-
-        let element_opening_len = component_len(
-            &name,
-            &attrs,
-            default_attrs.as_ref(),
-            dotdot.is_some(),
+        let opening = self.element_opening_layout(
+            name.span().end(),
             &body,
+            component_len(
+                &name,
+                &attrs,
+                default_attrs.as_ref(),
+                dotdot.is_some(),
+                &body,
+            ),
+            preserve_blank_lines,
         );
-        let should_wrap = if let Some(element_opening_len) = element_opening_len {
-            (self.line_len() + element_opening_len) > self.options.line_length
-        } else {
-            true
-        };
+        let should_wrap = opening.should_wrap;
 
         let element_name_len = name.to_string().len();
 
         self.write(&name.to_string());
+        if opening.contains_comments {
+            self.print_trailing_comment(name.span().end());
+        }
 
         let attr_indent_level = if should_wrap {
             indent_level + 1
@@ -73,47 +83,87 @@ impl<'a, 'b> Printer<'a, 'b> {
         let has_attrs = !attrs.is_empty();
 
         for (idx, attr) in attrs.into_iter().enumerate() {
-            if !should_wrap {
-                self.write(" ");
-            } else if idx == 0 && element_name_len < 4 {
-                // First attribute of short component name: pad with spaces for alignment
-                self.write(&" ".repeat(4 - element_name_len));
-            } else if should_wrap {
-                // Wrapping: subsequent attributes go on new lines
-                self.new_line(indent_level + 1);
-            }
+            let attr_start = attr.name.span().start();
+            let attr_end = component_attr_end(&attr);
 
+            self.print_opening_item_separator(
+                should_wrap,
+                opening.contains_comments,
+                idx == 0,
+                element_name_len,
+                indent_level,
+            );
+
+            self.print_leading_comments(attr_start, indent_level + 1);
             self.print_component_attr(attr, attr_indent_level);
+            self.print_trailing_comment(attr_end);
         }
 
         if let Some(default_attrs) = default_attrs {
-            if !should_wrap {
-                self.write(" ");
-            } else if !has_attrs && element_name_len < 4 {
-                self.write(&" ".repeat(4 - element_name_len));
-            } else {
-                self.new_line(indent_level + 1);
-            }
+            self.print_opening_item_separator(
+                should_wrap,
+                opening.contains_comments,
+                !has_attrs,
+                element_name_len,
+                indent_level,
+            );
 
+            self.print_leading_comments(
+                default_attrs.bracket_token.span.open().start(),
+                indent_level + 1,
+            );
             self.write("[");
+            let open_trailing_comment =
+                self.print_trailing_comment(default_attrs.bracket_token.span.open().end());
 
+            let default_attr_count = default_attrs.attrs.len();
             for (idx, attr) in default_attrs.attrs.into_iter().enumerate() {
-                if idx > 0 {
-                    self.write(" ");
+                let attr_start = attr.name.span().start();
+                let attr_end = component_attr_end(&attr);
+
+                if opening.contains_comments || idx > 0 {
+                    if opening.contains_comments {
+                        self.new_line(indent_level + 2);
+                    } else {
+                        self.write(" ");
+                    }
                 }
 
+                self.print_leading_comments(attr_start, indent_level + 2);
                 self.print_component_attr(attr, attr_indent_level);
+                self.print_trailing_comment(attr_end);
             }
 
+            if opening.contains_comments && (default_attr_count != 0 || open_trailing_comment) {
+                self.new_line(indent_level + 1);
+            }
             self.write("]");
+            self.print_trailing_comment(default_attrs.bracket_token.span.close().end());
         }
 
-        if dotdot.is_some() {
-            self.write(" ");
+        if let Some(dotdot) = dotdot {
+            if should_wrap && opening.contains_comments {
+                self.new_line(indent_level + 1);
+            } else {
+                self.write(" ");
+            }
+            self.print_leading_comments(dotdot.span().start(), indent_level + 1);
             self.write("..");
+            self.print_trailing_comment(dotdot.span().end());
         }
 
-        self.print_element_body(body, should_wrap, indent_level, preserve_blank_lines);
+        if opening.contains_comments
+            && let Some(range) = opening.comment_range
+        {
+            self.print_remaining_comments_in_range(range, indent_level + 1);
+        }
+
+        self.print_element_body(
+            body,
+            should_wrap,
+            indent_level,
+            opening.preserve_body_blank_lines,
+        );
     }
 }
 
