@@ -54,6 +54,7 @@
         {
           default = pkgs.mkShell {
             env = {
+              CHROME_BIN = "${pkgs.chromium}/bin/chromium";
               LD_LIBRARY_PATH = "${pkgs.lib.makeLibraryPath [ pkgs.openssl ]}";
             };
 

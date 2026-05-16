@@ -24,6 +24,22 @@ pub struct App {
 /// Environment variable used by [`chrome`] to locate WebDriver.
 pub const WEBDRIVER_URL_ENV: &str = "WEBDRIVER_URL";
 
+/// Environment variable used by [`chrome`] to locate the Chrome/Chromium binary.
+pub const CHROME_BIN_ENV: &str = "CHROME_BIN";
+
+fn chromium_binary() -> Option<String> {
+    if let Ok(path) = std::env::var(CHROME_BIN_ENV) {
+        return Some(path);
+    }
+
+    std::env::var_os("PATH").and_then(|paths| {
+        std::env::split_paths(&paths)
+            .map(|p| p.join("chromium"))
+            .find(|p| p.is_file())
+            .map(|p| p.to_string_lossy().into_owned())
+    })
+}
+
 /// Create a headless Chrome WebDriver session using [`WEBDRIVER_URL_ENV`] or a default URL.
 async fn chrome() -> WebDriverResult<thirtyfour::WebDriver> {
     use thirtyfour::prelude::*;
@@ -32,6 +48,9 @@ async fn chrome() -> WebDriverResult<thirtyfour::WebDriver> {
     let url = std::env::var(WEBDRIVER_URL_ENV).unwrap_or_else(|_| DEFAULT_WEBDRIVER_URL.to_owned());
 
     let mut caps = DesiredCapabilities::chrome();
+    if let Some(path) = chromium_binary() {
+        caps.set_binary(&path)?;
+    }
     caps.set_headless()?;
     caps.set_no_sandbox()?;
     caps.set_disable_gpu()?;
