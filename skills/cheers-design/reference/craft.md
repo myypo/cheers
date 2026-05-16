@@ -10,13 +10,9 @@ Do not start code edits until one is true:
 - The user supplied an already-confirmed brief.
 - The user explicitly asked to skip shaping and proceed.
 
-Before editing, read `../cheers/SKILL.md`, this file, and any other relevant reference files (`harden`, `optimize`, `animate`, `polish`).
+Before editing, read this file and any other relevant reference files (`harden`, `optimize`, `animate`, `polish`). If `../cheers/SKILL.md` exists and is not already loaded, read it as additional implementation context; otherwise use the Cheers implementation baseline in the parent `SKILL.md`.
 
-State a compact preflight before edits:
-
-```text
-CHEERS_DESIGN_PREFLIGHT: cheers=loaded brief=confirmed|skipped:<reason> register=product|brand layer=navigation|action-patch|signal|stream|js-script|js-bundle optimism=off
-```
+Before editing, briefly state the confirmed brief status, register, chosen Datastar layer, and that optimistic UI is off.
 
 ## Implementation passes
 

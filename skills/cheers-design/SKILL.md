@@ -1,17 +1,19 @@
 ---
 name: cheers-design
 description: "Use when a Cheers task requires UI/UX design judgment: shaping a new visible surface, materially changing layout, hierarchy, copy, interaction states, motion, onboarding, or requested design audit/polish."
+argument-hint: "[teach|document|shape|craft|extract|critique|audit|polish|harden|optimize|clarify|adapt|onboard|layout|typeset|colorize|bolder|quieter|distill|delight|animate|overdrive] [target]"
+user-invocable: true
 ---
 
 # Cheers Design
 
-Design and iterate production-grade interfaces for Cheers apps. This skill is a design-craft overlay on top of `cheers`, not a replacement for it.
+Design and iterate production-grade interfaces for Cheers apps.
 
 ## Required setup
 
 Before design work or file edits:
 
-1. Read `../cheers/SKILL.md` unless it is already loaded in the conversation.
+1. If `cheers` exists and is not already loaded in the conversation, read it as additional technical Cheers implementation context.
 2. If a sub-command is used, read its reference file from `reference/`.
 3. Inspect the target app's existing layout, components, styles, state shape, actions, tests, and conventions before changing code.
 4. Classify the work as **product** or **brand**:
@@ -77,16 +79,8 @@ Apply these without fighting the Datastar-first laws.
 | `animate [target]` | Add purposeful CSS/Datastar/native motion | [reference/animate.md](reference/animate.md) |
 | `overdrive [target]` | Propose ambitious Datastar-safe polish; build after confirmation | [reference/overdrive.md](reference/overdrive.md) |
 
-`live` is intentionally not migrated yet.
+### Routing rules
 
-Routing:
-
-1. If the first word matches a command, read that reference and follow it.
+1. If the first word of the skill arguments matches a command above, read that reference and follow it.
 2. If there is no command, treat the request as general UI design/craft: perform setup, apply the laws above, and choose the nearest reference when useful.
 3. If implementation changes Cheers templates, run formatting, for example:
-
-```bash
-cargo cheers fmt --rustfmt <edited-files-or-directories>
-```
-
-Before finishing an implementation task, run the project's relevant checks where practical: targeted tests, `cargo test`, clippy, or app-specific validation.

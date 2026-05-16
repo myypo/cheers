@@ -45,7 +45,7 @@ Present the brief in this shape and ask for explicit confirmation:
 8. **Interaction model**: clicks, form submits, loading, validation, success, failure, keyboard/touch behavior.
 9. **Key states**: default, empty, loading, error, success, disabled, permissions, overflow, long text, mobile.
 10. **Content requirements**: headings, labels, microcopy, error copy, alt text, dynamic ranges.
-11. **Implementation references**: which files in this skill and `../cheers/SKILL.md` matter during build.
+11. **Build references**: which cheers-design reference files should guide implementation.
 12. **Open questions**: unresolved choices that affect code or design.
 
 Stop after asking for confirmation unless the user already gave a confirmed brief or explicitly asks you to continue without confirmation.
