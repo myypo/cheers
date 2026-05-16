@@ -187,8 +187,7 @@ impl Generate for Component {
         } else {
             self.generate_dotdot_tokens(g)
         };
-
-        g.push_expr(Paren::default(), Self::CONTEXT, &tokens);
+        g.push_expr(Paren::default(), Self::CONTEXT, tokens);
     }
 }
 

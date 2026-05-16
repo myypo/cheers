@@ -7,8 +7,9 @@ mod readme_doctests {}
 mod async_stream;
 pub mod components;
 mod context;
-mod devtools;
 mod events;
+#[cfg(all(feature = "pi-extension", debug_assertions))]
+mod pi_extension;
 mod reference;
 mod render;
 mod response;
@@ -41,6 +42,16 @@ pub mod __internal {
 
     pub mod subsecond {
         pub use crate::subsecond::{call, hot_call, hot_call_with_arg};
+    }
+
+    #[cfg(all(feature = "pi-extension", debug_assertions))]
+    pub mod pi_extension {
+        use crate::{context::Element, render::Buffer};
+
+        #[inline]
+        pub fn __push_element_source_hint(buffer: &mut Buffer<Element>, source: &str) {
+            crate::pi_extension::push_element_source_hint(buffer, source);
+        }
     }
 
     pub mod async_islands {

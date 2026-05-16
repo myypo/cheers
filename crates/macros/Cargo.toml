@@ -22,5 +22,8 @@ proc-macro2.workspace = true
 quote.workspace = true
 syn.workspace = true
 
+[features]
+pi-extension = ["ast/pi-extension"]
+
 [lints]
 workspace = true

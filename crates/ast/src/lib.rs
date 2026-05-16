@@ -373,6 +373,17 @@ impl Generate for Element {
 
         g.push_str("<");
         g.push_literal(self.name.lit());
+        #[cfg(feature = "pi-extension")]
+        {
+            if !self.has_regular_attribute("data-cheers-source") {
+                let span = self.name.span();
+                let start = span.start();
+                g.push_element_source_hint(LitStr::new(
+                    &format!("{}:{}:{}", span.file(), start.line, start.column + 1),
+                    span,
+                ));
+            }
+        }
 
         for attr in &mut self.attrs {
             g.push(&mut *attr);
@@ -400,6 +411,19 @@ impl Generate for Element {
         }
 
         g.record_element(el_checks);
+    }
+}
+
+impl Element {
+    #[cfg(feature = "pi-extension")]
+    fn has_regular_attribute(&self, name: &str) -> bool {
+        self.attrs.iter().any(|attr| {
+            matches!(
+                attr,
+                Attribute::Regular { name: attr_name, .. }
+                if attr_name.literals().into_iter().map(|l| l.value()).collect::<String>() == name
+            )
+        })
     }
 }
 

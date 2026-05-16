@@ -356,13 +356,16 @@ impl Render for Scripts {
             );
             }
 
+            #[cfg(all(feature = "pi-extension", debug_assertions))]
             render_cheers_iterate_script_to(buffer);
         }
     }
 }
 
+#[cfg(all(feature = "pi-extension", debug_assertions))]
 fn render_cheers_iterate_script_to(buffer: &mut Buffer<crate::context::Element>) {
-    let Some(script_src) = crate::devtools::cheers_iterate_script_src().unwrap_or_default() else {
+    let Some(script_src) = crate::pi_extension::cheers_iterate_script_src().unwrap_or_default()
+    else {
         return;
     };
 

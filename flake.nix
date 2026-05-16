@@ -452,7 +452,7 @@
             src = ./.;
             cargoBuildFlags = [ "-p=cargo-cheers" ];
 
-            cargoHash = "sha256-AS1yMtvLVmWEGw+Rnc9yb+QekNWquNFxSyzCv6wP9Ao=";
+            cargoHash = "sha256-E96u4sqYd871qqZiNMq9YJxFnQ3W+2l6gkw9r4O9ytU=";
 
             doCheck = false;
           };

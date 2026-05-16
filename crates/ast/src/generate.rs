@@ -100,31 +100,6 @@ pub fn lazy_with_flavour<T: Parse + Generate + SyntaxStatic>(
     Ok(rendered)
 }
 
-pub fn literal<T: Parse + Generate>(tokens: TokenStream) -> syn::Result<TokenStream> {
-    literal_with_flavour::<T>(tokens, NodeFlavour::Html)
-}
-
-pub fn literal_with_flavour<T: Parse + Generate>(
-    tokens: TokenStream,
-    flavour: NodeFlavour,
-) -> syn::Result<TokenStream> {
-    let mut borrow_state = BorrowState::new();
-    let mut g = Generator::new_static(T::CONTEXT, flavour, &mut borrow_state);
-
-    g.push(syn::parse2::<T>(tokens)?);
-
-    let literal = g.finish().to_token_stream();
-
-    let marker_ident = T::CONTEXT.marker_type();
-
-    Ok(quote! {
-        {
-            use ::cheers::validation::attributes::*;
-            ::cheers::Raw::<_, #marker_ident>::dangerously_create(#literal)
-        }
-    })
-}
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum NodeFlavour {
     Html,
@@ -232,7 +207,6 @@ impl BorrowState {
 }
 
 pub struct Generator<'a> {
-    lazy: bool,
     context: Context,
     flavour: NodeFlavour,
     brace_token: Brace,
@@ -254,26 +228,16 @@ impl<'a> Generator<'a> {
         flavour: NodeFlavour,
         borrow_state: &'a mut BorrowState,
     ) -> Self {
-        Self::new_root_with_brace(context, true, Brace::default(), flavour, borrow_state)
-    }
-
-    fn new_static(
-        context: Context,
-        flavour: NodeFlavour,
-        borrow_state: &'a mut BorrowState,
-    ) -> Self {
-        Self::new_root_with_brace(context, false, Brace::default(), flavour, borrow_state)
+        Self::new_root_with_brace(context, Brace::default(), flavour, borrow_state)
     }
 
     fn new_root_with_brace(
         context: Context,
-        lazy: bool,
         brace_token: Brace,
         flavour: NodeFlavour,
         borrow_state: &'a mut BorrowState,
     ) -> Self {
         Self {
-            lazy,
             context,
             flavour,
             brace_token,
@@ -290,10 +254,8 @@ impl<'a> Generator<'a> {
         &'b mut self,
         brace_token: Brace,
         flavour: NodeFlavour,
-        lazy: bool,
     ) -> Generator<'b> {
         Generator {
-            lazy,
             context: self.context,
             flavour,
             brace_token,
@@ -307,68 +269,43 @@ impl<'a> Generator<'a> {
     }
 
     fn finish(self) -> AnyBlock {
-        let render = if self.lazy {
-            let buffer_ident = Self::buffer_ident();
-            let mut stmts = TokenStream::new();
+        let buffer_ident = Self::buffer_ident();
+        let mut stmts = TokenStream::new();
+        let mut parts = self.parts.into_iter();
+        let mut size_estimate = 0;
 
-            let mut parts = self.parts.into_iter();
-
-            let mut size_estimate = 0;
-
-            while let Some(part) = parts.next() {
-                match part {
-                    Part::Static(lit) => {
-                        let mut dynamic_stmt = None;
-                        let static_parts = iter::once(lit)
-                            .chain(parts.by_ref().map_while(|part| match part {
-                                Part::Static(lit) => Some(lit),
-                                Part::Dynamic(stmt) => {
-                                    dynamic_stmt = Some(stmt);
-                                    None
-                                }
-                            }))
-                            .inspect(|static_part| {
-                                size_estimate += static_part.value().len();
-                            });
-
-                        // XSS SAFETY: static parts are literal strings pushed by us
-                        stmts.extend(quote! {
-                            #buffer_ident.dangerously_get_string().push_str(::core::concat!(#(#static_parts),*));
+        while let Some(part) = parts.next() {
+            match part {
+                Part::Static(lit) => {
+                    let mut dynamic_stmt = None;
+                    let static_parts = iter::once(lit)
+                        .chain(parts.by_ref().map_while(|part| match part {
+                            Part::Static(lit) => Some(lit),
+                            Part::Dynamic(stmt) => {
+                                dynamic_stmt = Some(stmt);
+                                None
+                            }
+                        }))
+                        .inspect(|static_part| {
+                            size_estimate += static_part.value().len();
                         });
-                        stmts.extend(dynamic_stmt);
-                    }
-                    Part::Dynamic(stmt) => {
-                        stmts.extend(stmt);
-                    }
+
+                    // XSS SAFETY: static parts are literal strings pushed by us
+                    stmts.extend(quote! {
+                        #buffer_ident.dangerously_get_string().push_str(::core::concat!(#(#static_parts),*));
+                    });
+                    stmts.extend(dynamic_stmt);
+                }
+                Part::Dynamic(stmt) => {
+                    stmts.extend(stmt);
                 }
             }
+        }
 
-            // XSS SAFETY: prealoc does not add any content
-            quote! {
-                #buffer_ident.dangerously_get_string().reserve(#size_estimate);
-                #stmts
-            }
-        } else {
-            let mut static_parts = Vec::new();
-            let mut errors = TokenStream::new();
-
-            for part in self.parts {
-                match part {
-                    Part::Static(lit) => static_parts.push(lit),
-                    Part::Dynamic(stmt) => errors.extend(
-                        syn::Error::new_spanned(
-                            stmt,
-                            "static evaluation cannot contain dynamic parts",
-                        )
-                        .to_compile_error(),
-                    ),
-                }
-            }
-
-            quote! {
-                #errors
-                ::core::concat!(#(#static_parts),*)
-            }
+        // XSS SAFETY: prealoc does not add any content
+        let render = quote! {
+            #buffer_ident.dangerously_get_string().reserve(#size_estimate);
+            #stmts
         };
 
         let checks = self.checks;
@@ -400,7 +337,7 @@ impl<'a> Generator<'a> {
         append_async: bool,
     ) -> AnyBlock {
         let (mut child_checks, mut block) = {
-            let mut g = self.new_child_with_brace(brace_token, flavour, true);
+            let mut g = self.new_child_with_brace(brace_token, flavour);
 
             f(&mut g);
 
@@ -423,24 +360,8 @@ impl<'a> Generator<'a> {
         flavour: NodeFlavour,
         f: impl for<'b> FnOnce(&mut Generator<'b>),
     ) {
-        if self.lazy {
-            let block = self.block_with_flavour(Brace::default(), flavour, f, true);
-            self.push_stmt(block);
-        } else {
-            let (mut child_checks, child_parts) = {
-                let mut g = self.new_child_with_brace(Brace::default(), flavour, false);
-
-                f(&mut g);
-
-                let child_checks = std::mem::replace(&mut g.checks, Checks::new());
-                let child_parts = std::mem::take(&mut g.parts);
-
-                (child_checks, child_parts)
-            };
-
-            self.checks.append(&mut child_checks);
-            self.parts.extend(child_parts);
-        }
+        let block = self.block_with_flavour(Brace::default(), flavour, f, true);
+        self.push_stmt(block);
     }
 
     pub fn push_in_block(
@@ -481,6 +402,20 @@ impl<'a> Generator<'a> {
 
     pub fn push_literal(&mut self, lit: LitStr) {
         self.parts.push(Part::Static(lit));
+    }
+
+    #[cfg(feature = "pi-extension")]
+    pub fn push_element_source_hint(&mut self, source: LitStr) {
+        let buffer_ident = Self::buffer_ident();
+        self.push_stmt(quote! {
+            #[cfg(debug_assertions)]
+            {
+                ::cheers::__internal::pi_extension::__push_element_source_hint(
+                    #buffer_ident,
+                    #source,
+                );
+            }
+        });
     }
 
     pub fn with_context_override<R>(

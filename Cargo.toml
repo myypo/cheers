@@ -38,7 +38,9 @@ base64.version = "0.22"
 tracing = "0.1"
 ignore = { version = "0.4" }
 html-escape = { version = "0.2" }
+hmac = "0.12"
 rustc-hash = { version = "2" }
+sha2 = "0.10"
 clap = { version = "4", features = ["derive"] }
 glob = "0.3"
 crop = "0.4"

@@ -21,5 +21,8 @@ syn.workspace = true
 rustc-hash.workspace = true
 base64.workspace = true
 
+[features]
+pi-extension = []
+
 [lints]
 workspace = true
