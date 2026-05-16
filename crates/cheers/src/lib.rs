@@ -7,6 +7,7 @@ mod readme_doctests {}
 mod async_stream;
 pub mod components;
 mod context;
+mod devtools;
 mod events;
 mod reference;
 mod render;

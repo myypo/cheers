@@ -355,8 +355,22 @@ impl Render for Scripts {
                 "#,
             );
             }
+
+            render_cheers_iterate_script_to(buffer);
         }
     }
+}
+
+fn render_cheers_iterate_script_to(buffer: &mut Buffer<crate::context::Element>) {
+    let Some(script_src) = crate::devtools::cheers_iterate_script_src().unwrap_or_default() else {
+        return;
+    };
+
+    let script_src = html_escape::encode_double_quoted_attribute(&script_src);
+    let script = format!(r#"<script data-cheers-dev-tool="iterate" src="{script_src}"></script>"#);
+    // XSS SAFETY: script src is generated from a validated localhost origin and URL-safe token,
+    // then escaped in attribute context. It is loaded only in debug builds.
+    buffer.dangerously_get_string().push_str(&script);
 }
 
 /// Renders the `<link rel="stylesheet">` tag for the Cheers CSS bundle.

@@ -1,0 +1,27 @@
+{
+  "name": "cheers-pi",
+  "version": "0.1.0",
+  "description": "Pi package for Cheers framework skills and browser iteration tooling.",
+  "keywords": [
+    "pi-package",
+    "cheers"
+  ],
+  "license": "MIT",
+  "files": [
+    "extensions",
+    "skills",
+    "README.md",
+    "LICENSE"
+  ],
+  "peerDependencies": {
+    "@earendil-works/pi-coding-agent": "*"
+  },
+  "pi": {
+    "extensions": [
+      "./extensions/*.ts"
+    ],
+    "skills": [
+      "./skills"
+    ]
+  }
+}
