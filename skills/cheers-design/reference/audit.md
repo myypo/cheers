@@ -12,7 +12,7 @@ Check for:
 
 - hardcoded generated action URLs, signal paths, or patch ids
 - missing generated ids on structural patch targets
-- `form_names!(...)`, `#[form]`, input `name=...`, and handler `Form<T>` out of sync
+- generated `self.form_names()` bindings, `#[form]`, input `name=...`, and handler `Form<T>` out of sync
 - broad backend state mirrored into signals
 - unnecessary `#[signal(global)]`
 - optimistic updates or client-side success before backend confirmation

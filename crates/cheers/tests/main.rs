@@ -1413,6 +1413,28 @@ fn scoped_signal_hash() {
     assert_ne!(first_toggle_hash, second_toggle_hash);
 }
 
+#[derive(Cheers)]
+struct ScopedSignalWithoutId;
+
+impl ScopedSignalWithoutId {
+    fn render_signals(&self) -> String {
+        scoped_signal!(signal_open: bool);
+        html! {
+            p !signals(signal_open: true) {}
+        }
+        .render()
+        .into_inner()
+    }
+}
+
+#[test]
+fn scoped_signal_works_without_generated_ids() {
+    let rendered = ScopedSignalWithoutId.render_signals();
+
+    assert!(rendered.starts_with(r#"<p data-signals="{_signal_open"#));
+    assert!(rendered.ends_with(r#":true}"></p>"#));
+}
+
 #[test]
 fn svg_macro_foreign_object_switches_back_to_html() {
     let result = svg! {
@@ -1809,7 +1831,11 @@ fn ids_with_id() {
 
     impl<'a> House<'a> {
         fn assert_ids(&self) {
-            ids!(id, id_number, id_location);
+            let HouseIds {
+                id,
+                id_number,
+                id_location,
+            } = self.ids();
 
             assert_eq!(id.to_string(), "house-7");
             assert_eq!(id_number.to_string(), "house-7-number");
@@ -1835,6 +1861,23 @@ fn ids_with_id() {
 }
 
 #[test]
+fn static_base_id() {
+    #[derive(Cheers)]
+    #[id]
+    struct Panel;
+
+    impl Panel {
+        fn assert_ids(&self) {
+            let PanelIds { id } = self.ids();
+            assert_eq!(id.to_string(), "panel");
+        }
+    }
+
+    assert_eq!(Panel::id().to_string(), "panel");
+    Panel.assert_ids();
+}
+
+#[test]
 fn id_without_id() {
     #[expect(dead_code)]
     #[derive(Cheers)]
@@ -1848,7 +1891,11 @@ fn id_without_id() {
 
     impl<'a, M> Steak<'a, M> {
         fn assert_ids(&self) {
-            ids!(id, id_name, id_price);
+            let SteakIds {
+                id,
+                id_name,
+                id_price,
+            } = self.ids();
 
             assert_eq!(id.to_string(), "steak");
             assert_eq!(id_name.to_string(), "steak-name");
@@ -2018,7 +2065,12 @@ fn signal_computed() {
 
     impl Render for Input {
         fn render_to(&self, buffer: &mut Buffer<Element>) {
-            signals!(signal_a, signal_b, signal_c, signal_d);
+            let InputSignals {
+                signal_a,
+                signal_b,
+                signal_c,
+                signal_d,
+            } = self.signals();
 
             html! {
                 p   !computed(
@@ -2074,7 +2126,7 @@ fn signal_outer_without_id() {
 
     impl Render for Ghost {
         fn render_to(&self, buffer: &mut Buffer<Element>) {
-            signals!(signal_keepsake);
+            let GhostSignals { signal_keepsake } = self.signals();
 
             html! {
                 p !bind((@&signal_keepsake)) !on:close({ (@&signal_keepsake) " + 'noooo'" }) {
@@ -2110,7 +2162,7 @@ fn signal_outer_with_id() {
 
     impl Outer {
         fn assert_signals(&self) {
-            signals!(signal_outside);
+            let OuterSignals { signal_outside } = self.signals();
             assert_eq!(
                 signal_outside.render().into_inner(),
                 "$_outer['42']['outside']"
@@ -2179,7 +2231,7 @@ fn signal_id() {
 
     impl Render for Ghost {
         fn render_to(&self, buffer: &mut Buffer<Element>) {
-            signals!(signal_name);
+            let GhostSignals { signal_name } = self.signals();
 
             html! {
                 p   !bind((@&signal_name))
@@ -2216,7 +2268,7 @@ fn signal_id_with_inline_js_macro() {
 
     impl Render for Ghost {
         fn render_to(&self, buffer: &mut Buffer<Element>) {
-            signals!(signal_name);
+            let GhostSignals { signal_name } = self.signals();
 
             html! {
                 p !bind((@&signal_name)) !on:click({ "console.log(" (@&signal_name) ")" }) {}
@@ -2251,7 +2303,7 @@ fn signal_id_with_unsafe_segment() {
 
     impl Render for GhostUser {
         fn render_to(&self, buffer: &mut Buffer<Element>) {
-            signals!(signal_name);
+            let GhostUserSignals { signal_name } = self.signals();
 
             html! {
                 p !bind((@&signal_name)) !on:click({ "console.log(" (@&signal_name) ")" }) {}
@@ -2379,13 +2431,61 @@ fn signal_without_id() {
 
     impl Flare {
         fn assert_signals(&self) {
-            signals!(signal_num);
+            let FlareSignals { signal_num } = self.signals();
 
             assert_eq!(signal_num.render().into_inner(), "$_flare['num']");
         }
     }
 
     Flare { num: 5 }.assert_signals();
+}
+
+#[test]
+fn signal_accessor_destructures_generic_signals() {
+    #[expect(dead_code)]
+    #[derive(Cheers)]
+    struct Value<T> {
+        #[signal]
+        value: T,
+    }
+
+    impl<T> Value<T> {
+        fn signal_path(&self) -> String {
+            let ValueSignals { signal_value } = self.signals();
+            signal_value.render().into_inner()
+        }
+    }
+
+    assert_eq!(Value { value: 5 }.signal_path(), "$_value['value']");
+}
+
+#[test]
+fn signal_accessor_borrows_non_copy_id() {
+    #[expect(dead_code)]
+    #[derive(Cheers)]
+    struct Item {
+        #[id]
+        id: String,
+        #[signal]
+        name: String,
+    }
+
+    impl Item {
+        fn signal_path(&self) -> String {
+            let ItemSignals { signal_name } = self.signals();
+            let _id_after_signals = &self.id;
+            signal_name.render().into_inner()
+        }
+    }
+
+    assert_eq!(
+        Item {
+            id: String::from("abc"),
+            name: String::from("ignored"),
+        }
+        .signal_path(),
+        "$_item['abc']['name']"
+    );
 }
 
 #[test]
@@ -2540,7 +2640,7 @@ fn action_form_generics() {
 
     impl<'a, S: Render> Render for Stuff<'a, S> {
         fn render_to(&self, buffer: &mut Buffer<Element>) {
-            form_names!(form_whatever);
+            let StuffFormNames { form_whatever } = self.form_names();
 
             html! {
                 form {
@@ -2621,7 +2721,7 @@ fn form_without_field() {
 
     impl<'a> Render for Ghost<'a> {
         fn render_to(&self, buffer: &mut Buffer<Element>) {
-            form_names!(form_keepsake);
+            let GhostFormNames { form_keepsake } = self.form_names();
 
             html! {
                 form {
@@ -2635,7 +2735,7 @@ fn form_without_field() {
 
     impl<'a> Ghost<'a> {
         fn assert_form_names(&self) {
-            form_names!(form_keepsake);
+            let GhostFormNames { form_keepsake } = self.form_names();
             assert_eq!(
                 Render::<AttributeValue>::render(&form_keepsake).into_inner(),
                 "keepsake"
@@ -2690,4 +2790,13 @@ fn form_with_derive() {
             name: String::new()
         }
     );
+}
+
+#[test]
+fn form_derive_without_fields_generates_only_form_type() {
+    #[derive(Cheers)]
+    #[form_derive(Debug, Default, PartialEq)]
+    struct Empty;
+
+    assert_eq!(EmptyForm::default(), EmptyForm {});
 }

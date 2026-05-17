@@ -8,7 +8,7 @@ struct Counter {
 
 impl Render for Counter {
     fn render_to(&self, buffer: &mut Buffer<Element>) {
-        signals!(signal_count);
+        let CounterSignals { signal_count } = self.signals();
 
         html! {
             div id=(signal_count) {}

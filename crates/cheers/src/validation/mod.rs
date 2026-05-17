@@ -139,6 +139,7 @@ pub struct Attribute;
 /// }
 ///
 /// # #[derive(Cheers)]
+/// # #[id]
 /// # struct Composer;
 /// # impl Render for Composer {
 /// #     fn render_to(&self, buffer: &mut Buffer<Element>) {

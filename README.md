@@ -66,6 +66,7 @@ impl Render for Dwarf {
 }
 
 #[derive(Cheers)]
+#[id]
 #[form(name: String)]
 struct DwarfList {
     dwarfs: Vec<Dwarf>,
@@ -73,8 +74,8 @@ struct DwarfList {
 
 impl Render for DwarfList {
     fn render_to(&self, buffer: &mut Buffer<Element>) {
-        ids!(id);
-        form_names!(form_name);
+        let DwarfListIds { id } = self.ids();
+        let DwarfListFormNames { form_name } = self.form_names();
 
         scoped_signal!(signal_forging: bool);
 

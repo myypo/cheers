@@ -20,8 +20,8 @@ struct TodoRow {
 
 impl Render for TodoRow {
     fn render_to(&self, buffer: &mut Buffer<Element>) {
-        ids!(id, id_input);
-        signals!(signal_editing);
+        let TodoRowIds { id, id_input } = self.ids();
+        let TodoRowSignals { signal_editing } = self.signals();
         html! {
             tr id=id {
                 td { (@&self.title) }
@@ -35,7 +35,7 @@ impl Render for TodoRow {
 }
 ```
 
-- Bind all generated names inside `render_to`: `ids!(...)`, `signals!(...)`, `form_names!(...)`.
+- Destructure generated names inside `render_to`: `let TodoRowIds { ... } = self.ids();`, `let TodoRowSignals { ... } = self.signals();`, `let TodoRowFormNames { ... } = self.form_names();` instead of using field access like `ids.whatever`. If some of them end up being unused, remove the generating attribute instead of ignoring the unused values.
 - Use associated helpers outside the component: `TodoRow::id(7)`, `TodoRow::id_input(7)`, `TodoRow::signal_editing(7)`.
 - `#[signal]` is client-only by default and is not submitted with Datastar action payloads. Use `#[signal(global)]` only when a handler needs to receive that signal value.
 - Use generated ids for stable patch targets; use `scoped_signal!` for ad-hoc client-only UI state inside a component method.
@@ -199,7 +199,7 @@ Keep backend state authoritative; do not mirror broad backend state into signals
 
 Actions generate `...Action` types. `Path<_>` arguments become action fields/path segments. `Form<_>` or `#[form]` makes the generated action string include form content-type options; do not add those manually.
 
-When adding a field to a generated form, keep the `#[form(...)]` declaration, `form_names!(...)` bindings, input `name=...` attributes, and handler `Form<GeneratedForm>` type in sync.
+When adding a field to a generated form, keep the `#[form(...)]` declaration, `self.form_names()` destructuring, input `name=...` attributes, and handler `Form<GeneratedForm>` type in sync.
 
 ```rust
 #[action(PUT)]

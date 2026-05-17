@@ -35,7 +35,7 @@ Use visible labels, not placeholder-only labels. Hints should answer why or form
 - Bad: "DOB"
 - Good: "Date of birth" plus hint "Use YYYY-MM-DD."
 
-When changing fields, keep `#[form]`, `form_names!(...)`, `name=...`, and handler `Form<T>` in sync.
+When changing fields, keep `#[form]`, generated `self.form_names()` bindings, `name=...`, and handler `Form<T>` in sync.
 
 ### Errors
 

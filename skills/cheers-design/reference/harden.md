@@ -24,7 +24,7 @@ No optimistic UI. If the backend has not confirmed it, the UI may say "Saving...
 
 Use Cheers form generation where possible:
 
-- Keep `#[form(...)]`, `form_names!(...)`, input `name=...`, and handler `Form<GeneratedForm>` aligned.
+- Keep `#[form(...)]`, generated `self.form_names()` bindings, input `name=...`, and handler `Form<GeneratedForm>` aligned.
 - Validate on the backend.
 - Patch the form/component back with field-level errors and preserved values.
 - Use visible `<label>` elements. Place errors near fields and connect them with `aria-describedby` where practical.

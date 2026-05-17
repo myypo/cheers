@@ -26,8 +26,8 @@ pub mod track;
 /// Not part of the stable public API.
 pub mod validation;
 #[doc(hidden)]
-/// Support module for generated code from `#[derive(Cheers)]`, `ids!`, `signals!`,
-/// `form_names!`, `action`, and other Cheers macros. Not part of the stable public API.
+/// Support module for generated code from `#[derive(Cheers)]`, `action`, and other Cheers
+/// macros. Not part of the stable public API.
 pub mod __internal {
     pub use axum;
     pub use futures;
@@ -98,18 +98,6 @@ pub mod __internal {
         }
     }
 
-    pub trait Ids {
-        type Fields;
-    }
-
-    pub trait Signals {
-        type Fields;
-    }
-
-    pub trait FormNames {
-        type Fields;
-    }
-
     #[inline]
     pub fn __component_placeholder<T>() -> T {
         panic!("component placeholder should only be used for rust-analyzer expansion")
@@ -153,15 +141,11 @@ pub mod __internal {
 }
 
 pub mod macros {
-    pub use macros::{
-        Cheers, action, attribute, form_names, html, ids, js, scoped_signal, signals, svg,
-    };
+    pub use macros::{Cheers, action, attribute, html, js, scoped_signal, svg};
 }
 
 pub mod prelude {
-    pub use macros::{
-        Cheers, action, attribute, form_names, html, ids, js, scoped_signal, signals, svg,
-    };
+    pub use macros::{Cheers, action, attribute, html, js, scoped_signal, svg};
 
     pub use crate::{
         context::{AttributeValue, Element, JsSource},

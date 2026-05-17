@@ -30,7 +30,7 @@ These override generic frontend advice.
 1. **Backend owns truth.** Most app state lives in backend/use-case state. The frontend displays backend-confirmed state.
 2. **No optimistic UI.** Never show success, remove items, reorder data, or commit state before the backend confirms it. Use indicators and patch the confirmed result back.
 3. **Smallest dynamic layer wins:** anchor/form/redirect → `#[action]` returning `PatchElements` → sparse signals → `EventReceiver` → `JsScript` → static JS bundle. Do not jump to JS first.
-4. **Use generated names.** Use generated `...Action` structs, generated ids, `form_names!(...)`, and helper methods. Do not hardcode generated action URLs, signal paths, or patch ids.
+4. **Use generated names.** Use generated `...Action` structs, generated ids/signals/form names from `self.ids()`, `self.signals()`, and `self.form_names()`, and helper methods. Do not hardcode generated action URLs, signal paths, or patch ids.
 5. **Signals are affordance state, not app state.** Use `#[signal]` or `scoped_signal!` for local visibility, input binding, focus/selection, and pending indicators. Use `#[signal(global)]` only when a handler must receive the value.
 6. **Patch rendered components.** Prefer `PatchElements::new().element(Component { ... })` when the rendered element has the target id. Add `.id(...)`, `.selector(...)`, or `.mode(...)` only for non-default targets or operations.
 7. **Trust morphing.** Send meaningful HTML chunks, even large ones, when that is simpler and correct. Avoid client-side fine-grained DOM bookkeeping.

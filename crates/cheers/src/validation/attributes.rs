@@ -457,7 +457,7 @@ pub mod data {
     /// # }
     /// # impl Render for Example {
     /// #     fn render_to(&self, buffer: &mut Buffer<Element>) {
-    /// #         signals!(signal_foo);
+    /// #         let ExampleSignals { signal_foo } = self.signals();
     /// html! {
     ///     div !attr("title": signal_foo) {}
     /// }
@@ -492,7 +492,7 @@ pub mod data {
     /// # }
     /// # impl Render for Example {
     /// #     fn render_to(&self, buffer: &mut Buffer<Element>) {
-    /// #         signals!(signal_foo);
+    /// #         let ExampleSignals { signal_foo } = self.signals();
     /// html! {
     ///     input !bind(signal_foo);
     /// }
@@ -515,7 +515,7 @@ pub mod data {
     /// # }
     /// # impl Render for Example {
     /// #     fn render_to(&self, buffer: &mut Buffer<Element>) {
-    /// #         signals!(signal_foo);
+    /// #         let ExampleSignals { signal_foo } = self.signals();
     /// html! {
     ///     input !bind(signal_foo) value="bar";
     /// }
@@ -541,7 +541,7 @@ pub mod data {
     /// # }
     /// # impl Render for Example {
     /// #     fn render_to(&self, buffer: &mut Buffer<Element>) {
-    /// #         signals!(signal_foo);
+    /// #         let ExampleSignals { signal_foo } = self.signals();
     /// html! {
     ///     div !signals(signal_foo: 0) {
     ///         select !bind(signal_foo) {
@@ -595,7 +595,7 @@ pub mod data {
     /// # }
     /// # impl Render for Example {
     /// #     fn render_to(&self, buffer: &mut Buffer<Element>) {
-    /// #         signals!(signal_files);
+    /// #         let ExampleSignals { signal_files } = self.signals();
     /// html! {
     ///     input type="file" !bind(signal_files) multiple;
     /// }
@@ -626,7 +626,7 @@ pub mod data {
     /// # }
     /// # impl Render for Example {
     /// #     fn render_to(&self, buffer: &mut Buffer<Element>) {
-    /// #         signals!(signal_is_hidden);
+    /// #         let ExampleSignals { signal_is_hidden } = self.signals();
     /// html! {
     ///     div !class({ "{hidden: " (signal_is_hidden) "}" }) {}
     /// }
@@ -656,7 +656,7 @@ pub mod data {
     /// # }
     /// # impl Render for Example {
     /// #     fn render_to(&self, buffer: &mut Buffer<Element>) {
-    /// #         signals!(signal_foo, signal_bar, signal_total);
+    /// #         let ExampleSignals { signal_foo, signal_bar, signal_total } = self.signals();
     /// html! {
     ///     div !computed(signal_total: { (signal_foo) " + " (signal_bar) }) {}
     ///     div !text(signal_total) {}
@@ -695,7 +695,7 @@ pub mod data {
     /// # }
     /// # impl Render for Example {
     /// #     fn render_to(&self, buffer: &mut Buffer<Element>) {
-    /// #         signals!(signal_foo, signal_bar);
+    /// #         let ExampleSignals { signal_foo, signal_bar } = self.signals();
     /// html! {
     ///     div !effect({ (signal_foo) " = " (signal_bar) " + 1" }) {}
     /// }
@@ -793,7 +793,7 @@ pub mod data {
     /// # }
     /// # impl Render for Example {
     /// #     fn render_to(&self, buffer: &mut Buffer<Element>) {
-    /// #         signals!(signal_count);
+    /// #         let ExampleSignals { signal_count } = self.signals();
     /// html! {
     ///     div !init({ (signal_count) " = 1" }) {}
     /// }
@@ -849,7 +849,7 @@ pub mod data {
     /// # }
     /// # impl Render for Example {
     /// #     fn render_to(&self, buffer: &mut Buffer<Element>) {
-    /// #         signals!(signal_foo);
+    /// #         let ExampleSignals { signal_foo } = self.signals();
     /// html! {
     ///     div !ref(signal_foo) {}
     /// }
@@ -878,7 +878,7 @@ pub mod data {
     /// # }
     /// # impl Render for Example {
     /// #     fn render_to(&self, buffer: &mut Buffer<Element>) {
-    /// #         signals!(signal_foo);
+    /// #         let ExampleSignals { signal_foo } = self.signals();
     /// html! {
     ///     div !show(signal_foo) {}
     /// }
@@ -906,7 +906,7 @@ pub mod data {
     /// # }
     /// # impl Render for Example {
     /// #     fn render_to(&self, buffer: &mut Buffer<Element>) {
-    /// #         signals!(signal_foo);
+    /// #         let ExampleSignals { signal_foo } = self.signals();
     /// html! {
     ///     div !signals(signal_foo: 1) {}
     /// }
@@ -932,7 +932,7 @@ pub mod data {
     /// # }
     /// # impl Render for Example {
     /// #     fn render_to(&self, buffer: &mut Buffer<Element>) {
-    /// #         signals!(signal_using_red);
+    /// #         let ExampleSignals { signal_using_red } = self.signals();
     /// html! {
     ///     div !style("background-color": { (signal_using_red) " ? 'red' : 'blue'" }) {}
     /// }
@@ -957,7 +957,7 @@ pub mod data {
     /// # }
     /// # impl Render for Example {
     /// #     fn render_to(&self, buffer: &mut Buffer<Element>) {
-    /// #         signals!(signal_foo);
+    /// #         let ExampleSignals { signal_foo } = self.signals();
     /// html! {
     ///     div !text(signal_foo) {}
     ///     // or with a complex expression
@@ -984,7 +984,7 @@ pub mod data {
     /// # }
     /// # impl Render for Example {
     /// #     fn render_to(&self, buffer: &mut Buffer<Element>) {
-    /// #         signals!(signal_intersected);
+    /// #         let ExampleSignals { signal_intersected } = self.signals();
     /// html! {
     ///     div !on_intersect({ (signal_intersected) " = true" }) {}
     /// }
@@ -1009,7 +1009,7 @@ pub mod data {
     /// # }
     /// # impl Render for Example {
     /// #     fn render_to(&self, buffer: &mut Buffer<Element>) {
-    /// #         signals!(signal_count);
+    /// #         let ExampleSignals { signal_count } = self.signals();
     /// html! {
     ///     div !on_interval({ (signal_count) "++" }) {}
     /// }

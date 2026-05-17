@@ -15,7 +15,7 @@ Refine an existing Cheers UI to shipping quality. Polish is not a rewrite unless
 
 ## Cheers polish checklist
 
-- Generated names are bound inside `render_to`: `ids!(...)`, `signals!(...)`, `form_names!(...)`.
+- Generated names are destructured inside `render_to` with `self.ids()`, `self.signals()`, and `self.form_names()`.
 - Action attrs use generated `...Action` structs.
 - Patch targets have stable generated ids or semantic ids.
 - `PatchElements` defaults are used unless a non-default target/mode is necessary.

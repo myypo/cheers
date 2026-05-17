@@ -42,7 +42,7 @@ For each user interaction, choose the smallest layer:
 Make the contract explicit in code:
 
 - generated `...Action` structs for `!on:*`
-- `#[form]` and `form_names!(...)` for forms
+- `#[form]` and generated `self.form_names()` bindings for forms
 - generated ids for patch targets
 - backend validation and backend-confirmed success/error rendering
 
@@ -66,8 +66,12 @@ struct ProjectEditor {
 
 impl Render for ProjectEditor {
     fn render_to(&self, buffer: &mut Buffer<Element>) {
-        ids!(id, id_title, id_status);
-        form_names!(form_title);
+        let ProjectEditorIds {
+            id,
+            id_title,
+            id_status,
+        } = self.ids();
+        let ProjectEditorFormNames { form_title } = self.form_names();
         scoped_signal!(signal_saving: bool);
 
         html! {

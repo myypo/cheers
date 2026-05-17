@@ -81,7 +81,7 @@ struct MineShiftBriefing {
 
 impl Render for MineShiftBriefing {
     fn render_to(&self, buffer: &mut Buffer<Element>) {
-        ids!(id, id_title);
+        let MineShiftBriefingIds { id, id_title } = self.ids();
 
         let watch_count = self.briefing.watch_count();
 

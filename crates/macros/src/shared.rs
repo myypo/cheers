@@ -1,11 +1,11 @@
 use std::collections::BTreeSet;
 
-use proc_macro2::{Span, TokenStream};
-use quote::{ToTokens, quote};
+use proc_macro2::TokenStream;
+use quote::ToTokens;
 use syn::{
     Attribute, GenericParam, Generics, Ident, Lifetime, Path, Signature, Token, Type, Visibility,
     WherePredicate, braced,
-    parse::{Parse, ParseStream, Parser},
+    parse::{Parse, ParseStream},
     punctuated::Punctuated,
     visit::{Visit, visit_path, visit_where_predicate},
 };
@@ -179,30 +179,6 @@ pub fn filter_generics<'a>(
     }
 
     generics
-}
-
-pub fn generate_field_bindings(
-    tokens: proc_macro::TokenStream,
-    accessor: &'static str,
-    trait_path: TokenStream,
-) -> proc_macro::TokenStream {
-    let accessor = Ident::new(accessor, Span::call_site());
-
-    let names = Punctuated::<Ident, Token![,]>::parse_terminated
-        .parse(tokens)
-        .expect("expected comma-separated identifiers")
-        .into_iter()
-        .collect::<Vec<_>>();
-
-    quote! {
-        let (#(#names,)*) = {
-            type __CheersFields<T> = <T as #trait_path>::Fields;
-
-            let __CheersFields::<Self> { #(#names,)* } = self.#accessor();
-            (#(#names,)*)
-        };
-    }
-    .into()
 }
 
 pub fn to_pascal_case(s: &str) -> String {

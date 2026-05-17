@@ -29,7 +29,7 @@ use crate::{
 ///
 /// impl Render for Row {
 ///     fn render_to(&self, buffer: &mut Buffer<Element>) {
-///         ids!(id);
+///         let RowIds { id } = self.ids();
 ///
 ///         html! {
 ///             tr id=id { "Updated" }

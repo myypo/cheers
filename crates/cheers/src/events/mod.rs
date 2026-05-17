@@ -41,7 +41,7 @@ pub struct EventReceiver(tokio::sync::mpsc::UnboundedReceiver<sse::Event>);
 ///
 /// impl Render for Status<'_> {
 ///     fn render_to(&self, buffer: &mut Buffer<Element>) {
-///         ids!(id);
+///         let StatusIds { id } = self.ids();
 ///
 ///         html! {
 ///             p id=id { (self.message) }
