@@ -366,6 +366,15 @@ impl Render<JsSource> for FormName {
     }
 }
 
+#[doc(hidden)]
+/// Internal bridge used by `#[derive(Cheers)]` to compose generated form types.
+pub trait FormComponent {
+    type Form;
+    type FormNames;
+
+    const __FORM_NAMES: Self::FormNames;
+}
+
 /// Computes 32-bit FNV1a hash for component's location
 const fn hash_component_location(
     component_id: &str,

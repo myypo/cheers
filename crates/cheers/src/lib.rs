@@ -34,7 +34,10 @@ pub mod __internal {
     pub use inventory;
     pub use serde;
 
-    pub use crate::{render::__render_action_call, signal_path::__push_signal_path_segment};
+    pub use crate::{
+        reference::FormComponent, render::__render_action_call,
+        signal_path::__push_signal_path_segment,
+    };
 
     pub mod async_streams {
         pub use crate::async_stream::{AsyncStream, AsyncStreamCollectionGuard, enter, push};

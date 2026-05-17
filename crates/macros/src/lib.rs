@@ -81,6 +81,8 @@ fn expand_js_lazy(tokens: proc_macro::TokenStream) -> proc_macro::TokenStream {
 /// - `#[form]` on a field includes that field in the generated form type.
 /// - `#[form(...)]` on a field forwards additional field attributes, such as serde
 ///   attributes, to the generated form field.
+/// - `#[form(flatten)]` on a field composes another `#[derive(Cheers)]` component's generated
+///   form type with `serde(flatten)` and exposes its form-name bindings as a nested group.
 /// - `#[form(name: Type)]` on the struct adds an extra field to the generated form type.
 /// - `#[form_derive(...)]` adds derives to the generated `...Form` type.
 /// - `#[prop(default(...))]` marks a component field as optional when used from `html!`.

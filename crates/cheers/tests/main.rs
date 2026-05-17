@@ -2756,6 +2756,201 @@ fn form_without_field() {
 }
 
 #[test]
+fn form_names_remains_const_without_flatten() {
+    #[derive(Cheers)]
+    #[form(name: String)]
+    struct Simple;
+
+    const NAMES: SimpleFormNames = Simple.form_names();
+
+    assert_eq!(
+        Render::<AttributeValue>::render(&NAMES.form_name).into_inner(),
+        "name"
+    );
+}
+
+#[test]
+fn form_names_remains_const_with_flatten() {
+    #[derive(Cheers)]
+    #[form(value: String)]
+    struct Child;
+
+    #[derive(Cheers)]
+    struct Parent {
+        #[form(flatten)]
+        child: Child,
+    }
+
+    const NAMES: ParentFormNames = Parent { child: Child }.form_names();
+
+    assert_eq!(
+        Render::<AttributeValue>::render(&NAMES.form_child.form_value).into_inner(),
+        "value"
+    );
+}
+
+#[test]
+fn form_flatten_deserializes_and_nests_names() {
+    #[derive(Cheers)]
+    #[form_derive(Debug, PartialEq)]
+    struct KnownBy {
+        #[form]
+        known_by_scope: String,
+    }
+
+    #[derive(Cheers)]
+    #[form_derive(Debug, PartialEq)]
+    struct BodyPart {
+        #[form]
+        id: String,
+        #[form(flatten)]
+        known_by: KnownBy,
+    }
+
+    let result: BodyPartForm = serde_json::from_str(
+        r#"{
+            "id": "body-1",
+            "known_by_scope": "selected"
+        }"#,
+    )
+    .expect("flattened form JSON should deserialize");
+    assert_eq!(
+        result,
+        BodyPartForm {
+            id: String::from("body-1"),
+            known_by: KnownByForm {
+                known_by_scope: String::from("selected"),
+            },
+        }
+    );
+
+    let BodyPartFormNames { form_known_by, .. } = BodyPart {
+        id: String::from("body-1"),
+        known_by: KnownBy {
+            known_by_scope: String::from("selected"),
+        },
+    }
+    .form_names();
+    assert_eq!(
+        Render::<AttributeValue>::render(&form_known_by.form_known_by_scope).into_inner(),
+        "known_by_scope"
+    );
+}
+
+#[test]
+fn form_flatten_supports_generic_child_components() {
+    #[derive(Cheers)]
+    #[form_derive(Debug, Clone, PartialEq)]
+    struct Child<'a, T: Clone> {
+        label: &'a str,
+        #[form]
+        value: &'a T,
+    }
+
+    #[derive(Cheers)]
+    #[form_derive(Debug, Clone, PartialEq)]
+    struct Parent<'a, T: Clone> {
+        #[form(flatten)]
+        child: Child<'a, T>,
+    }
+
+    let result: ParentForm<'static, String> =
+        serde_json::from_str(r#"{"value":"hello"}"#).expect("generic flattened form should parse");
+    let cloned = result.clone();
+    assert_eq!(cloned, result);
+    assert_eq!(
+        format!("{result:?}"),
+        r#"ParentForm { child: ChildForm { value: "hello" } }"#
+    );
+    assert_eq!(result.child.value, String::from("hello"));
+
+    let value = String::from("rendered");
+    let names = Parent {
+        child: Child {
+            label: "label",
+            value: &value,
+        },
+    }
+    .form_names();
+    assert_eq!(
+        Render::<AttributeValue>::render(&names.form_child.form_value).into_inner(),
+        "value"
+    );
+}
+
+#[test]
+fn form_flatten_supports_referenced_child_components() {
+    #[derive(Cheers)]
+    #[form_derive(Debug, PartialEq)]
+    struct Child {
+        #[form]
+        name: String,
+    }
+
+    #[derive(Cheers)]
+    #[form_derive(Debug, PartialEq)]
+    struct Parent<'a> {
+        #[form(flatten)]
+        child: &'a Child,
+    }
+
+    let result: ParentForm =
+        serde_json::from_str(r#"{"name":"Ada"}"#).expect("referenced child form should parse");
+    assert_eq!(
+        result,
+        ParentForm {
+            child: ChildForm {
+                name: String::from("Ada"),
+            },
+        }
+    );
+
+    let child = Child {
+        name: String::from("Ada"),
+    };
+    let names = Parent { child: &child }.form_names();
+    assert_eq!(
+        Render::<AttributeValue>::render(&names.form_child.form_name).into_inner(),
+        "name"
+    );
+}
+
+#[tokio::test]
+async fn action_form_flatten_accepts_urlencoded_payload() {
+    #[derive(Cheers)]
+    struct KnownBy {
+        #[form]
+        known_by_scope: String,
+    }
+
+    #[derive(Cheers)]
+    struct BodyPart {
+        #[form]
+        id: String,
+        #[form(flatten)]
+        known_by: KnownBy,
+    }
+
+    #[action(POST)]
+    async fn submit_flattened_known_by(Form(form): Form<BodyPartForm>) -> String {
+        format!("{}:{}", form.id, form.known_by.known_by_scope)
+    }
+
+    let app = axum::Router::new().action::<SubmitFlattenedKnownByAction>();
+    let request = axum::http::Request::builder()
+        .method("POST")
+        .uri("/cheers/actions/submit_flattened_known_by")
+        .header("content-type", "application/x-www-form-urlencoded")
+        .body(Body::from("id=body-1&known_by_scope=selected"))
+        .expect("request should build");
+
+    let response = app.oneshot(request).await.expect("router should respond");
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = read_axum_body(response).await;
+    assert_eq!(body, "body-1:selected");
+}
+
+#[test]
 fn action_def_path_and_method() {
     #[action(POST)]
     #[expect(unused_variables)]
