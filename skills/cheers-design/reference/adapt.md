@@ -22,7 +22,7 @@ Ask for target devices and usage context if missing.
 - Keep primary actions reachable and large enough.
 - Avoid hover-dependent interactions.
 - Replace wide tables with summary rows, detail pages, or horizontally scrollable tables only when acceptable.
-- Use normal navigation and links. Do not recreate app history in signals.
+- Use normal navigation and links for page movement.
 - Keep forms short; split only when it reduces cognitive load.
 
 ### Tablet
@@ -44,14 +44,15 @@ Ask for target devices and usage context if missing.
 - Preserve semantic heading order.
 - Use print-specific CSS rather than a separate data model when possible.
 
-## Cheers implementation
+## Cheers fit
 
-- Prefer CSS media/container queries and semantic markup over duplicate Rust components.
-- If the structure truly differs, extract smaller `Render` components and compose per context.
-- Keep generated ids stable across breakpoints so patches continue to target the same conceptual element.
-- Use `!show` for local affordance visibility, not for removing core functionality from a device class.
-- Do not maintain separate client-side state machines for responsive behavior.
+- Prefer CSS media/container queries and semantic markup over duplicate component trees.
+- If structure truly differs, compose smaller reusable UI pieces.
+- Keep conceptual update regions stable across breakpoints.
+- Use local affordances for disclosure, not to remove core functionality from a device class.
+
+Use `cheers` for exact component and patch mechanics.
 
 ## Verify
 
-Test at narrow mobile, mobile landscape, tablet/small laptop, desktop wide, keyboard-only, and 200% zoom. For action-driven UI, run or add a browser test only when Datastar behavior is the risk.
+Test narrow mobile, mobile landscape, tablet/small laptop, desktop wide, keyboard-only, touch, and 200% zoom. For action-driven UI, verify the interaction that changes state.

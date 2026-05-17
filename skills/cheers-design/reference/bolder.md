@@ -5,7 +5,7 @@ Make a safe or bland Cheers UI more confident without falling into generic AI ef
 ## Register
 
 - **Product**: bolder means clearer hierarchy, stronger affordances, better density, and one decisive accent. It rarely means theatrics.
-- **Brand**: bolder means stronger point of view: scale, type, image, color, pacing, and composition can all push harder.
+- **Brand**: bolder means stronger point of view. Scale, type, image, color, pacing, and composition can all push harder.
 
 ## Assess
 
@@ -35,9 +35,9 @@ Pick one focal point and make it unmistakable. Increase contrast between primary
 
 ### Color
 
-- Product: accent only where it carries meaning: primary action, current selection, status.
+- Product: accent only where it carries meaning: primary action, current selection, focus, status.
 - Brand: choose Committed, Full palette, or Drenched when the surface earns it. Do not hedge.
-- Use OKLCH where the project allows. Never use pure black/white as the main neutral.
+- Use OKLCH where the project allows. Avoid pure black/white as the main neutral.
 
 ### Composition
 
@@ -47,12 +47,12 @@ Break monotony with asymmetry, varied section rhythm, stronger alignment, or one
 
 Use purposeful motion only: reveal, feedback, state transition. Brand can have larger choreographed moments; product should stay quick and task-focused.
 
-## Cheers constraints
+## Cheers fit
 
 - Do not add client-side state just to make the UI feel lively.
 - Do not show success or completed state before backend confirmation.
-- Use `!indicator` for pending states and patch the bolder confirmed state from the backend.
-- Keep motion in CSS/Datastar/native APIs unless a JS bundle is justified.
+- Let the bolder treatment apply to confirmed states and honest pending states.
+- Use `cheers` for exact implementation choices.
 
 ## Never
 
@@ -65,4 +65,4 @@ Use purposeful motion only: reveal, feedback, state transition. Brand can have l
 
 ## Verify
 
-Would a user trust the bolder product UI more, not less? Would the brand surface be remembered? Does it still pass accessibility, reduced motion, and Datastar state correctness?
+Would a user trust the bolder product UI more, not less? Would the brand surface be remembered? Does it still pass accessibility, reduced motion, and state trust?

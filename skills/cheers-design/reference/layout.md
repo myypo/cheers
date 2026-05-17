@@ -17,26 +17,13 @@ Check:
 - Are there nested cards or wrappers without purpose?
 - Does the layout adapt on mobile, or only shrink?
 - Are tables, forms, and toolbars using familiar patterns?
-- Are patch targets stable and local enough for the layout sections being updated?
+- Do update regions align with meaningful visual sections?
 
 ## Improve
 
 ### Establish spacing
 
-Use existing CSS variables or introduce a small local scale:
-
-```css
-:root {
-  --space-1: .25rem;
-  --space-2: .5rem;
-  --space-3: .75rem;
-  --space-4: 1rem;
-  --space-6: 1.5rem;
-  --space-8: 2rem;
-}
-```
-
-Use `gap` for sibling spacing. Use margins for relationships between independent blocks. Avoid arbitrary one-off values unless the optical adjustment is intentional.
+Use existing CSS variables or introduce a small semantic local scale only when the project lacks one. Use `gap` for sibling spacing. Use margins for relationships between independent blocks. Avoid arbitrary one-off values unless the optical adjustment is intentional.
 
 ### Choose the right structure
 
@@ -55,12 +42,12 @@ Do not wrap everything in cards. Use cards only for distinct objects or actionab
 - Brand: change composition and pacing per breakpoint, not just font size.
 - All touch targets should be large enough and not hover-only.
 
-## Cheers considerations
+## Cheers fit
 
-- Extract repeated structural chunks into `Render` components.
-- Give patchable sections generated ids.
-- Prefer patching a whole coherent layout region over many tiny fragments when morphing can handle it.
-- Keep CSS in project conventions, usually `include_css!` for global CSS or component-scoped classes where established.
+- Extract repeated structural chunks only when it improves clarity and reuse.
+- Keep meaningful update regions stable and visually coherent.
+- Follow project CSS conventions.
+- Use `cheers` for exact component and patch mechanics.
 
 ## Never
 

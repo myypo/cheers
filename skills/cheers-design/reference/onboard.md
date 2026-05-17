@@ -15,6 +15,7 @@ Ask or infer:
 - What can be skipped by experienced users?
 - Which empty states are common?
 - What sample data, templates, or defaults can the backend provide?
+- What fears or trust gaps appear before the first action?
 
 ## Patterns
 
@@ -26,20 +27,18 @@ Every empty state should answer:
 2. Why does it matter?
 3. What is the first action?
 
-Render empty states from backend state. Do not fake objects in client signals unless they are clearly examples.
+Do not fake real objects unless they are clearly examples or templates.
 
 ### Guided first action
 
-Use normal forms/actions:
-
-- template selection or seed data comes from backend state
-- submit via generated `...Action`
-- show `!indicator` while work is happening
-- patch the confirmed created item or next step
+- Keep the first action small and reversible when possible.
+- Use templates, seed data, or defaults when they reduce blank-page anxiety.
+- Show truthful pending state while work is happening.
+- Move to the confirmed created item or next step after success.
 
 ### Contextual help
 
-Use inline help, details/summary, popovers, or small local signals for visibility. Track dismissals in backend user preferences when they matter across sessions. Local storage is acceptable only for non-critical, device-local hints.
+Use inline help, details/summary, popovers, or small local disclosures. Persist dismissals in backend user preferences only when they matter across sessions. Device-local hints are acceptable for non-critical tips.
 
 ### Progress
 
@@ -53,13 +52,11 @@ Progress indicators should reflect backend-known completion when it affects acco
 - Separate tutorial mode disconnected from real data unless the domain is high-stakes.
 - Patronizing obvious explanations.
 
-## Cheers implementation checklist
+## Cheers fit
 
-- Empty, first-run, and permission states are `Render` components.
-- Actions use generated structs and backend-confirmed patches.
-- Hints controlled by signals are local affordances only.
-- Persistent onboarding completion belongs in backend state.
-- Browser tests cover first successful action when Datastar behavior matters.
+- Empty, first-run, and permission states should be first-class UI patterns.
+- Local hint visibility can be a client affordance; durable completion belongs in backend state.
+- Use `cheers` for exact action, patch, and test mechanics.
 
 ## Verify
 

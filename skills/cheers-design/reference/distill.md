@@ -11,8 +11,8 @@ Find complexity sources:
 - redundant cards, wrappers, or borders
 - too many colors, fonts, variants, and statuses
 - all data visible at once with no hierarchy
-- client state or signals carrying UI complexity that could be rendered by backend state
-- modal flows where inline or progressive disclosure would work
+- local affordances carrying complexity that belongs in the rendered state or flow
+- modal flows where inline, page, or progressive disclosure would work
 
 Identify the one primary user goal before cutting.
 
@@ -36,8 +36,8 @@ Identify the one primary user goal before cutting.
 ### Interaction
 
 - Prefer normal navigation and forms where dynamic behavior adds little.
-- Use a single action patch rather than several coordinated client-side updates when possible.
-- Use signals only for local affordances.
+- Prefer one understandable update region over several coordinated visual changes when possible.
+- Use local client affordances only where they reduce cognitive load.
 - Remove unnecessary JS helpers.
 
 ### Copy

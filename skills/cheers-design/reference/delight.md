@@ -20,7 +20,7 @@ Look for:
 
 Ask what tone is appropriate if unclear: playful, professional, quirky, elegant, calm.
 
-## Design principles
+## Principles
 
 - Delight must never delay or block the task.
 - Delight must not imply success before backend confirmation.
@@ -28,29 +28,23 @@ Ask what tone is appropriate if unclear: playful, professional, quirky, elegant,
 - The more serious the user state, the quieter the delight.
 - Reduced-motion users still get a polished static version.
 
-## Cheers patterns
+## Patterns
 
 ### Backend-confirmed celebration
 
-The action handler records success, then patches a success component. CSS may animate that newly patched state.
-
-```rust
-PatchElements::new().element(SaveResult::success())
-```
-
-Pair with CSS animation that respects reduced motion. Do not fire a celebration on click before the action succeeds.
+Celebrate only after the confirmed success state is rendered. Motion can emphasize that new state, but it should not fire on click before success.
 
 ### Helpful empty states
 
-Render empty states from backend data. Include a specific CTA using generated actions or normal links.
+Use the empty state to explain what will appear, why it matters, and the first useful action. Make the tone specific to the product.
 
 ### Local micro-interactions
 
-Use CSS hover/focus/active and small `scoped_signal!` toggles. Keep them independent of durable state.
+Use hover, focus, active, reveal, and small local toggles to make controls feel considered. Keep them independent of durable state.
 
 ### Waiting states
 
-Use `!indicator` and product-specific copy: "Importing 24 rows..." is better than generic jokes. For long backend jobs, stream progress with `EventReceiver` when useful.
+Use reassuring, specific copy. "Importing 24 rows..." is better than generic jokes. For long jobs, show truthful progress when available.
 
 ## Avoid
 

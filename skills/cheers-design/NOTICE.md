@@ -6,7 +6,7 @@ This skill adapts material from Impeccable.
 - Copyright: 2025-2026 Paul Bakaus
 - License: Apache License 2.0
 - License text: [`LICENSES/impeccable-Apache-2.0.txt`](LICENSES/impeccable-Apache-2.0.txt)
-- Changes: adapted the design-skill guidance for Cheers/Rust/Datastar, backend-owned state, server-rendered patches, generated ids/actions/forms, sparse signals, and no optimistic UI.
+- Changes: adapted the design-skill guidance for Cheers/Rust/Datastar, added a clear boundary with the main `cheers` implementation skill, and kept only design-level interaction guardrails such as backend-confirmed state and no optimistic UI.
 
 Upstream Impeccable `NOTICE.md` attribution is reproduced below:
 

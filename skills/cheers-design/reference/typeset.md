@@ -4,7 +4,7 @@ Improve typography hierarchy, readability, and font strategy in a Cheers UI.
 
 ## Register
 
-- **Product**: system fonts or one familiar sans are often correct. Use a tight fixed `rem` scale, clear label/body/title roles, and stable density.
+- **Product**: system fonts or one familiar sans are often correct. Use a tight fixed rem scale, clear label/body/title roles, and stable density.
 - **Brand**: typography can carry the voice. Use stronger scale contrast, distinctive headings, and fluid display sizes when the surface earns it.
 
 ## Assess
@@ -21,34 +21,20 @@ Check:
 
 ## Improve
 
-### Product type scale
+### Product type
 
-Use fixed roles and semantic CSS variables:
+- Use semantic roles: label, body, title, heading, data, caption.
+- Keep the scale tight and predictable.
+- Do not use display fonts in labels, buttons, or dense data.
+- Use tabular numerals where alignment matters.
+- Prefer system or familiar sans stacks unless the design system says otherwise.
 
-```css
-:root {
-  --font-ui: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-  --text-label: .8125rem;
-  --text-body: 1rem;
-  --text-title: 1.125rem;
-  --text-heading: 1.375rem;
-}
-```
+### Brand type
 
-Use 1.125-1.2 ratio between steps. Do not use display fonts in labels, buttons, or dense data.
-
-### Brand type scale
-
-Use fluid display sizes and stronger contrast:
-
-```css
-:root {
-  --text-display: clamp(3rem, 9vw, 7rem);
-  --text-kicker: .78rem;
-}
-```
-
-Choose type that matches the actual brand voice, not generic elegance. Avoid defaulting to the same popular display families across projects.
+- Start from voice, not trend. Name what the type should feel like as a physical object.
+- Use fluid display sizes and stronger contrast when the surface earns it.
+- Choose distinctive type only when it supports the brand, not because it looks designed.
+- Avoid reusing the same popular display families across unrelated projects.
 
 ### Readability details
 
@@ -59,11 +45,11 @@ Choose type that matches the actual brand voice, not generic elegance. Avoid def
 - Use `rem`, not fixed pixel font sizes.
 - Load only weights you actually use.
 
-## Cheers considerations
+## Cheers fit
 
-- Keep type roles in CSS/design docs, not duplicated as arbitrary inline styles in templates.
-- Ensure patched error/success/empty states use the same typographic roles as the rest of the component.
-- Render borrowed strings with `(@&value)` when only displaying text.
+- Keep type roles in CSS/design docs, not arbitrary inline styles in templates.
+- Ensure error, success, empty, and pending states use the same typographic roles as the rest of the component.
+- Use `cheers` for exact rendering syntax.
 
 ## Verify
 

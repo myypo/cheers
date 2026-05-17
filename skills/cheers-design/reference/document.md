@@ -8,12 +8,12 @@ If `DESIGN.md` exists, do not overwrite it silently. Read it and ask whether to 
 
 Scan the project first:
 
-- global CSS and `include_css!` files
+- global CSS and included CSS files
 - CSS custom properties and token files
-- shared `Render` components
-- buttons, forms, cards, nav, empty/error states
-- `include_svg_sprite!` and image assets
-- layout/base components and page shells
+- shared UI components and page shells
+- buttons, forms, cards/containers, nav, badges, empty/error/loading states
+- icon and image assets
+- motion conventions
 - rendered output if practical
 
 ## Modes
@@ -24,7 +24,7 @@ Use when code exists. Extract actual visual system values and component behavior
 
 ### Seed mode
 
-Use when the app has little or no UI yet. Ask 4-5 questions, wait for answers, then write a minimal starter DESIGN.md marked `<!-- SEED -->`. Re-run document later after implementation.
+Use when the app has little or no UI yet. Ask 4-5 questions, wait for answers, then write a minimal starter DESIGN.md marked `<!-- SEED -->`. Re-run `document` later after implementation.
 
 Questions for seed mode:
 
@@ -65,12 +65,16 @@ Buttons, links, inputs, forms, cards/containers, nav, badges, empty/error/loadin
 
 Durations, easing, reduced-motion behavior, allowed motion purposes.
 
+## Interaction and State
+
+Default, hover, focus, active, disabled, pending, error, success, empty, permissions, and backend-confirmed trust rules.
+
 ## Do's and Don'ts
 
-Concrete guardrails, including no gradient text, no decorative glass, no side-stripe card accents, no optimistic UI, generated ids/actions/forms for Cheers interactions.
+Concrete guardrails, including no gradient text, no decorative glass, no side-stripe card accents, no optimistic success.
 ```
 
-If another tool in the project expects Google Stitch-style six sections, preserve that format and fold Layout/Motion into the nearest allowed sections.
+If another tool in the project expects a specific format, preserve that format and fold these sections into it.
 
 ## Sidecar data
 
@@ -78,11 +82,15 @@ If helpful, also write `.cheers-design/design.json` with extracted tokens and co
 
 ## Cheers-specific content to capture
 
-- CSS token names used by Cheers templates.
-- Which components require `Scripts` because they use Datastar behavior.
-- Common generated id/form/signal patterns.
-- Patchable component boundaries.
-- Loading/error/success state vocabulary.
+Capture design-relevant implementation facts without turning DESIGN.md into an API manual:
+
+- CSS token names used by Cheers templates
+- components that depend on client behavior
+- common state vocabulary for pending, error, success, empty, and permissions
+- conceptual update boundaries that affect layout or motion
+- reusable UI patterns and their accessibility contracts
+
+For exact syntax and implementation rules, link or defer to the main `cheers` skill.
 
 ## Verify
 

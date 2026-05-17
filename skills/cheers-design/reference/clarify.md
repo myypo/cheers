@@ -16,13 +16,13 @@ Find copy that is:
 
 Ask for audience technical level and user mental state only when the code/product docs do not answer it.
 
-## Cheers copy rules
+## Copy rules
 
 - Button text should name the action: "Save settings", "Invite member", "Retry upload".
 - Loading text is honest: "Saving...", "Checking availability...". It must not imply success.
 - Success text appears only from backend-confirmed state.
 - Error text explains what happened and what to do next.
-- Validation messages come from backend validation when the action is submitted, then patch near the field.
+- Validation messages come from backend validation or the source of truth for the action, then appear near the field.
 - Empty states explain what will appear, why it matters, and the first useful action.
 - Avoid em dashes, filler adjectives, and generic AI loading jokes.
 
@@ -35,19 +35,19 @@ Use visible labels, not placeholder-only labels. Hints should answer why or form
 - Bad: "DOB"
 - Good: "Date of birth" plus hint "Use YYYY-MM-DD."
 
-When changing fields, keep `#[form]`, generated `self.form_names()` bindings, `name=...`, and handler `Form<T>` in sync.
+When changing fields, use the main `cheers` skill to keep form wiring aligned.
 
 ### Errors
 
 - Bad: "Forbidden"
 - Good: "You do not have permission to edit this project. Ask an owner for access."
 
-Render field-level errors near inputs and connect them with `aria-describedby` where practical. Use `role="alert"` for newly patched important errors.
+Place field-level errors near inputs and connect them semantically where practical. Use alert/live treatment for newly appearing important errors.
 
 ### Loading and pending
 
 - Bad: "Done" before the response arrives.
-- Good: button pending text "Saving..." with `!indicator` and disabled state, then backend patches "Saved" or the error.
+- Good: "Saving..." while pending, then "Saved" or the error only after backend confirmation.
 
 ### Destructive actions
 
@@ -55,7 +55,7 @@ Name the object and consequence:
 
 - "Delete deployment `green-42`? This removes its logs from the dashboard."
 
-For undo, use a backend-modeled soft-delete or pending state, not optimistic removal.
+Undo should be backend-modeled or otherwise truthful, not optimistic removal with a fragile rollback.
 
 ## Verify
 

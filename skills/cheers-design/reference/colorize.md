@@ -16,6 +16,7 @@ Identify:
 - semantic states needed: success, error, warning, info, selected, disabled, loading
 - places where color would improve wayfinding or hierarchy
 - contrast failures or gray-on-color problems
+- category-reflex palettes to avoid
 
 ## Plan
 
@@ -35,7 +36,7 @@ Use OKLCH when possible and reduce chroma near very light or very dark values.
 - Primary button and active nav use the accent.
 - Error/warning/success/info use consistent semantic colors.
 - Focus rings are visible and color-safe.
-- Loading indicators use the pending affordance color without implying success.
+- Loading indicators use a pending affordance color without implying success.
 - Charts and badges use palettes that are distinguishable beyond color alone.
 
 ### Brand
@@ -44,13 +45,13 @@ Use OKLCH when possible and reduce chroma near very light or very dark values.
 - Use image/illustration/color together where the brief calls for a visual world.
 - Avoid default tech gradients and decorative glow.
 
-## Cheers implementation
+## Cheers fit
 
 - Put palette values in CSS variables or the existing token system.
-- Keep Datastar patched states using the same semantic classes/tokens.
-- Do not use color-only status. Add text, icon, or shape.
+- Keep backend-confirmed states using the same semantic classes/tokens.
+- Do not use color-only status. Add text, icon, shape, or position.
 - Do not use side-stripe card accents. Use full hairline borders, tints, leading icons, or labels.
 
 ## Verify
 
-Check WCAG contrast, color blindness, dark/light variants if present, reduced motion, and all backend-patched states. Color should clarify what changed after a patch.
+Check WCAG contrast, color blindness, dark/light variants if present, reduced motion, and all state changes. Color should clarify what changed, not merely decorate it.

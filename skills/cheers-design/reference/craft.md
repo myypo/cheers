@@ -1,6 +1,6 @@
 # Craft
 
-Build a confirmed design brief into production-quality Cheers code, then inspect and improve it.
+Build a confirmed design brief into production-quality Cheers UI, then inspect and refine it. Craft is where design decisions become code, but the exact Cheers mechanics come from the main `cheers` skill.
 
 ## Gate
 
@@ -10,144 +10,81 @@ Do not start code edits until one is true:
 - The user supplied an already-confirmed brief.
 - The user explicitly asked to skip shaping and proceed.
 
-Before editing, read this file and any other relevant reference files (`harden`, `optimize`, `animate`, `polish`). If `../cheers/SKILL.md` exists and is not already loaded, read it as additional implementation context; otherwise use the Cheers implementation baseline in the parent `SKILL.md`.
+Before editing, load `cheers` for implementation rules, the matching register reference, and any relevant design references such as `layout`, `typeset`, `colorize`, `harden`, `animate`, or `polish`.
 
-Before editing, briefly state the confirmed brief status, register, chosen Datastar layer, and that optimistic UI is off.
+Briefly state: confirmed brief status, register, primary action, interaction contract, and the fact that success remains backend-confirmed.
 
-## Implementation passes
+## Build passes
 
-### 1. Inspect conventions
+### 1. Re-anchor the design
 
-Find the app's existing:
+Extract from the brief:
 
-- shared layout/base page and whether it includes `Scripts`
-- `Render` components, `#[derive(Cheers)]`, generated ids/forms/signals
-- CSS inclusion pattern (`include_css!`, app stylesheet, tokens)
-- routes, actions, state/use-case traits, tests
-- existing empty/error/loading patterns
+- primary user action and success condition
+- visual lane, theme scene, color strategy, typography tone, density, imagery needs
+- required states and edge cases
+- responsive expectations
+- existing design-system components or tokens to preserve
+- anti-goals and generic AI tells to avoid
 
-Follow local conventions over introducing a new pattern.
+If these are materially unclear, stop and ask.
 
-### 2. Define the server contract
+### 2. Design the structure before details
 
-For each user interaction, choose the smallest layer:
+Sketch the code plan in design terms:
 
-1. Anchor, form submit, redirect.
-2. `#[action]` returning `PatchElements`.
-3. `PatchSignals` for small display values already on the page.
-4. `EventReceiver` for long-lived/coordinated backend updates.
-5. `JsScript` for server-pushed imperative behavior when declarative Datastar/native CSS cannot express it.
-6. `include_js_bundle!` for reusable static helpers only when the code justifies a bundle.
+- page landmarks and heading hierarchy
+- content groups and reading order
+- primary, secondary, and tertiary actions
+- form, table, list, detail, empty, and error patterns
+- patchable or refreshable regions as conceptual boundaries
+- mobile structure, not just squeezed desktop
 
-Make the contract explicit in code:
+Do not begin by styling a pile of divs. Build semantic shape first.
 
-- generated `...Action` structs for `!on:*`
-- `#[form]` and generated `self.form_names()` bindings for forms
-- generated ids for patch targets
-- backend validation and backend-confirmed success/error rendering
+### 3. Implement through the Cheers skill
 
-No optimistic UI. In-progress state belongs to `!indicator`, disabled attributes, pending copy, and `aria-busy`.
+Use `cheers` for exact choices around `Render`, generated helpers, Datastar attributes, actions, patches, streams, tests, and formatting.
 
-### 3. Build semantic components
+From this skill, keep the implementation aligned with design intent:
 
-Use Cheers component patterns:
+- interaction remains honest and backend-confirmed
+- pending feedback is visible and does not imply success
+- local client affordances stay local
+- state and errors render near the user decision point
+- components are extracted when they clarify repeated UI, not to abstract prematurely
+- CSS follows project conventions and token vocabulary
 
-```rust
-#[derive(Cheers)]
-#[id("title")]
-#[id("status")]
-#[form(title: String)]
-struct ProjectEditor {
-    #[id]
-    id: u64,
-    title: String,
-    error: Option<String>,
-}
+### 4. Finish visual, content, and responsive quality
 
-impl Render for ProjectEditor {
-    fn render_to(&self, buffer: &mut Buffer<Element>) {
-        let ProjectEditorIds {
-            id,
-            id_title,
-            id_status,
-        } = self.ids();
-        let ProjectEditorFormNames { form_title } = self.form_names();
-        scoped_signal!(signal_saving: bool);
+- Replace placeholder copy with real, task-specific content.
+- Ensure every relevant state has layout, copy, and visual treatment.
+- Tune spacing, alignment, density, type hierarchy, and color roles.
+- Check hover, focus-visible, active, disabled, pending, error, and success states.
+- Add purposeful motion only when it clarifies feedback, hierarchy, reveal, or transition.
+- Preserve accessibility: labels, landmarks, status announcements, keyboard path, touch targets, contrast.
 
-        html! {
-            form
-                id=id
-                !on:submit((SaveProjectAction { id: self.id }))
-                !indicator(signal_saving)
-                !attr("aria-busy": { (signal_saving) " ? 'true' : null" })
-            {
-                label for=id_title { "Project title" }
-                input id=id_title name=form_title value=(@&self.title) aria:describedby=id_status;
-                @if let Some(error) = &self.error {
-                    p id=id_status role="alert" { (@&error) }
-                }
-                button type="submit" !attr("disabled": signal_saving) { "Save" }
-            }
-        }
-        .render_to(buffer);
-    }
-}
-```
+### 5. Inspect and iterate
 
-Handlers should call use-case code and return rendered state:
+When practical, inspect the rendered UI at mobile, tablet/small laptop, and desktop. Compare against:
 
-```rust
-#[action(POST)]
-async fn save_project(Path(id): Path<u64>, Form(form): Form<ProjectEditorForm>) -> PatchElements {
-    match save_project_use_case(id, form.title).await {
-        Ok(project) => PatchElements::new().element(ProjectEditor::from(project)),
-        Err(error) => PatchElements::new().element(ProjectEditor::with_error(id, error)),
-    }
-}
-```
+- confirmed brief
+- register reference
+- design system and neighboring surfaces
+- state coverage
+- anti-pattern list
+- performance and motion constraints
 
-### 4. Visual and responsive quality
-
-- Use existing tokens or establish local CSS variables before one-off values.
-- Product UI: restrained color, consistent controls, clear density, complete states.
-- Brand UI: specific visual point of view, imagery when content calls for it, non-template composition.
-- Avoid nested cards, side-stripe accents, gradient text, decorative glass, and modal-first flows.
-- Use semantic headings/landmarks and visible labels.
-- Make touch targets large enough, text wrap safely, and layout adapt structurally on mobile.
-
-### 5. Motion and feedback
-
-Use CSS and Datastar attributes first:
-
-- `!indicator` for request pending state
-- CSS transitions for hover/focus/reveal
-- `@media (prefers-reduced-motion: reduce)` alternatives
-- native `dialog`, `popover`, and View Transitions when appropriate
-
-Do not add a framework animation dependency for a Cheers UI unless the project already uses it and the effect is justified.
-
-### 6. Validate
-
-After edits:
-
-1. Format changed Cheers templates, e.g. `cargo cheers fmt --rustfmt <files>`.
-2. Run targeted tests or checks. Use browser tests only when client behavior needs proof.
-3. Inspect rendered output when practical: mobile, tablet/small laptop, desktop.
-4. Do one critique-and-fix pass against:
-   - confirmed brief
-   - no optimistic UI
-   - generated ids/actions/forms
-   - semantics/a11y
-   - loading/error/empty/success states
-   - responsive behavior
-   - visual polish and AI-slop avoidance
+Fix material defects. Do not invent fake defects just to show iteration.
 
 ## Present
 
 Summarize:
 
 - files changed
-- Datastar layer used
+- design decisions that connect to the brief
+- interaction contract used
 - states covered
-- validation run
-- any remaining limitations or follow-up risks
+- viewports or rendered checks performed
+- formatting/tests/checks run through `cheers` guidance
+- remaining limitations or follow-up risks

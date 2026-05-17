@@ -11,7 +11,7 @@ Clarify the surface goal if it is not obvious. A critique without knowing the in
 When practical, run two independent passes before synthesizing:
 
 1. **Design pass**: hierarchy, information architecture, visual quality, copy, state coverage, accessibility, responsive behavior, emotional fit.
-2. **Cheers/Datastar pass**: state ownership, actions, patches, generated ids/forms, signal use, no optimistic UI, loading/error handling, Scripts inclusion.
+2. **Interaction fit pass**: whether dynamic behavior stays backend-confirmed, pending states are honest, and local affordances do not pretend to be durable app state.
 
 If browser automation is available, inspect the live UI at mobile and desktop. If not, inspect source and state the limitation.
 
@@ -19,7 +19,7 @@ If browser automation is available, inspect the live UI at mobile and desktop. I
 
 ### AI-slop and visual quality
 
-Look for gradient text, decorative glass, side-stripe card accents, generic hero metrics, equal icon-card grids, nested cards, centered-stack defaults, and vague filler copy.
+Look for gradient text, decorative glass, side-stripe card accents, generic hero metrics, equal icon-card grids, nested cards, centered-stack defaults, category-reflex palettes, and vague filler copy.
 
 ### Heuristics
 
@@ -36,18 +36,9 @@ Score 0-4:
 9. Error recovery.
 10. Help and onboarding.
 
-### Cheers/Datastar model
+### Register fit
 
-Flag:
-
-- optimistic UI
-- broad backend state mirrored into signals
-- missing generated ids for patch targets
-- hardcoded generated URLs or ids
-- overuse of selectors where default morph would work
-- missing `Scripts`
-- client-only validation for server-owned actions
-- unnecessary JS bundles
+For product surfaces, ask whether the interface feels trustworthy, familiar, dense enough, and efficient. For brand surfaces, ask whether it has a memorable point of view, specific imagery/type/color, and a non-template composition.
 
 ### Persona red flags
 
@@ -76,9 +67,9 @@ Do not write generic persona descriptions. Walk each through the primary action 
 
 Does this look generated or generic? What specific tells prove it?
 
-## Datastar verdict
+## Interaction trust verdict
 
-Pass/fail for backend-owned truth, sparse signals, generated actions/ids/forms, honest loading, and no optimistic UI.
+Pass/fail for backend-confirmed success, honest pending, and local-only affordances.
 
 ## Overall impression
 
@@ -112,6 +103,6 @@ Prioritized command list.
 Severity:
 
 - **P0**: blocks core task, data trust, or accessibility.
-- **P1**: major user harm or Datastar model violation.
+- **P1**: major user harm or backend-confirmed trust violation.
 - **P2**: meaningful quality issue.
 - **P3**: polish.

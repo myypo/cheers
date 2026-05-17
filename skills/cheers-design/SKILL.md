@@ -7,65 +7,78 @@ user-invocable: true
 
 # Cheers Design
 
-Design and iterate production-grade interfaces for Cheers apps.
+Design and iterate production-grade interfaces for Cheers apps. This skill owns UX, visual direction, interaction design, content, accessibility, state coverage, and design-system judgment. The main `cheers` skill owns the technical Cheers/Rust/Datastar implementation rules.
 
 ## Required setup
 
 Before design work or file edits:
 
-1. If `cheers` exists and is not already loaded in the conversation, read it as additional technical Cheers implementation context.
-2. If a sub-command is used, read its reference file from `reference/`.
-3. Inspect the target app's existing layout, components, styles, state shape, actions, tests, and conventions before changing code.
-4. Classify the work as **product** or **brand**:
-   - **Product**: authenticated app UI, dashboards, settings, tools, forms, data surfaces. Design serves a task.
-   - **Brand**: landing pages, marketing, long-form, portfolio, campaign, public storytelling. Design is the product.
-5. State the Datastar interaction layer before implementation: normal navigation, action patch, signal, stream, `JsScript`, or JS bundle.
+1. If the task involves code edits and `cheers` is not already loaded, read it for implementation mechanics. Do not duplicate those mechanics here.
+2. Read existing `PRODUCT.md` and `DESIGN.md` when present. If they are missing and the task depends on strategic context, use `teach` or `document` rather than inventing a brand or system.
+3. Classify the surface as **product** or **brand**, then read the matching register reference:
+   - [reference/product.md](reference/product.md) for authenticated app UI, dashboards, settings, tools, forms, and data surfaces. Design serves a task.
+   - [reference/brand.md](reference/brand.md) for landing pages, marketing, long-form, portfolio, campaign, public storytelling. Design is the product.
+4. If a sub-command is used, read its reference file from `reference/`.
+5. Inspect the target app's visible UI, source, components, styles, content, state coverage, tests, and conventions before changing code.
+6. State the interaction contract before implementation at design level: normal navigation, backend-confirmed action, local affordance signal, stream, server-pushed script, or static JS helper.
 
 If the task is visually open-ended, use `shape` first. Do not implement an unconfirmed major direction unless the user explicitly asks you to proceed without a separate brief.
 
-## Datastar-first laws
+## Skill boundary
 
-These override generic frontend advice.
+Use this skill to decide:
 
-1. **Backend owns truth.** Most app state lives in backend/use-case state. The frontend displays backend-confirmed state.
-2. **No optimistic UI.** Never show success, remove items, reorder data, or commit state before the backend confirms it. Use indicators and patch the confirmed result back.
-3. **Smallest dynamic layer wins:** anchor/form/redirect → `#[action]` returning `PatchElements` → sparse signals → `EventReceiver` → `JsScript` → static JS bundle. Do not jump to JS first.
-4. **Use generated names.** Use generated `...Action` structs, generated ids/signals/form names from `self.ids()`, `self.signals()`, and `self.form_names()`, and helper methods. Do not hardcode generated action URLs, signal paths, or patch ids.
-5. **Signals are affordance state, not app state.** Use `#[signal]` or `scoped_signal!` for local visibility, input binding, focus/selection, and pending indicators. Use `#[signal(global)]` only when a handler must receive the value.
-6. **Patch rendered components.** Prefer `PatchElements::new().element(Component { ... })` when the rendered element has the target id. Add `.id(...)`, `.selector(...)`, or `.mode(...)` only for non-default targets or operations.
-7. **Trust morphing.** Send meaningful HTML chunks, even large ones, when that is simpler and correct. Avoid client-side fine-grained DOM bookkeeping.
-8. **Loading is honest.** Use `!indicator`, disabled states, `aria-busy`, and clear copy for in-progress work. Success appears only after the backend response.
-9. **Navigation is normal.** Use anchors, form submissions, redirects, and browser history by default. View Transitions can enhance navigation, but should not replace it.
-10. **JS is an exception.** Use inline Datastar expressions for tiny fragments, `js!` for reused fragments, `JsScript` for server-pushed imperative code, and `include_js_bundle!` only when static client helpers are justified.
+- user purpose, primary action, information architecture, and flow
+- register, theme, visual direction, hierarchy, composition, typography, color, motion, and imagery
+- empty, loading, pending, error, success, permission, overflow, mobile, and first-run states
+- labels, microcopy, status messages, help text, and recovery copy
+- design-system alignment, reusable UI patterns, and visual quality bar
+
+Use the main `cheers` skill to decide exact implementation details such as generated ids/actions/forms, `Render` mechanics, Datastar attribute syntax, patch APIs, streams, tests, and formatting. In this skill, keep Cheers guidance at the level of design constraints and interaction contracts.
+
+## Cheers interaction guardrails
+
+These are design constraints, not a duplicate implementation manual.
+
+1. **Backend-confirmed trust.** Do not design optimistic success, irreversible removal, completed steps, or reordered data before the backend confirms them.
+2. **Honest pending states.** Pending UI may say what is happening, disable risky repeated actions, and show progress. It must not pretend the work is done.
+3. **Smallest dynamic layer wins.** Prefer normal navigation and forms when enough; use backend-confirmed actions for structural updates; use signals for local affordances; reserve streams and JS for interactions that truly need them.
+4. **Signals are affordances, not app models.** Local open/closed, focus, selection, pending, and lightweight input affordances are fine. Broad backend state belongs in rendered state.
+5. **Semantic HTML remains the design substrate.** Headings, landmarks, labels, focus, live status, keyboard paths, and native browser behavior are part of the interface, not implementation afterthoughts.
+6. **JS is exceptional.** Reach for CSS, native browser features, and Cheers hypermedia first. Static JS helpers need a clear experiential reason.
 
 ## Shared design laws
 
-Apply these without fighting the Datastar-first laws.
+Apply these without fighting the Cheers interaction guardrails.
 
-- Start with user purpose, content, states, and constraints before layout.
-- Keep semantic HTML and ARIA correct: headings, landmarks, labels, button/link semantics, focus-visible, live regions where needed.
-- Favor real content over placeholders. Handle empty, loading, error, success, overflow, long text, permissions, and first-run states.
-- Product UI should feel trustworthy, consistent, task-focused, and familiar where familiarity helps.
-- Brand UI should have a point of view: typography, imagery, composition, and color should feel specific, not generated.
-- Avoid generic AI tells: gradient text, decorative glassmorphism, nested cards, endless equal card grids, hero metric blocks, side-stripe card accents, modal-first flows, redundant copy, and em dashes.
-- Cards are not a default container. Use them only when grouping or affordance demands it.
-- Motion must clarify hierarchy, feedback, loading, reveal, or transition. Respect `prefers-reduced-motion`; do not animate layout properties casually.
-- Keep examples and implementation advice in Cheers/Rust/Datastar terms, not client-framework terms.
+- Start with user purpose, content, states, constraints, and primary action before layout or styling.
+- Product UI should feel trustworthy, consistent, task-focused, and familiar where familiarity helps. See [product.md](reference/product.md).
+- Brand UI needs a point of view. Typography, imagery, composition, and color should feel specific, not generated. See [brand.md](reference/brand.md).
+- Pick a color strategy before values: Restrained, Committed, Full palette, or Drenched. Use OKLCH when possible; tint neutrals rather than defaulting to pure black, pure white, or flat gray.
+- Choose light or dark from a scene sentence: who uses this, where, under what ambient light, in what mood. Do not default by category.
+- Use typography for hierarchy and voice. Keep prose around 65-75ch; avoid flat type scales.
+- Vary spacing for rhythm. Same padding everywhere is monotony. Cards are not a default container, and nested cards are a design smell.
+- Motion must clarify hierarchy, feedback, loading, reveal, or transition. Respect reduced motion and do not animate layout casually.
+- Use real content over placeholders. Handle empty, loading, pending, error, success, overflow, long text, permissions, and first-run states.
+- Every word earns its place. Avoid repeated headings, filler claims, vague button labels, em dashes in product copy, and status text that overpromises.
+- Avoid generic AI tells: gradient text, decorative glassmorphism, nested cards, endless equal card grids, hero metric blocks, side-stripe card accents, modal-first flows, redundant copy, and category-reflex palettes.
+- Run the category-reflex check: if the theme, palette, typography, or layout could be guessed from the product category alone, rework the visual direction.
+- Keep examples and implementation advice in Cheers/Rust/Datastar terms when code is needed, but prefer referencing `cheers` over repeating syntax here.
 
 ## Commands
 
 | Command | Use | Reference |
 |---|---|---|
-| `teach` | Capture strategic context in PRODUCT.md | [reference/teach.md](reference/teach.md) |
+| `teach` | Capture strategic product/brand context in PRODUCT.md | [reference/teach.md](reference/teach.md) |
 | `document` | Create or refresh DESIGN.md from Cheers UI code | [reference/document.md](reference/document.md) |
 | `shape [target]` | Produce a task-specific UX/UI brief before code | [reference/shape.md](reference/shape.md) |
 | `craft [target]` | Build a confirmed brief into Cheers code and iterate | [reference/craft.md](reference/craft.md) |
-| `extract [target]` | Extract reusable Render components and design tokens | [reference/extract.md](reference/extract.md) |
+| `extract [target]` | Extract reusable UI components, patterns, and design tokens | [reference/extract.md](reference/extract.md) |
 | `critique [target]` | Design-director review with prioritized feedback | [reference/critique.md](reference/critique.md) |
-| `audit [target]` | Technical/design implementation report without fixing | [reference/audit.md](reference/audit.md) |
+| `audit [target]` | Design and UI-quality implementation report without fixing | [reference/audit.md](reference/audit.md) |
 | `polish [target]` | Refine an existing UI to shipping quality | [reference/polish.md](reference/polish.md) |
-| `harden [target]` | Add production state, error, i18n, a11y, and edge-case resilience | [reference/harden.md](reference/harden.md) |
-| `optimize [target]` | Improve UI performance in the Cheers/Datastar model | [reference/optimize.md](reference/optimize.md) |
+| `harden [target]` | Make states, errors, a11y, i18n, and edge cases production-ready | [reference/harden.md](reference/harden.md) |
+| `optimize [target]` | Improve perceived and measured UI performance | [reference/optimize.md](reference/optimize.md) |
 | `clarify [target]` | Improve labels, microcopy, loading, success, and error text | [reference/clarify.md](reference/clarify.md) |
 | `adapt [target]` | Adapt UI to another viewport, device, or input context | [reference/adapt.md](reference/adapt.md) |
 | `onboard [target]` | Design first-run, empty, and activation flows | [reference/onboard.md](reference/onboard.md) |
@@ -76,11 +89,11 @@ Apply these without fighting the Datastar-first laws.
 | `quieter [target]` | Reduce visual noise while preserving intent | [reference/quieter.md](reference/quieter.md) |
 | `distill [target]` | Remove clutter and reduce interaction/state complexity | [reference/distill.md](reference/distill.md) |
 | `delight [target]` | Add appropriate, backend-confirmed moments of personality | [reference/delight.md](reference/delight.md) |
-| `animate [target]` | Add purposeful CSS/Datastar/native motion | [reference/animate.md](reference/animate.md) |
-| `overdrive [target]` | Propose ambitious Datastar-safe polish; build after confirmation | [reference/overdrive.md](reference/overdrive.md) |
+| `animate [target]` | Add purposeful motion and state feedback | [reference/animate.md](reference/animate.md) |
+| `overdrive [target]` | Propose ambitious Cheers-safe polish; build after confirmation | [reference/overdrive.md](reference/overdrive.md) |
 
 ### Routing rules
 
 1. If the first word of the skill arguments matches a command above, read that reference and follow it.
-2. If there is no command, treat the request as general UI design/craft: perform setup, apply the laws above, and choose the nearest reference when useful.
-3. If implementation changes Cheers templates, run formatting, for example:
+2. If there is no command, treat the request as general UI design/craft: perform setup, apply the shared design laws, and choose the nearest reference when useful.
+3. If implementation changes Cheers templates, use the main `cheers` validation guidance. At minimum, format changed templates with `cargo cheers fmt --rustfmt <files>` and run targeted checks appropriate to the change.

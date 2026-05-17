@@ -23,7 +23,7 @@ Find intensity sources:
 ### Color
 
 - Move product UI toward Restrained.
-- Reserve accent for primary action, active state, or semantic status.
+- Reserve accent for primary action, active state, focus, or semantic status.
 - Desaturate brand colors rather than replacing them with gray.
 - Use tinted neutrals, not pure gray, black, or white.
 - Keep contrast strong enough for text and controls.
@@ -47,9 +47,9 @@ Find intensity sources:
 - Keep only feedback, reveal, loading, or transition motion.
 - Respect reduced motion.
 
-## Cheers constraints
+## Cheers fit
 
-Quieting should not remove state clarity. Keep `!indicator`, error rendering, disabled state, focus-visible, and semantic status messages. Do not hide pending work or backend-confirmed failures to make the UI calmer.
+Quieting must not hide state clarity. Keep pending, error, disabled, focus-visible, and semantic status treatments visible. Do not hide backend-confirmed failures to make the UI calmer.
 
 ## Verify
 
