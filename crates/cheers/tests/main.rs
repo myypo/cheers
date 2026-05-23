@@ -16,7 +16,7 @@ use axum::{
 };
 use cheers::{
     ActionDef,
-    components::{CssStylesheet, Debugged, Displayed, Doctype, JsBundle, Scripts, SvgSymbol},
+    components::{CssBundle, Debugged, Displayed, Doctype, JsBundle, Scripts, SvgSymbol},
     prelude::*,
 };
 use tokio::sync::{Barrier, Mutex};
@@ -74,14 +74,23 @@ fn cheers_router() -> axum::Router<()> {
         .expect("router should build")
 }
 
+const TEST_APP_CSS: CssBundle = cheers::include_css!("./fixtures/app.css");
+const TEST_BASE_CSS: CssBundle = cheers::include_css!("./fixtures/base.css");
+const TEST_PAGE_CSS: CssBundle = cheers::include_css!("./fixtures/page.css");
+
 #[tokio::test]
-async fn css_component_points_to_served_bundle() {
+async fn css_bundle_component_points_to_served_bundle() {
     let app = cheers_router();
 
-    let rendered = CssStylesheet.render();
+    let rendered = TEST_APP_CSS.render();
     let href = extract_href(rendered.as_inner());
 
     assert!(href.starts_with("/cheers/assets/"));
+
+    let page_rendered = TEST_PAGE_CSS.render();
+    let page_href = extract_href(page_rendered.as_inner());
+    assert!(page_href.starts_with("/cheers/assets/"));
+    assert_ne!(href, page_href);
 
     let request = axum::http::Request::builder()
         .uri(href)
@@ -96,6 +105,70 @@ async fn css_component_points_to_served_bundle() {
 
     assert_eq!(response.status(), StatusCode::OK);
     assert_eq!(response.headers()["content-type"], "text/css");
+
+    let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+        .await
+        .expect("response body should be readable");
+    let body = String::from_utf8(body.into()).expect("response body should be valid UTF-8");
+
+    assert!(body.contains("__cheers_test_app_css"), "{body}");
+    assert!(!body.contains("__cheers_test_page_css"), "{body}");
+
+    let request = axum::http::Request::builder()
+        .uri(page_href)
+        .body(Body::empty())
+        .expect("request should build");
+
+    let response = app
+        .clone()
+        .oneshot(request)
+        .await
+        .expect("router should return a response");
+
+    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(response.headers()["content-type"], "text/css");
+
+    let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+        .await
+        .expect("response body should be readable");
+    let body = String::from_utf8(body.into()).expect("response body should be valid UTF-8");
+
+    assert!(body.contains("__cheers_test_page_css"), "{body}");
+    assert!(!body.contains("__cheers_test_app_css"), "{body}");
+}
+
+#[tokio::test]
+async fn shared_css_can_be_rendered_separately_from_page_css() {
+    let app = cheers_router();
+
+    let base_rendered = TEST_BASE_CSS.render();
+    let base_href = extract_href(base_rendered.as_inner());
+    let page_rendered = TEST_PAGE_CSS.render();
+    let page_href = extract_href(page_rendered.as_inner());
+
+    assert_ne!(base_href, page_href);
+
+    let request = axum::http::Request::builder()
+        .uri(base_href)
+        .body(Body::empty())
+        .expect("request should build");
+
+    let response = app
+        .clone()
+        .oneshot(request)
+        .await
+        .expect("router should return a response");
+
+    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(response.headers()["content-type"], "text/css");
+
+    let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+        .await
+        .expect("response body should be readable");
+    let body = String::from_utf8(body.into()).expect("response body should be valid UTF-8");
+
+    assert!(body.contains("--cheers-test-base-color"), "{body}");
+    assert!(!body.contains("__cheers_test_page_css"), "{body}");
 }
 
 #[tokio::test]

@@ -19,9 +19,9 @@ use lightningcss::{
 };
 
 use crate::__internal::assets::{
-    AssetSourceLocation, CssRegistration, JsBundleRegistration, SvgSpriteRegistration,
+    AssetSourceLocation, CssBundleRegistration, JsBundleRegistration, SvgSpriteRegistration,
 };
-use crate::components::JsBundle;
+use crate::components::{CssBundle, JsBundle};
 use crate::router::Error;
 use crate::track::TrackConfig;
 
@@ -101,34 +101,13 @@ where
     S: Clone + Send + Sync + 'static,
 {
     #[cfg(not(debug_assertions))]
-    let stylesheet = CSS_BUNDLER.bundle()?;
+    let css_bundles = CSS_BUNDLER.bundle_all()?;
 
     #[cfg(not(debug_assertions))]
     let sprite_sheet = SVG_SPRITE_BUNDLER.bundle()?;
 
     #[cfg(not(debug_assertions))]
     let js_bundles = JS_BUNDLE_BUNDLER.bundle_all()?;
-
-    let css_path = css_path();
-
-    let css_handler = || async move {
-        #[cfg(debug_assertions)]
-        let stylesheet = match CSS_BUNDLER.bundle() {
-            Ok(stylesheet) => stylesheet,
-            Err(e) => {
-                let body = format!("Error bundling CSS in dev mode: {e}");
-                return (
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                    [(header::CONTENT_TYPE, "text/plain")],
-                    body,
-                )
-                    .into_response();
-            }
-        };
-        let headers = assets_headers("text/css");
-
-        (StatusCode::OK, headers, stylesheet).into_response()
-    };
 
     let datastar_modules = datastar_modules(track)?;
 
@@ -147,9 +126,50 @@ where
         (StatusCode::OK, headers, bundle).into_response()
     };
 
-    let mut router = Router::new()
-        .route(css_path, get(css_handler))
-        .route(js_path.as_str(), get(datastar_handler));
+    let mut router = Router::new().route(js_path.as_str(), get(datastar_handler));
+
+    #[cfg(debug_assertions)]
+    let mut css_bundle_paths = HashSet::new();
+
+    #[cfg(debug_assertions)]
+    for registration in CssBundler::css_bundle_registrations() {
+        let css_path = make_css_bundle_path(
+            registration.location,
+            registration.css_file,
+            registration.contents,
+        );
+        if !css_bundle_paths.insert(css_path.clone()) {
+            continue;
+        }
+
+        let handler = move || async move {
+            match CSS_BUNDLER.bundle(registration) {
+                Ok(stylesheet) => {
+                    let headers = assets_headers("text/css");
+                    (StatusCode::OK, headers, stylesheet).into_response()
+                }
+                Err(e) => (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    [(header::CONTENT_TYPE, "text/plain")],
+                    format!("Error bundling CSS in dev mode: {e}"),
+                )
+                    .into_response(),
+            }
+        };
+
+        router = router.route(css_path.as_str(), get(handler));
+    }
+
+    #[cfg(not(debug_assertions))]
+    for (css_path, stylesheet) in css_bundles {
+        let stylesheet: &'static str = stylesheet.leak();
+        let handler = move || async move {
+            let headers = assets_headers("text/css");
+            (StatusCode::OK, headers, stylesheet).into_response()
+        };
+
+        router = router.route(css_path.as_str(), get(handler));
+    }
 
     #[cfg(debug_assertions)]
     let mut js_bundle_paths = HashSet::new();
@@ -249,7 +269,6 @@ fn printer_options<'a>() -> PrinterOptions<'a> {
     }
 }
 
-static CSS_PATH: OnceLock<String> = OnceLock::new();
 static JS_PATH: OnceLock<String> = OnceLock::new();
 static SVG_SPRITE_PATH: OnceLock<String> = OnceLock::new();
 
@@ -291,19 +310,12 @@ pub(crate) fn js_bundle_url(bundle: &JsBundle) -> String {
     ))
 }
 
-fn css_path() -> &'static str {
-    if cfg!(debug_assertions) {
-        "/assets/bundle.css"
-    } else {
-        CSS_PATH
-            .get()
-            .map(String::as_str)
-            .unwrap_or("/assets/bundle.css")
-    }
-}
-
-pub(crate) fn css_url() -> String {
-    public_asset_url(css_path())
+pub(crate) fn css_bundle_url(bundle: &CssBundle) -> String {
+    public_asset_url(&make_css_bundle_path(
+        bundle.location,
+        bundle.css_file,
+        bundle.contents,
+    ))
 }
 
 fn public_asset_url(path: &str) -> String {
@@ -335,18 +347,24 @@ pub(crate) fn svg_sprite_url() -> String {
     }
 }
 
-fn make_css_url(stylesheet: &str) -> String {
-    if cfg!(debug_assertions) {
-        "/assets/bundle.css".to_owned()
-    } else {
-        let mut hasher = DefaultHasher::new();
-        stylesheet.hash(&mut hasher);
-        use base64::Engine;
-        let hash =
-            base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(hasher.finish().to_le_bytes());
+fn make_css_bundle_path(
+    location: AssetSourceLocation,
+    css_file: &'static str,
+    contents: &'static str,
+) -> String {
+    let mut hasher = DefaultHasher::new();
+    location.hash(&mut hasher);
+    css_file.hash(&mut hasher);
 
-        format!("/assets/{hash}.css")
+    if !cfg!(debug_assertions) {
+        contents.hash(&mut hasher);
     }
+
+    use base64::Engine;
+    let hash =
+        base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(hasher.finish().to_le_bytes());
+
+    format!("/assets/{hash}.css")
 }
 
 fn make_js_path(entry_specifier: &str, modules: &[bundle::VirtualModule]) -> String {
@@ -387,30 +405,21 @@ fn make_js_bundle_path(
     format!("/assets/{hash}.js")
 }
 
-fn make_single_stylesheet<'a>(
-    stylesheets: impl IntoIterator<Item = &'a str>,
-) -> Result<String, Error> {
-    let stylesheets = stylesheets
-        .into_iter()
-        .map(|d| {
-            let s = StyleSheet::parse(
-                d,
-                ParserOptions {
-                    flags: ParserFlags::NESTING,
-                    ..Default::default()
-                },
-            )
-            .map_err(|e| Error::Bundling(format!("parsing css: {e}")));
-            let s = s.and_then(|s| {
-                s.to_css(printer_options())
-                    .map_err(|e| Error::Bundling(format!("printing css: {e}")))
-            });
+fn make_stylesheet(stylesheet: &str) -> Result<String, Error> {
+    let stylesheet = StyleSheet::parse(
+        stylesheet,
+        ParserOptions {
+            flags: ParserFlags::NESTING,
+            ..Default::default()
+        },
+    )
+    .map_err(|e| Error::Bundling(format!("parsing css: {e}")))?;
 
-            s.map(|s| s.code)
-        })
-        .collect::<Result<Vec<String>, Error>>()?;
+    let stylesheet = stylesheet
+        .to_css(printer_options())
+        .map_err(|e| Error::Bundling(format!("printing css: {e}")))?;
 
-    Ok(stylesheets.join("\n"))
+    Ok(stylesheet.code)
 }
 
 fn make_svg_path(contents: &str) -> String {
@@ -511,12 +520,11 @@ impl SvgSpriteBundler {
 }
 
 impl CssBundler {
-    fn css_registrations() -> Vec<&'static CssRegistration> {
-        let mut registrations = inventory::iter::<CssRegistration>
+    fn css_bundle_registrations() -> Vec<&'static CssBundleRegistration> {
+        let mut registrations = inventory::iter::<CssBundleRegistration>
             .into_iter()
             .collect::<Vec<_>>();
 
-        // Bundle stylesheets in source order so the resulting CSS cascade is deterministic
         registrations.sort_by_key(|registration| {
             (
                 registration.location.manifest_dir,
@@ -531,39 +539,47 @@ impl CssBundler {
     }
 
     #[cfg(debug_assertions)]
-    fn css_file_path(registration: &CssRegistration) -> PathBuf {
+    fn css_file_path(registration: &CssBundleRegistration) -> PathBuf {
         registered_asset_file_path(registration.location, registration.css_file)
     }
 
-    pub(crate) fn bundle(&self) -> Result<String, Error> {
-        let registrations = Self::css_registrations();
-
+    pub(crate) fn bundle(&self, registration: &CssBundleRegistration) -> Result<String, Error> {
         #[cfg(debug_assertions)]
         let stylesheet = {
-            let stylesheets = registrations
-                .iter()
-                .map(|registration| {
-                    let path = Self::css_file_path(registration);
-                    std::fs::read_to_string(&path).map_err(|e| {
-                        Error::Bundling(format!("open CSS file: {}: {e}", path.display()))
-                    })
-                })
-                .collect::<Result<Vec<String>, Error>>()?;
+            let path = Self::css_file_path(registration);
+            let stylesheet = std::fs::read_to_string(&path)
+                .map_err(|e| Error::Bundling(format!("open CSS file: {}: {e}", path.display())))?;
 
-            make_single_stylesheet(stylesheets.iter().map(String::as_str))?
+            make_stylesheet(&stylesheet)?
         };
 
         #[cfg(not(debug_assertions))]
-        let stylesheet = make_single_stylesheet(
-            registrations
-                .iter()
-                .map(|registration| registration.contents),
-        )?;
-
-        let path = make_css_url(&stylesheet);
-        set_static_path(&CSS_PATH, &path, "CSS_PATH")?;
+        let stylesheet = make_stylesheet(registration.contents)?;
 
         Ok(stylesheet)
+    }
+
+    #[cfg(not(debug_assertions))]
+    pub(crate) fn bundle_all(&self) -> Result<Vec<(String, String)>, Error> {
+        let registrations = Self::css_bundle_registrations();
+        let mut bundles = Vec::with_capacity(registrations.len());
+        let mut paths = HashSet::new();
+
+        for registration in registrations {
+            let path = make_css_bundle_path(
+                registration.location,
+                registration.css_file,
+                registration.contents,
+            );
+            if !paths.insert(path.clone()) {
+                continue;
+            }
+
+            let bundle = self.bundle(registration)?;
+            bundles.push((path, bundle));
+        }
+
+        Ok(bundles)
     }
 }
 
@@ -662,27 +678,36 @@ pub static JS_BUNDLE_BUNDLER: JsBundleBundler = JsBundleBundler;
 #[doc(hidden)]
 pub static SVG_SPRITE_BUNDLER: SvgSpriteBundler = SvgSpriteBundler;
 
-/// Declares a stylesheet input for the global Cheers CSS bundle.
+/// Creates a renderable application CSS bundle handle and registers the file with the Cheers asset
+/// router.
+///
+/// Assign the macro result to a `const`, then render that const on pages that need the bundle.
+/// Render shared stylesheets, such as a site-wide base stylesheet, as their own bundle so browsers
+/// can cache them independently from page-specific stylesheets.
 ///
 /// # Example
 ///
 /// ```ignore
-/// use cheers::{components::CssStylesheet, prelude::*};
+/// use cheers::{components::CssBundle, prelude::*};
 ///
-/// include_css!("./main.css");
+/// const BASE_CSS: CssBundle = cheers::include_css!("./base.css");
+/// const MAIN_CSS: CssBundle = cheers::include_css!("./main.css");
 ///
 /// let page = html! {
 ///     html {
-///         head { CssStylesheet; }
+///         head {
+///             (BASE_CSS)
+///             (MAIN_CSS)
+///         }
 ///         body { p class="your-class" { "Hello" } }
 ///     }
 /// };
 /// ```
 #[macro_export]
 macro_rules! include_css {
-    ($css_file:expr) => {
+    ($css_file:expr $(;)?) => {{
         $crate::__internal::inventory::submit! {
-            $crate::__internal::assets::CssRegistration {
+            $crate::__internal::assets::CssBundleRegistration {
                 location: $crate::__internal::assets::AssetSourceLocation {
                     manifest_dir: env!("CARGO_MANIFEST_DIR"),
                     file: file!(),
@@ -693,7 +718,18 @@ macro_rules! include_css {
                 contents: include_str!($css_file),
             }
         }
-    };
+
+        $crate::components::CssBundle::__new(
+            $crate::__internal::assets::AssetSourceLocation {
+                manifest_dir: env!("CARGO_MANIFEST_DIR"),
+                file: file!(),
+                line: line!(),
+                column: column!(),
+            },
+            $css_file,
+            include_str!($css_file),
+        )
+    }};
 }
 
 /// Creates a renderable application JavaScript bundle handle and registers the file with the
@@ -876,12 +912,25 @@ mod tests {
 
     #[cfg(debug_assertions)]
     #[test]
-    fn uses_hardcoded_url_for_dev_builds() {
-        let want = "/assets/bundle.css";
-        let got = make_css_url("body { height: 100vh; }");
-        assert_eq!(got, want);
-        let want = css_url();
-        assert_eq!(want, "/cheers/assets/bundle.css");
+    fn uses_hashed_css_bundle_urls_and_hardcoded_runtime_url_for_dev_builds() {
+        let location = AssetSourceLocation {
+            manifest_dir: "/workspace/app",
+            file: "src/main.rs",
+            line: 1,
+            column: 1,
+        };
+
+        let got = make_css_bundle_path(location, "main.css", "body { height: 100vh; }");
+        assert!(got.starts_with("/assets/"));
+        assert!(got.ends_with(".css"));
+        assert_ne!(got, "/assets/bundle.css");
+        assert_eq!(public_asset_url(&got), format!("/cheers{got}"));
+
+        let changed_contents = make_css_bundle_path(location, "main.css", "body { color: red; }");
+        assert_eq!(got, changed_contents);
+
+        let other_file = make_css_bundle_path(location, "other.css", "body { height: 100vh; }");
+        assert_ne!(got, other_file);
 
         let want = "/assets/datastar.js";
         let got = make_js_path(RUNTIME_ENTRY_MODULE, &test_js_modules());
@@ -891,9 +940,23 @@ mod tests {
     #[cfg(not(debug_assertions))]
     #[test]
     fn uses_stable_hash_url_for_release_builds() {
-        let got = make_css_url("body { color: black; }");
-        let want = "/assets/LYi6t_7_fTs.css";
-        assert_eq!(got, want);
+        let location = AssetSourceLocation {
+            manifest_dir: "/workspace/app",
+            file: "src/main.rs",
+            line: 1,
+            column: 1,
+        };
+
+        let got = make_css_bundle_path(location, "main.css", "body { color: black; }");
+        assert!(got.starts_with("/assets/"));
+        assert!(got.ends_with(".css"));
+        assert_ne!(got, "/assets/bundle.css");
+
+        let same = make_css_bundle_path(location, "main.css", "body { color: black; }");
+        assert_eq!(got, same);
+
+        let changed_contents = make_css_bundle_path(location, "main.css", "body { color: red; }");
+        assert_ne!(got, changed_contents);
 
         let got = make_js_path(RUNTIME_ENTRY_MODULE, &test_js_modules());
         assert!(got.starts_with("/assets/"));
@@ -904,8 +967,7 @@ mod tests {
     #[cfg(not(debug_assertions))]
     #[test]
     fn minifies_css_in_release_builds() {
-        let files = vec!["body { color: black; }", "div { border: 1px solid black; }"];
-        let result = make_single_stylesheet(files).unwrap();
-        assert_eq!(result, "body{color:#000}\ndiv{border:1px solid #000}");
+        let result = make_stylesheet("body { color: black; }").unwrap();
+        assert_eq!(result, "body{color:#000}");
     }
 }

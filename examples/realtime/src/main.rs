@@ -6,7 +6,7 @@ use axum::{
     routing::get,
 };
 use cheers::{
-    components::{CssStylesheet, Doctype, Scripts, SvgSymbol},
+    components::{CssBundle, Doctype, Scripts, SvgSymbol},
     prelude::*,
 };
 use rand::Rng;
@@ -30,7 +30,7 @@ impl<T: Render> Render for Base<T> {
             Doctype;
             html {
                 head {
-                    CssStylesheet;
+                    (MAIN_CSS)
                 }
                 body {
                     main { (self.children) }
@@ -163,7 +163,7 @@ async fn create_subscription(ctx: State<Ctx>) -> EventReceiver {
     rx
 }
 
-include_css!("./main.css");
+const MAIN_CSS: CssBundle = include_css!("./main.css");
 include_svg_sprite! {
     svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" {
         symbol id="icon-stock" viewBox="0 0 16 16" {

@@ -5,7 +5,7 @@ use macros::Cheers;
 use crate::{
     context::{AttributeValue, Context, Element},
     render::{Buffer, Render},
-    router::{css_url, js_bundle_url, js_url, svg_sprite_url},
+    router::{css_bundle_url, js_bundle_url, js_url, svg_sprite_url},
 };
 
 /// Renders `<!DOCTYPE html>`.
@@ -376,15 +376,45 @@ fn render_cheers_iterate_script_to(buffer: &mut Buffer<crate::context::Element>)
     buffer.dangerously_get_string().push_str(&script);
 }
 
-/// Renders the `<link rel="stylesheet">` tag for the Cheers CSS bundle.
+/// A framework-served application CSS bundle.
 ///
-/// This links to the framework-managed stylesheet path produced by the router.
-#[derive(Cheers)]
-pub struct CssStylesheet;
+/// Declare const values with [`include_css!`](crate::include_css) and render them on pages that
+/// need the bundle:
+///
+/// ```ignore
+/// use cheers::prelude::*;
+///
+/// const CHAT_CSS: cheers::components::CssBundle = cheers::include_css!("./chat.css");
+///
+/// html! {
+///     head { (CHAT_CSS) }
+/// };
+/// ```
+#[derive(Debug, Clone, Copy, Eq, Hash, PartialEq)]
+pub struct CssBundle {
+    pub(crate) location: crate::__internal::assets::AssetSourceLocation,
+    pub(crate) css_file: &'static str,
+    pub(crate) contents: &'static str,
+}
 
-impl Render for CssStylesheet {
+impl CssBundle {
+    #[doc(hidden)]
+    pub const fn __new(
+        location: crate::__internal::assets::AssetSourceLocation,
+        css_file: &'static str,
+        contents: &'static str,
+    ) -> Self {
+        Self {
+            location,
+            css_file,
+            contents,
+        }
+    }
+}
+
+impl Render for CssBundle {
     fn render_to(&self, buffer: &mut Buffer<crate::context::Element>) {
-        let link = format!(r#"<link rel="stylesheet" href="{}">"#, css_url());
+        let link = format!(r#"<link rel="stylesheet" href="{}">"#, css_bundle_url(self));
         // XSS SAFETY: CSS URL is computed by us
         buffer.dangerously_get_string().push_str(&link);
     }

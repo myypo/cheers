@@ -116,13 +116,13 @@ pub mod __internal {
         }
 
         #[derive(Debug)]
-        pub struct CssRegistration {
+        pub struct CssBundleRegistration {
             pub location: AssetSourceLocation,
             pub css_file: &'static str,
             pub contents: &'static str,
         }
 
-        inventory::collect!(CssRegistration);
+        inventory::collect!(CssBundleRegistration);
 
         #[derive(Debug)]
         pub struct JsBundleRegistration {
