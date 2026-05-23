@@ -7,6 +7,7 @@ mod readme_doctests {}
 mod async_stream;
 pub mod components;
 mod context;
+mod custom_event;
 mod events;
 #[cfg(all(feature = "pi-extension", debug_assertions))]
 mod pi_extension;
@@ -35,7 +36,9 @@ pub mod __internal {
     pub use serde;
 
     pub use crate::{
-        reference::FormComponent, render::__render_action_call,
+        custom_event::{__render_custom_event_component, __render_custom_event_to_js},
+        reference::FormComponent,
+        render::__render_action_call,
         signal_path::__push_signal_path_segment,
     };
 
@@ -152,6 +155,7 @@ pub mod prelude {
 
     pub use crate::{
         context::{AttributeValue, Element, JsSource},
+        custom_event::EventTarget,
         events::{
             Event, EventReceiver, EventSender, JsScript, PatchElements, PatchElementsMode,
             PatchSignals, events,
@@ -164,5 +168,6 @@ pub mod prelude {
         track::TrackAction,
     };
 }
+pub use custom_event::EventTarget;
 pub use render::{Raw, RawAttribute, RawJs, Rendered};
 pub use router::{Action, ActionDef, ActionRouterExt};

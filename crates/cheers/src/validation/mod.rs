@@ -129,13 +129,31 @@ pub struct Attribute;
 /// scope makes them available to markup in that module; otherwise import the module containing
 /// them with `use your_events::*`.
 ///
+/// An event can also generate a component that emits that browser event when it is mounted. The
+/// component's event-options props are optional, so use Cheers' optional-prop syntax (`[]`) when
+/// rendering it.
+///
+/// Generated event components have these optional props:
+///
+/// - `target`: the DOM target to dispatch from. Defaults to [`EventTarget::This`], the generated
+///   self-removing `data-init` element.
+/// - `bubbles`: forwarded to `CustomEventInit.bubbles`. Defaults to `true`, so ancestor
+///   `!on:<event>` listeners can observe the event when `target` is [`EventTarget::This`].
+/// - `cancelable`: forwarded to `CustomEventInit.cancelable`. Defaults to `false`.
+/// - `composed`: forwarded to `CustomEventInit.composed`. Defaults to `false`.
+///
+/// [`EventTarget::This`]: crate::EventTarget::This
+///
 /// # Example
 ///
 /// ```
 /// use cheers::prelude::*;
 ///
 /// cheers::define_events! {
-///     emoji_click
+///     emoji_click,
+///     emoji_selected => EmojiSelected {
+///         unicode: &'static str,
+///     },
 /// }
 ///
 /// # #[derive(Cheers)]
@@ -146,25 +164,171 @@ pub struct Attribute;
 /// scoped_signal!(signal_message: String);
 ///
 /// html! {
-///     div !signals(signal_message: String::new()) {
+///     div !signals(signal_message: String::new()) !on:emoji_selected({ (signal_message) " += evt.detail.unicode" }) {
 ///         textarea !bind(signal_message) {}
-///         div !on:emoji_click({ (signal_message) " += evt.detail.unicode" }) {}
+///         EmojiSelected unicode="👍" [];
 ///     }
 /// }
 /// #         .render_to(buffer);
 /// #     }
 /// # }
 /// # let rendered = Composer.render();
-/// # assert!(rendered.as_inner().contains("data-on:emoji-click="));
+/// # assert!(rendered.as_inner().contains("data-on:emoji-selected="));
+/// # assert!(rendered.as_inner().contains("data-init="));
 /// # assert!(rendered.as_inner().contains(" += evt.detail.unicode"));
 /// ```
 #[macro_export]
 macro_rules! define_events {
-    ($($event:ident),* $(,)?) => {
+    () => {};
+
+    ($event:ident $(,)?) => {
+        #[doc(hidden)]
+        #[allow(missing_docs, non_upper_case_globals)]
+        pub const $event: $crate::validation::Attribute = $crate::validation::Attribute;
+    };
+
+    ($event:ident, $($rest:tt)*) => {
+        $crate::define_events! { $event }
+        $crate::define_events! { $($rest)* }
+    };
+
+    (
+        $event:ident => $component:ident {
+            $(
+                $(#[$field_meta:meta])*
+                $field:ident : $ty:ty $(= $default:expr)?
+            ),* $(,)?
+        }
+        $(, $($rest:tt)*)?
+    ) => {
+        $crate::define_events! { $event }
+
+        #[allow(missing_docs)]
+        #[derive($crate::macros::Cheers)]
+        pub struct $component<'target> {
+            $(
+                $(#[$field_meta])*
+                $(#[prop(default($default))])?
+                pub $field: $ty,
+            )*
+            /// The DOM target to dispatch the custom event from.
+            ///
+            /// Defaults to `EventTarget::This`, the generated self-removing `data-init` element.
+            /// Use `EventTarget::Document`, `EventTarget::Window`, `EventTarget::Id`, or
+            /// `EventTarget::Selector` when the event should originate elsewhere.
+            ///
+            #[prop(default($crate::EventTarget::This))]
+            pub target: $crate::EventTarget<'target>,
+            /// Whether the custom event bubbles through the DOM.
+            ///
+            /// Defaults to `true`, so ancestor `!on:<event>` listeners can observe the event when
+            /// `target` is `EventTarget::This`.
+            #[prop(default(true))]
+            pub bubbles: bool,
+            /// Whether the custom event is cancelable.
+            ///
+            /// Defaults to `false`.
+            #[prop(default(false))]
+            pub cancelable: bool,
+            /// Whether the custom event crosses shadow DOM boundaries.
+            ///
+            /// Defaults to `false`.
+            #[prop(default(false))]
+            pub composed: bool,
+        }
+
+        impl<'target> $crate::prelude::Render<$crate::prelude::JsSource> for $component<'target> {
+            fn render_to(&self, buffer: &mut $crate::prelude::Buffer<$crate::prelude::JsSource>) {
+                #[derive($crate::__internal::serde::Serialize)]
+                struct EventDetail<'detail> {
+                    $(
+                        $field: &'detail $ty,
+                    )*
+                }
+
+                let detail = EventDetail {
+                    $(
+                        $field: &self.$field,
+                    )*
+                };
+
+                $crate::__internal::__render_custom_event_to_js(
+                    buffer,
+                    stringify!($event),
+                    Some(&detail),
+                    &self.target,
+                    self.bubbles,
+                    self.cancelable,
+                    self.composed,
+                );
+            }
+        }
+
+        impl<'target> $crate::prelude::Render for $component<'target> {
+            fn render_to(&self, buffer: &mut $crate::prelude::Buffer<$crate::prelude::Element>) {
+                $crate::__internal::__render_custom_event_component(self, buffer);
+            }
+        }
+
         $(
-            #[doc(hidden)]
-            #[allow(missing_docs, non_upper_case_globals)]
-            pub const $event: $crate::validation::Attribute = $crate::validation::Attribute;
-        )*
+            $crate::define_events! { $($rest)* }
+        )?
+    };
+
+    ($event:ident => $component:ident $(, $($rest:tt)*)?) => {
+        $crate::define_events! { $event }
+
+        #[allow(missing_docs)]
+        #[derive($crate::macros::Cheers)]
+        pub struct $component<'target> {
+            /// The DOM target to dispatch the custom event from.
+            ///
+            /// Defaults to `EventTarget::This`, the generated self-removing `data-init` element.
+            /// Use `EventTarget::Document`, `EventTarget::Window`, `EventTarget::Id`, or
+            /// `EventTarget::Selector` when the event should originate elsewhere.
+            ///
+            #[prop(default($crate::EventTarget::This))]
+            pub target: $crate::EventTarget<'target>,
+            /// Whether the custom event bubbles through the DOM.
+            ///
+            /// Defaults to `true`, so ancestor `!on:<event>` listeners can observe the event when
+            /// `target` is `EventTarget::This`.
+            #[prop(default(true))]
+            pub bubbles: bool,
+            /// Whether the custom event is cancelable.
+            ///
+            /// Defaults to `false`.
+            #[prop(default(false))]
+            pub cancelable: bool,
+            /// Whether the custom event crosses shadow DOM boundaries.
+            ///
+            /// Defaults to `false`.
+            #[prop(default(false))]
+            pub composed: bool,
+        }
+
+        impl<'target> $crate::prelude::Render<$crate::prelude::JsSource> for $component<'target> {
+            fn render_to(&self, buffer: &mut $crate::prelude::Buffer<$crate::prelude::JsSource>) {
+                $crate::__internal::__render_custom_event_to_js::<()>(
+                    buffer,
+                    stringify!($event),
+                    None,
+                    &self.target,
+                    self.bubbles,
+                    self.cancelable,
+                    self.composed,
+                );
+            }
+        }
+
+        impl<'target> $crate::prelude::Render for $component<'target> {
+            fn render_to(&self, buffer: &mut $crate::prelude::Buffer<$crate::prelude::Element>) {
+                $crate::__internal::__render_custom_event_component(self, buffer);
+            }
+        }
+
+        $(
+            $crate::define_events! { $($rest)* }
+        )?
     };
 }

@@ -105,7 +105,11 @@ Datastar attributes:
 
 ```rust
 cheers::define_events! {
-    emoji_click
+    emoji_click,
+    emoji_selected => EmojiSelected {
+        unicode: &'static str,
+    },
+    chat_ping => ChatPing,
 }
 
 scoped_signal!(signal_message: String);
@@ -123,14 +127,16 @@ html! {
         !bind(draft_signal)
         !on:focusout({ "localStorage.setItem('draft', " (draft_signal) ")" }) {}
     details !attr("open": { (open_signal) " ? '' : null" }) {}
-    div !signals(signal_message: String::new()) {
+    div !signals(signal_message: String::new())
+        !on:emoji_selected({ (signal_message) " += evt.detail.unicode" })
+    {
         textarea !bind(signal_message) {}
-        div !on:emoji_click({ (signal_message) " += evt.detail.unicode" }) { "emoji picker widget" }
+        EmojiSelected unicode="👍" [];  // Emits `emoji-selected` once when rendered.
     }
 }
 ```
 
-Use generated action structs in `!on:*`; do not hardcode generated URLs and signal paths. Register custom Datastar events with `cheers::define_events! { my_event }` before using `!on:my_event(...)`; Datastar expressions are JavaScript fragments. Datastar modifiers go before value parentheses, e.g. `!on:click[prevent]("...")` or `!on_interval[duration("1s")]("...")`; unquoted modifier names are checked against known plugin modifiers, while quoted names like `["future"]` opt out for custom/new modifiers.
+Use generated action structs in `!on:*`; do not hardcode generated URLs and signal paths. Register custom Datastar events with `cheers::define_events! { my_event }` before using `!on:my_event(...)`; use `event => Component { detail: Type }` or `event => Component` to also generate a component that emits a `CustomEvent` when rendered. Emitted detail fields are read from `evt.detail`; render event components with required detail props plus `[]` for default event options, or override options with `[target=(EventTarget::Document)]`, `[target=(EventTarget::Window)]`, `[target=(EventTarget::Id(&id))]`, `[target=(EventTarget::Selector("main".into()))]`, `[bubbles=false]`, `[cancelable=true]`, or `[composed=true]`. Datastar expressions are JavaScript fragments. Datastar modifiers go before value parentheses, e.g. `!on:click[prevent]("...")` or `!on_interval[duration("1s")]("...")`; unquoted modifier names are checked against known plugin modifiers, while quoted names like `["future"]` opt out for custom/new modifiers.
 
 Common attributes: `!bind` for two-way input binding, `!signals` for initial/local values, `!computed` for read-only derived values, `!text`/`!show`/`!attr`/`!class`/`!style` for reactive DOM state, `!indicator` for fetch state, `!init`/`!effect` for side effects, `!preserve_attr` and `!ignore_morph` for morphing edge cases, and `!on:event` for events. Use the cheers crate docs when additional Datastar attribute details are needed.
 

@@ -1,7 +1,7 @@
 use proc_macro2::TokenStream;
 use quote::quote;
 use syn::{
-    Error, Expr, Field, Fields, Generics, Ident, ItemStruct, Meta, Type,
+    Attribute, Error, Expr, Field, Fields, Generics, Ident, ItemStruct, Meta, Type,
     ext::IdentExt,
     parse::{Parse, ParseStream},
 };
@@ -49,6 +49,7 @@ struct RequiredFieldSpec {
 struct DefaultedFieldSpec {
     field: FieldSpec,
     default: Expr,
+    docs: Vec<Attribute>,
 }
 
 struct PropFields {
@@ -81,7 +82,7 @@ fn helper_required_ident(struct_ident: &Ident) -> Ident {
 
 fn helper_builder_ident(struct_ident: &Ident) -> Ident {
     Ident::new(
-        &format!("__Cheers{}PropsBuilder", struct_ident),
+        &format!("{}PropsBuilder", struct_ident),
         struct_ident.span(),
     )
 }
@@ -177,18 +178,31 @@ fn collect_prop_fields(item: &mut ItemStruct, struct_ident: &Ident) -> Result<Pr
             continue;
         }
 
-        let field = FieldSpec {
+        let field_spec = FieldSpec {
             ident: field_ident.clone(),
             ty: field_ty,
         };
 
         match prop_default {
-            Some(default) => defaulted.push(DefaultedFieldSpec { field, default }),
+            Some(default) => {
+                let docs = field
+                    .attrs
+                    .iter()
+                    .filter(|attr| attr.path().is_ident("doc"))
+                    .cloned()
+                    .collect();
+
+                defaulted.push(DefaultedFieldSpec {
+                    field: field_spec,
+                    default,
+                    docs,
+                });
+            }
             None => required.push(RequiredFieldSpec {
                 sort_key: field_ident.unraw().to_string(),
                 wrapper_ident: helper_prop_type_ident(struct_ident, &field_ident),
                 method_ident: helper_prop_method_ident(&field_ident)?,
-                field,
+                field: field_spec,
             }),
         }
     }
@@ -341,7 +355,9 @@ pub(crate) fn generate_prop_impl(item: &mut ItemStruct) -> Result<TokenStream, E
     let setter_methods = defaulted_fields.iter().map(|field| {
         let ident = &field.field.ident;
         let ty = &field.field.ty;
+        let docs = &field.docs;
         quote! {
+            #(#docs)*
             #[must_use]
             #vis fn #ident(mut self, #ident: #ty) -> Self {
                 self.#ident = #ident;

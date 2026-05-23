@@ -28,7 +28,12 @@ use crate::test_utils::read_axum_body;
 mod test_utils;
 
 cheers::define_events! {
-    chat_appended
+    chat_appended,
+    chat_event => ChatEvent {
+        kind: &'static str,
+        count: u32 = 1,
+    },
+    chat_ping => ChatPing,
 }
 
 #[test]
@@ -50,6 +55,49 @@ fn can_render_vec() {
     assert_eq!(
         result.as_inner(),
         "<ul><li>milk</li><li>eggs</li><li>bread</li></ul>"
+    );
+}
+
+#[test]
+fn define_events_can_generate_detail_emitter_component() {
+    let result = html! {
+        div !on:chat_event("window.seen = evt.detail.kind") {
+            ChatEvent kind="draft" [];
+        }
+    }
+    .render();
+
+    assert_eq!(
+        result.as_inner(),
+        concat!(
+            r#"<div data-on:chat-event="window.seen = evt.detail.kind">"#,
+            r#"<script data-init="queueMicrotask(function(){{const __cheersEventTarget=el;"#,
+            r#"__cheersEventTarget?.dispatchEvent(new CustomEvent('chat-event',{detail:{&quot;kind&quot;:&quot;draft&quot;,&quot;count&quot;:1},"#,
+            r#"bubbles:true,cancelable:false,composed:false}));};el.remove()})"></script>"#,
+            r#"</div>"#,
+        ),
+    );
+}
+
+#[test]
+fn define_events_emitter_component_supports_optional_event_props() {
+    #[derive(Cheers)]
+    #[id]
+    struct Messages;
+
+    let messages_id = Messages::id();
+    let result = html! {
+        ChatPing [target=(EventTarget::Id(&messages_id)) bubbles=false composed=true];
+    }
+    .render();
+
+    assert_eq!(
+        result.as_inner(),
+        concat!(
+            r#"<script data-init="queueMicrotask(function(){{const __cheersEventTarget=document.getElementById('messages');"#,
+            r#"__cheersEventTarget?.dispatchEvent(new CustomEvent('chat-ping',{bubbles:false,cancelable:false,composed:true}));"#,
+            r#"};el.remove()})"></script>"#,
+        ),
     );
 }
 
