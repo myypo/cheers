@@ -7,7 +7,7 @@ mod scoped_signal;
 mod shared;
 
 use ast::{
-    AttributeValueNode, Document, JsSourceNodes, Nodes,
+    AttributeValueNode, DatastarSourceNodes, Document, Nodes, ScriptSourceNodes,
     generate::{NodeFlavour, XmlFlavour},
 };
 use syn::{ItemStruct, parse_macro_input};
@@ -29,8 +29,14 @@ fn expand_attribute_lazy(tokens: proc_macro::TokenStream) -> proc_macro::TokenSt
         .into()
 }
 
-fn expand_js_lazy(tokens: proc_macro::TokenStream) -> proc_macro::TokenStream {
-    ast::generate::lazy::<JsSourceNodes>(tokens.into())
+fn expand_datastar_source_lazy(tokens: proc_macro::TokenStream) -> proc_macro::TokenStream {
+    ast::generate::lazy::<DatastarSourceNodes>(tokens.into())
+        .unwrap_or_else(|err| err.to_compile_error())
+        .into()
+}
+
+fn expand_js_script_lazy(tokens: proc_macro::TokenStream) -> proc_macro::TokenStream {
+    ast::generate::lazy::<ScriptSourceNodes>(tokens.into())
         .unwrap_or_else(|err| err.to_compile_error())
         .into()
 }
@@ -235,7 +241,7 @@ pub fn attribute(tokens: proc_macro::TokenStream) -> proc_macro::TokenStream {
 /// ```ignore
 /// use cheers::prelude::*;
 ///
-/// let onclick = js! {
+/// let onclick = datastar_source! {
 ///     "console.log("
 ///     (signal_name)
 ///     ")"
@@ -245,8 +251,31 @@ pub fn attribute(tokens: proc_macro::TokenStream) -> proc_macro::TokenStream {
 ///     button !on:click(onclick) { "Log" }
 /// };
 /// ```
-pub fn js(tokens: proc_macro::TokenStream) -> proc_macro::TokenStream {
-    expand_js_lazy(tokens)
+pub fn datastar_source(tokens: proc_macro::TokenStream) -> proc_macro::TokenStream {
+    expand_datastar_source_lazy(tokens)
+}
+
+#[proc_macro]
+/// Builds JavaScript source for a `<script>` body.
+///
+/// Unlike `datastar_source!`, this macro does not HTML-attribute-escape JavaScript operators such as
+/// `<`. Interpolated string-like values are emitted as JavaScript string literals and escaped so
+/// they cannot terminate the surrounding `<script>` element.
+///
+/// # Example
+///
+/// ```ignore
+/// use cheers::prelude::*;
+///
+/// let url = "/profile";
+/// let script = JsScript::new(js_script! {
+///     "window.location.assign("
+///     url
+///     ");"
+/// });
+/// ```
+pub fn js_script(tokens: proc_macro::TokenStream) -> proc_macro::TokenStream {
+    expand_js_script_lazy(tokens)
 }
 
 #[proc_macro]

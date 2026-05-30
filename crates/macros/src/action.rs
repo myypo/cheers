@@ -306,8 +306,8 @@ pub fn generate(args: ActionArgs, item: &mut MaybeItemFn) -> Result<TokenStream,
 
         #struct_decl
 
-        impl #impl_generics ::cheers::prelude::Render<::cheers::prelude::JsSource> for #struct_name #ty_generics #where_clause {
-            fn render_to(&self, buffer: &mut ::cheers::prelude::Buffer<::cheers::prelude::JsSource>) {
+        impl #impl_generics ::cheers::prelude::Render<::cheers::prelude::DatastarSource> for #struct_name #ty_generics #where_clause {
+            fn render_to(&self, buffer: &mut ::cheers::prelude::Buffer<::cheers::prelude::DatastarSource>) {
                 let mut __cheers_action_path = ::std::string::String::from(#static_path);
                 #(#path_renders_js)*
                 ::cheers::__internal::__render_action_call(buffer, #method_name, &__cheers_action_path, #form);

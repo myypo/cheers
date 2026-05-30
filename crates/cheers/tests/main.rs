@@ -379,7 +379,7 @@ fn correct_attr_escape() {
 #[test]
 fn custom_datastar_on_event_uses_js_context() {
     let detail = "<payload>";
-    let handle_append = js! {
+    let handle_append = datastar_source! {
         "console.log("
         (detail)
         ")"
@@ -2303,8 +2303,8 @@ fn signal_outer_with_id() {
 }
 
 #[test]
-fn js_macro_literals_are_raw_js_source() {
-    let rendered = js! {
+fn datastar_source_macro_literals_are_raw_js_source() {
+    let rendered = datastar_source! {
         "console.log('wowzers')"
     }
     .render()
@@ -2314,8 +2314,8 @@ fn js_macro_literals_are_raw_js_source() {
 }
 
 #[test]
-fn js_macro_literals_are_attribute_escaped() {
-    let rendered = js! {
+fn datastar_source_macro_literals_are_attribute_escaped() {
+    let rendered = datastar_source! {
         "if (x < \"&\") {}"
     }
     .render()
@@ -2325,10 +2325,10 @@ fn js_macro_literals_are_attribute_escaped() {
 }
 
 #[test]
-fn js_macro_interpolated_string_is_js_string_literal() {
+fn datastar_source_macro_interpolated_string_is_js_string_literal() {
     let name = "Ferris";
 
-    let rendered = js! {
+    let rendered = datastar_source! {
         "console.log("
         name
         ")"
@@ -2337,6 +2337,43 @@ fn js_macro_interpolated_string_is_js_string_literal() {
     .into_inner();
 
     assert_eq!(rendered, "console.log('Ferris')");
+}
+
+#[test]
+fn js_script_macro_literals_are_raw_script_source() {
+    let rendered = js_script! {
+        "if (x < \"&\") {}"
+    }
+    .render()
+    .into_inner();
+
+    assert_eq!(rendered, "if (x < \"&\") {}");
+}
+
+#[test]
+fn js_script_macro_static_literals_cannot_close_script_element() {
+    let rendered = js_script! {
+        "console.log('</SCRIPT>');"
+    }
+    .render()
+    .into_inner();
+
+    assert_eq!(rendered, "console.log('<\\/SCRIPT>');");
+}
+
+#[test]
+fn js_script_macro_interpolated_string_is_script_safe_js_string_literal() {
+    let name = "</script><img>";
+
+    let rendered = js_script! {
+        "console.log("
+        name
+        ")"
+    }
+    .render()
+    .into_inner();
+
+    assert_eq!(rendered, "console.log('\\x3C/script>\\x3Cimg>')");
 }
 
 #[test]

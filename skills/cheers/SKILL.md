@@ -140,10 +140,10 @@ Use generated action structs in `!on:*`; do not hardcode generated URLs and sign
 
 Common attributes: `!bind` for two-way input binding, `!signals` for initial/local values, `!computed` for read-only derived values, `!text`/`!show`/`!attr`/`!class`/`!style` for reactive DOM state, `!indicator` for fetch state, `!init`/`!effect` for side effects, `!preserve_attr` and `!ignore_morph` for morphing edge cases, and `!on:event` for events. Use the cheers crate docs when additional Datastar attribute details are needed.
 
-Use inline `{ ... }` fragments directly in Datastar attributes. Use `js!` only when the JavaScript fragment needs to be stored, reused, or passed around as a value:
+Use inline `{ ... }` fragments directly in Datastar attributes. Use `datastar_source!` only when the JavaScript fragment needs to be stored, reused, or passed around as a value:
 
 ```rust
-let clear_draft = js! {
+let clear_draft = datastar_source! {
     "localStorage.removeItem('draft')"
 };
 html! {
@@ -151,7 +151,9 @@ html! {
 }
 ```
 
-In inline JS fragments and `js!`, string literals are raw JavaScript source, interpolated Rust strings render as JS string literals, and signals/action values render in `JsSource` context. Keep expressions small; prefer actions/patches/signals over large inline scripts.
+In inline Datastar fragments and `datastar_source!`, string literals are raw JavaScript source, interpolated Rust strings render as JS string literals, and signals/action values render in `DatastarSource` context. Keep expressions small; prefer actions/patches/signals over large inline scripts.
+
+Use `js_script!` for JavaScript source that will run from a `<script>` body, such as `JsScript::new(js_script! { ... })`. This context does not HTML-attribute-escape JavaScript operators and escapes interpolated values so they cannot terminate the surrounding `<script>` element. Use `JsScript::dangerously_from_string(...)` only for trusted raw script source.
 
 Suspense:
 

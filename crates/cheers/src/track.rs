@@ -192,8 +192,8 @@ pub struct ExceptionEvent {
 
 pub struct TrackAction<P: Serialize>(pub P);
 
-impl<P: Serialize> Render<JsSource> for TrackAction<P> {
-    fn render_to(&self, buffer: &mut Buffer<JsSource>) {
+impl<P: Serialize> Render<DatastarSource> for TrackAction<P> {
+    fn render_to(&self, buffer: &mut Buffer<DatastarSource>) {
         let payload = serde_json::to_string(&self.0).unwrap_or_else(|_| "{}".to_owned());
         let s = buffer.dangerously_get_string();
 

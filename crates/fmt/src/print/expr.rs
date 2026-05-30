@@ -1,4 +1,4 @@
-use ast::{Document, JsSourceNodes, Node, ParenExpr};
+use ast::{DatastarSourceNodes, Document, Node, ParenExpr, ScriptSourceNodes};
 use proc_macro2::Span;
 use syn::{
     Expr, ExprMacro,
@@ -85,13 +85,20 @@ impl<'a, 'b> Printer<'a, 'b> {
             macro_name: macro_name.clone(),
         };
 
-        let formatted = if macro_name == "js" {
-            let document: JsSourceNodes = Parser::parse2(
-                |input: ParseStream| JsSourceNodes::parse(input),
+        let formatted = if macro_name == "datastar_source" {
+            let document: DatastarSourceNodes = Parser::parse2(
+                |input: ParseStream| DatastarSourceNodes::parse(input),
                 expr_macro.mac.tokens.clone(),
             )
             .ok()?;
-            crate::print::print_js(document, &macro_, self.source, self.options)
+            crate::print::print_datastar_source(document, &macro_, self.source, self.options)
+        } else if macro_name == "js_script" {
+            let document: ScriptSourceNodes = Parser::parse2(
+                |input: ParseStream| ScriptSourceNodes::parse(input),
+                expr_macro.mac.tokens.clone(),
+            )
+            .ok()?;
+            crate::print::print_js_script(document, &macro_, self.source, self.options)
         } else {
             let document: Document = Parser::parse2(
                 |input: ParseStream| Document::parse(input),

@@ -1,11 +1,11 @@
-error[E0277]: the trait bound `u64: Render<JsSource>` is not satisfied
+error[E0277]: the trait bound `u64: Render<DatastarSource>` is not satisfied
  --> tests/ui/big_int_in_js_context.rs:5:13
   |
 5 |       let _ = html! {
   |  _____________^
 6 | |         div !text(big) {}
 7 | |     };
-  | |_____^ the trait `Render<JsSource>` is not implemented for `u64`
+  | |_____^ the trait `Render<DatastarSource>` is not implemented for `u64`
   |
 help: the following other types implement trait `Render<C>`
  --> src/render.rs

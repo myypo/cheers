@@ -64,7 +64,7 @@ pub struct EventReceiver(tokio::sync::mpsc::UnboundedReceiver<sse::Event>);
 ///     )
 ///     .map_err(|_| StatusCode::SERVICE_UNAVAILABLE)?;
 ///
-///     tx.send(JsScript::new("console.log('notifications stream ready')"))
+///     tx.send(JsScript::new(js_script! { "console.log('notifications stream ready')" }))
 ///         .map_err(|_| StatusCode::SERVICE_UNAVAILABLE)?;
 ///
 ///     Ok(rx)

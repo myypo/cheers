@@ -5,13 +5,14 @@ use core::{
 };
 use std::{borrow::Cow, rc::Rc, sync::Arc};
 
-use crate::context::{AttributeValue, Context, Element, JsSource};
+use crate::context::{AttributeValue, Context, DatastarSource, Element, ScriptSource};
 
 /// Raw pre-escaped output for a specific rendering context.
 ///
 /// `Raw<T, Element>` is for already-sanitized HTML nodes. [`RawAttribute<T>`]
-/// is the same idea in attribute context. `Raw<T, JsSource>` is for already-sanitized
-/// JavaScript source intended for Datastar HTML attributes.
+/// is the same idea in attribute context. `Raw<T, DatastarSource>` is for already-sanitized
+/// JavaScript source intended for Datastar HTML attributes, and `Raw<T, ScriptSource>`
+/// is for already-sanitized JavaScript source intended for `<script>` bodies.
 ///
 /// Most code should prefer [`html!`](crate::prelude::html) and normal [`Render`] implementations.
 /// Reach for `Raw` only when you already have trusted, pre-escaped markup and need to insert it
@@ -107,8 +108,13 @@ pub type RawAttribute<T> = Raw<T, AttributeValue>;
 
 /// Raw pre-escaped JavaScript source.
 ///
-/// This is a type alias for [`Raw<T, JsSource>`].
-pub type RawJs<T> = Raw<T, JsSource>;
+/// This is a type alias for [`Raw<T, DatastarSource>`].
+pub type RawDatastarSource<T> = Raw<T, DatastarSource>;
+
+/// Raw pre-escaped JavaScript source for a `<script>` body.
+///
+/// This is a type alias for [`Raw<T, ScriptSource>`].
+pub type RawScript<T> = Raw<T, ScriptSource>;
 
 /// A rendered HTML string.
 ///
@@ -254,9 +260,15 @@ impl<C: Context> Buffer<C> {
         self.cast_context()
     }
 
-    /// Converts this into a `&mut Buffer<JsSource>`.
+    /// Converts this into a `&mut Buffer<DatastarSource>`.
     #[inline]
-    pub fn as_js_buffer(&mut self) -> &mut Buffer<JsSource> {
+    pub fn as_datastar_buffer(&mut self) -> &mut Buffer<DatastarSource> {
+        self.cast_context()
+    }
+
+    /// Converts this into a `&mut Buffer<ScriptSource>`.
+    #[inline]
+    pub fn as_script_buffer(&mut self) -> &mut Buffer<ScriptSource> {
         self.cast_context()
     }
 
@@ -284,11 +296,16 @@ impl<C: Context> Buffer<C> {
     /// contents must escape `&` to `&amp;`, `<` to `&lt;`, `>` to `&gt;`, and
     /// `"` to `&quot;`.
     ///
-    /// For `Buffer<JsSource>` writes, the caller must push JavaScript source intended
+    /// For `Buffer<DatastarSource>` writes, the caller must push JavaScript source intended
     /// for a Datastar attribute value which will eventually be surrounded by
     /// double quotes. The pushed contents must therefore remain valid
     /// JavaScript *and* escape any characters that would otherwise break HTML
     /// attribute parsing, such as `&`, `<`, `>`, and `"`.
+    ///
+    /// For `Buffer<ScriptSource>` writes, the caller must push JavaScript source intended
+    /// for a `<script>` body. The pushed contents must therefore remain valid
+    /// JavaScript and avoid raw `</script` sequences that would terminate the
+    /// surrounding script element.
     ///
     /// It is recommended to add a `// XSS SAFETY` comment above the usage of
     /// this method to indicate why it is safe to directly write to the
@@ -347,10 +364,14 @@ impl Debug for Buffer {
 /// implementation must escape `&` to `&amp;`, `<` to `&lt;`, `>` to `&gt;`, and
 /// `"` to `&quot;`.
 ///
-/// For [`Render<JsSource>`] implementations, this must render JavaScript source for
+/// For [`Render<DatastarSource>`] implementations, this must render JavaScript source for
 /// a Datastar attribute value. The implementation must ensure the result is
 /// valid JavaScript and is also safe to embed in a double-quoted HTML
 /// attribute value.
+///
+/// For [`Render<ScriptSource>`] implementations, this must render JavaScript source for
+/// a `<script>` body. The implementation must ensure the result is valid JavaScript
+/// and cannot terminate the surrounding script element.
 ///
 /// # Example
 ///
@@ -453,8 +474,11 @@ impl<T: Render> RenderExt for T {}
 /// quotes. The closure must escape `&` to `&amp;`, `<` to `&lt;`, `>` to
 /// `&gt;`, and `"` to `&quot;`.
 ///
-/// For [`Lazy<F, JsSource>`], this must render JavaScript source intended for a
+/// For [`Lazy<F, DatastarSource>`], this must render JavaScript source intended for a
 /// double-quoted Datastar HTML attribute value.
+///
+/// For [`Lazy<F, ScriptSource>`], this must render JavaScript source intended for a
+/// `<script>` body.
 #[derive(Clone, Copy)]
 #[must_use = "`Lazy` does nothing unless `.render()` or `.render_to()` is called"]
 pub struct Lazy<F: Fn(&mut Buffer<C>), C: Context = Element> {
@@ -466,6 +490,11 @@ pub struct Lazy<F: Fn(&mut Buffer<C>), C: Context = Element> {
 ///
 /// This is a type alias for [`Lazy<F, AttributeValue>`].
 pub type LazyAttribute<F> = Lazy<F, AttributeValue>;
+
+/// JavaScript source for a `<script>` body lazily rendered via a closure.
+///
+/// This is a type alias for [`Lazy<F, ScriptSource>`].
+pub type LazyScript<F> = Lazy<F, ScriptSource>;
 
 impl<F: Fn(&mut Buffer<C>), C: Context> Lazy<F, C> {
     /// Creates a new [`Lazy`] from the given closure.
@@ -536,7 +565,7 @@ fn push_html_double_quoted_attribute_char(dst: &mut String, ch: char) {
 }
 
 #[inline]
-pub(crate) fn push_js_source_to_html_attribute(dst: &mut String, source: &str) {
+pub(crate) fn push_datastar_source_to_html_attribute(dst: &mut String, source: &str) {
     for ch in source.chars() {
         push_html_double_quoted_attribute_char(dst, ch);
     }
@@ -579,8 +608,40 @@ pub(crate) fn push_js_single_quoted_string_to_html_attribute(dst: &mut String, v
     dst.push('\'');
 }
 
+#[inline]
+pub(crate) fn push_js_single_quoted_string_to_script(dst: &mut String, value: &str) {
+    dst.push('\'');
+
+    for ch in value.chars() {
+        match ch {
+            '\\' => dst.push_str("\\\\"),
+            '\'' => dst.push_str("\\'"),
+            '\n' => dst.push_str("\\n"),
+            '\r' => dst.push_str("\\r"),
+            '\t' => dst.push_str("\\t"),
+            '<' => dst.push_str("\\x3C"),
+            '\u{2028}' => dst.push_str("\\u2028"),
+            '\u{2029}' => dst.push_str("\\u2029"),
+            ch if ch.is_control() => {
+                // XSS SAFETY: control characters are emitted as JS `\uXXXX`
+                // escape sequences, which are valid JavaScript source and do
+                // not introduce a raw script terminator.
+                _ = write!(dst, "\\u{:04x}", ch as u32);
+            }
+            ch => dst.push(ch),
+        }
+    }
+
+    dst.push('\'');
+}
+
 #[doc(hidden)]
-pub fn __render_action_call(buffer: &mut Buffer<JsSource>, method: &str, path: &str, form: bool) {
+pub fn __render_action_call(
+    buffer: &mut Buffer<DatastarSource>,
+    method: &str,
+    path: &str,
+    form: bool,
+) {
     let s = buffer.dangerously_get_string();
 
     // XSS SAFETY: the static action syntax is framework-generated, while the
@@ -672,9 +733,9 @@ impl Render<AttributeValue> for char {
     }
 }
 
-impl Render<JsSource> for char {
+impl Render<DatastarSource> for char {
     #[inline]
-    fn render_to(&self, buffer: &mut Buffer<JsSource>) {
+    fn render_to(&self, buffer: &mut Buffer<DatastarSource>) {
         let mut encoded = [0; 4];
         // XSS SAFETY: the helper emits a JS string literal while also escaping
         // HTML attribute delimiters.
@@ -689,6 +750,27 @@ impl Render<JsSource> for char {
         let mut s = String::with_capacity(8);
         let mut encoded = [0; 4];
         push_js_single_quoted_string_to_html_attribute(&mut s, self.encode_utf8(&mut encoded));
+        Rendered(s)
+    }
+}
+
+impl Render<ScriptSource> for char {
+    #[inline]
+    fn render_to(&self, buffer: &mut Buffer<ScriptSource>) {
+        let mut encoded = [0; 4];
+        // XSS SAFETY: the helper emits a JS string literal while also preventing
+        // raw script terminators.
+        push_js_single_quoted_string_to_script(
+            buffer.dangerously_get_string(),
+            self.encode_utf8(&mut encoded),
+        );
+    }
+
+    #[inline]
+    fn render(&self) -> Rendered<String> {
+        let mut s = String::with_capacity(8);
+        let mut encoded = [0; 4];
+        push_js_single_quoted_string_to_script(&mut s, self.encode_utf8(&mut encoded));
         Rendered(s)
     }
 }
@@ -717,9 +799,9 @@ impl Render<AttributeValue> for str {
     }
 }
 
-impl Render<JsSource> for str {
+impl Render<DatastarSource> for str {
     #[inline]
-    fn render_to(&self, buffer: &mut Buffer<JsSource>) {
+    fn render_to(&self, buffer: &mut Buffer<DatastarSource>) {
         // XSS SAFETY: the helper emits a JS string literal while also escaping
         // HTML attribute delimiters.
         push_js_single_quoted_string_to_html_attribute(buffer.dangerously_get_string(), self);
@@ -729,6 +811,22 @@ impl Render<JsSource> for str {
     fn render(&self) -> Rendered<String> {
         let mut s = String::with_capacity(self.len() + 2);
         push_js_single_quoted_string_to_html_attribute(&mut s, self);
+        Rendered(s)
+    }
+}
+
+impl Render<ScriptSource> for str {
+    #[inline]
+    fn render_to(&self, buffer: &mut Buffer<ScriptSource>) {
+        // XSS SAFETY: the helper emits a JS string literal while also preventing
+        // raw script terminators.
+        push_js_single_quoted_string_to_script(buffer.dangerously_get_string(), self);
+    }
+
+    #[inline]
+    fn render(&self) -> Rendered<String> {
+        let mut s = String::with_capacity(self.len() + 2);
+        push_js_single_quoted_string_to_script(&mut s, self);
         Rendered(s)
     }
 }
@@ -752,15 +850,27 @@ impl Render<AttributeValue> for String {
     }
 }
 
-impl Render<JsSource> for String {
+impl Render<DatastarSource> for String {
     #[inline]
-    fn render_to(&self, buffer: &mut Buffer<JsSource>) {
+    fn render_to(&self, buffer: &mut Buffer<DatastarSource>) {
         self.as_str().render_to(buffer);
     }
 
     #[inline]
     fn render(&self) -> Rendered<String> {
-        Render::<JsSource>::render(self.as_str())
+        Render::<DatastarSource>::render(self.as_str())
+    }
+}
+
+impl Render<ScriptSource> for String {
+    #[inline]
+    fn render_to(&self, buffer: &mut Buffer<ScriptSource>) {
+        self.as_str().render_to(buffer);
+    }
+
+    #[inline]
+    fn render(&self) -> Rendered<String> {
+        Render::<ScriptSource>::render(self.as_str())
     }
 }
 
@@ -878,9 +988,21 @@ macro_rules! render_via_deref {
                 }
             }
 
-            impl<T: Render<JsSource> + ?Sized> Render<JsSource> for $Ty {
+            impl<T: Render<DatastarSource> + ?Sized> Render<DatastarSource> for $Ty {
                 #[inline]
-                fn render_to(&self, buffer: &mut Buffer<JsSource>) {
+                fn render_to(&self, buffer: &mut Buffer<DatastarSource>) {
+                    T::render_to(&**self, buffer);
+                }
+
+                #[inline]
+                fn render(&self) -> Rendered<String> {
+                    T::render(&**self)
+                }
+            }
+
+            impl<T: Render<ScriptSource> + ?Sized> Render<ScriptSource> for $Ty {
+                #[inline]
+                fn render_to(&self, buffer: &mut Buffer<ScriptSource>) {
                     T::render_to(&**self, buffer);
                 }
 
@@ -920,9 +1042,21 @@ impl<'a, B: 'a + Render<AttributeValue> + ToOwned + ?Sized> Render<AttributeValu
     }
 }
 
-impl<'a, B: 'a + Render<JsSource> + ToOwned + ?Sized> Render<JsSource> for Cow<'a, B> {
+impl<'a, B: 'a + Render<DatastarSource> + ToOwned + ?Sized> Render<DatastarSource> for Cow<'a, B> {
     #[inline]
-    fn render_to(&self, buffer: &mut Buffer<JsSource>) {
+    fn render_to(&self, buffer: &mut Buffer<DatastarSource>) {
+        B::render_to(&**self, buffer);
+    }
+
+    #[inline]
+    fn render(&self) -> Rendered<String> {
+        B::render(&**self)
+    }
+}
+
+impl<'a, B: 'a + Render<ScriptSource> + ToOwned + ?Sized> Render<ScriptSource> for Cow<'a, B> {
+    #[inline]
+    fn render_to(&self, buffer: &mut Buffer<ScriptSource>) {
         B::render_to(&**self, buffer);
     }
 
@@ -941,9 +1075,25 @@ impl<T: Render> Render for [T] {
     }
 }
 
-impl<T: Render<JsSource>> Render<JsSource> for [T] {
+impl<T: Render<DatastarSource>> Render<DatastarSource> for [T] {
     #[inline]
-    fn render_to(&self, buffer: &mut Buffer<JsSource>) {
+    fn render_to(&self, buffer: &mut Buffer<DatastarSource>) {
+        buffer.dangerously_get_string().push('[');
+
+        for (index, item) in self.iter().enumerate() {
+            if index != 0 {
+                buffer.dangerously_get_string().push(',');
+            }
+            item.render_to(buffer);
+        }
+
+        buffer.dangerously_get_string().push(']');
+    }
+}
+
+impl<T: Render<ScriptSource>> Render<ScriptSource> for [T] {
+    #[inline]
+    fn render_to(&self, buffer: &mut Buffer<ScriptSource>) {
         buffer.dangerously_get_string().push('[');
 
         for (index, item) in self.iter().enumerate() {
@@ -964,9 +1114,16 @@ impl<T: Render, const N: usize> Render for [T; N] {
     }
 }
 
-impl<T: Render<JsSource>, const N: usize> Render<JsSource> for [T; N] {
+impl<T: Render<DatastarSource>, const N: usize> Render<DatastarSource> for [T; N] {
     #[inline]
-    fn render_to(&self, buffer: &mut Buffer<JsSource>) {
+    fn render_to(&self, buffer: &mut Buffer<DatastarSource>) {
+        self.as_slice().render_to(buffer);
+    }
+}
+
+impl<T: Render<ScriptSource>, const N: usize> Render<ScriptSource> for [T; N] {
+    #[inline]
+    fn render_to(&self, buffer: &mut Buffer<ScriptSource>) {
         self.as_slice().render_to(buffer);
     }
 }
@@ -978,9 +1135,16 @@ impl<T: Render> Render for Vec<T> {
     }
 }
 
-impl<T: Render<JsSource>> Render<JsSource> for Vec<T> {
+impl<T: Render<DatastarSource>> Render<DatastarSource> for Vec<T> {
     #[inline]
-    fn render_to(&self, buffer: &mut Buffer<JsSource>) {
+    fn render_to(&self, buffer: &mut Buffer<DatastarSource>) {
+        self.as_slice().render_to(buffer);
+    }
+}
+
+impl<T: Render<ScriptSource>> Render<ScriptSource> for Vec<T> {
+    #[inline]
+    fn render_to(&self, buffer: &mut Buffer<ScriptSource>) {
         self.as_slice().render_to(buffer);
     }
 }

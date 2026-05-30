@@ -1,6 +1,6 @@
 use std::ops::Range;
 
-use ast::{Document, ElementBody, JsSourceNodes};
+use ast::{DatastarSourceNodes, Document, ElementBody, ScriptSourceNodes};
 use crop::Rope;
 use proc_macro2::{LineColumn, extra::DelimSpan};
 use syn::spanned::Spanned as _;
@@ -47,8 +47,8 @@ pub fn print<'b>(
     printer.finish()
 }
 
-pub fn print_js<'b>(
-    ast: JsSourceNodes,
+pub fn print_datastar_source<'b>(
+    ast: DatastarSourceNodes,
     mac: &'b MaudMacro<'b>,
     source: &Rope,
     options: &FormatOptions,
@@ -64,7 +64,29 @@ pub fn print_js<'b>(
         trivia: Trivia::new(source, macro_range(mac, source)),
     };
 
-    printer.print_js_ast(ast);
+    printer.print_datastar_source_ast(ast);
+
+    printer.finish()
+}
+
+pub fn print_js_script<'b>(
+    ast: ScriptSourceNodes,
+    mac: &'b MaudMacro<'b>,
+    source: &Rope,
+    options: &FormatOptions,
+) -> String {
+    let mut printer = Printer {
+        lines: Vec::new(),
+        buf: String::new(),
+        base_indent: mac.indent.tabs + mac.indent.spaces / 4,
+        indent_str: "    ",
+        mac,
+        source,
+        options,
+        trivia: Trivia::new(source, macro_range(mac, source)),
+    };
+
+    printer.print_js_script_ast(ast);
 
     printer.finish()
 }
@@ -148,13 +170,21 @@ impl<'a, 'b> Printer<'a, 'b> {
     }
 
     // TODO: run actual JS formatter
-    fn print_js_ast(&mut self, ast: JsSourceNodes) {
+    fn print_datastar_source_ast(&mut self, ast: DatastarSourceNodes) {
+        self.print_javascript_nodes(ast.0.0);
+    }
+
+    fn print_js_script_ast(&mut self, ast: ScriptSourceNodes) {
+        self.print_javascript_nodes(ast.0.0);
+    }
+
+    // TODO: run actual JS formatter
+    fn print_javascript_nodes(&mut self, nodes: Vec<ast::AttributeValueNode>) {
         let indent_level = 0;
 
         self.write(&self.mac.macro_name);
         self.write("! ");
 
-        let nodes = ast.0.0;
         if nodes.is_empty() {
             if self.delim_contains_comments(*self.mac.macro_.delimiter.span()) {
                 self.write("{");
@@ -300,11 +330,21 @@ mod test {
     test_default!(empty, "html!{ }", "html! {}");
 
     test_default!(
-        js_macro,
-        r#"js!{"console.log("(signal_name)")"}"#,
-        r#"js! {
+        datastar_source_macro,
+        r#"datastar_source!{"console.log("(signal_name)")"}"#,
+        r#"datastar_source! {
     "console.log("
     (signal_name)
+    ")"
+}"#
+    );
+
+    test_default!(
+        js_script_macro,
+        r#"js_script!{"console.log("(name)")"}"#,
+        r#"js_script! {
+    "console.log("
+    (name)
     ")"
 }"#
     );

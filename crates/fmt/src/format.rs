@@ -1,7 +1,7 @@
 use std::ops::Range;
 
 use anyhow::{Context, Result};
-use ast::{Document, JsSourceNodes};
+use ast::{DatastarSourceNodes, Document, ScriptSourceNodes};
 use crop::Rope;
 use syn::{
     parse::{Parse, ParseStream, Parser},
@@ -10,7 +10,7 @@ use syn::{
 
 use crate::{
     collect::MaudMacro,
-    print::{print, print_js},
+    print::{print, print_datastar_source, print_js_script},
 };
 
 pub struct FormatOptions {
@@ -25,7 +25,8 @@ impl Default for FormatOptions {
             macro_names: vec![
                 String::from("html"),
                 String::from("svg"),
-                String::from("js"),
+                String::from("datastar_source"),
+                String::from("js_script"),
             ],
         }
     }
@@ -77,14 +78,24 @@ pub fn format_source(
 }
 
 fn format_macro(mac: &MaudMacro, source: &Rope, options: &FormatOptions) -> Result<String> {
-    if mac.macro_name == "js" {
-        let document: JsSourceNodes = Parser::parse2(
-            |input: ParseStream| JsSourceNodes::parse(input),
+    if mac.macro_name == "datastar_source" {
+        let document: DatastarSourceNodes = Parser::parse2(
+            |input: ParseStream| DatastarSourceNodes::parse(input),
             mac.macro_.tokens.clone(),
         )
-        .context("Failed to parse js macro")?;
+        .context("Failed to parse datastar_source macro")?;
 
-        return Ok(print_js(document, mac, source, options));
+        return Ok(print_datastar_source(document, mac, source, options));
+    }
+
+    if mac.macro_name == "js_script" {
+        let document: ScriptSourceNodes = Parser::parse2(
+            |input: ParseStream| ScriptSourceNodes::parse(input),
+            mac.macro_.tokens.clone(),
+        )
+        .context("Failed to parse js_script macro")?;
+
+        return Ok(print_js_script(document, mac, source, options));
     }
 
     let document: Document = Parser::parse2(

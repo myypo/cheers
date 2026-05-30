@@ -237,8 +237,8 @@ macro_rules! define_events {
             pub composed: bool,
         }
 
-        impl<'target> $crate::prelude::Render<$crate::prelude::JsSource> for $component<'target> {
-            fn render_to(&self, buffer: &mut $crate::prelude::Buffer<$crate::prelude::JsSource>) {
+        impl<'target> $crate::prelude::Render<$crate::prelude::DatastarSource> for $component<'target> {
+            fn render_to(&self, buffer: &mut $crate::prelude::Buffer<$crate::prelude::DatastarSource>) {
                 #[derive($crate::__internal::serde::Serialize)]
                 struct EventDetail<'detail> {
                     $(
@@ -307,8 +307,8 @@ macro_rules! define_events {
             pub composed: bool,
         }
 
-        impl<'target> $crate::prelude::Render<$crate::prelude::JsSource> for $component<'target> {
-            fn render_to(&self, buffer: &mut $crate::prelude::Buffer<$crate::prelude::JsSource>) {
+        impl<'target> $crate::prelude::Render<$crate::prelude::DatastarSource> for $component<'target> {
+            fn render_to(&self, buffer: &mut $crate::prelude::Buffer<$crate::prelude::DatastarSource>) {
                 $crate::__internal::__render_custom_event_to_js::<()>(
                     buffer,
                     stringify!($event),

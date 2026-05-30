@@ -3,10 +3,10 @@ use std::{borrow::Cow, fmt::Display, marker::PhantomData};
 use serde::Deserialize;
 
 use crate::{
-    context::{AttributeValue, JsSource},
+    context::{AttributeValue, DatastarSource, ScriptSource},
     render::{
-        Buffer, Render, push_js_single_quoted_string_to_html_attribute,
-        push_js_source_to_html_attribute,
+        Buffer, Render, push_datastar_source_to_html_attribute,
+        push_js_single_quoted_string_to_html_attribute,
     },
     signal_path::{is_bare_signal_path_segment, parse_signal_path},
 };
@@ -96,8 +96,14 @@ impl Render<AttributeValue> for ElementId {
     }
 }
 
-impl Render<JsSource> for ElementId {
-    fn render_to(&self, buffer: &mut Buffer<JsSource>) {
+impl Render<DatastarSource> for ElementId {
+    fn render_to(&self, buffer: &mut Buffer<DatastarSource>) {
+        self.0.render_to(buffer);
+    }
+}
+
+impl Render<ScriptSource> for ElementId {
+    fn render_to(&self, buffer: &mut Buffer<ScriptSource>) {
         self.0.render_to(buffer);
     }
 }
@@ -105,7 +111,7 @@ impl Render<JsSource> for ElementId {
 #[inline]
 fn push_signal_object_key(dst: &mut String, segment: &str) {
     if is_bare_signal_path_segment(segment) {
-        push_js_source_to_html_attribute(dst, segment);
+        push_datastar_source_to_html_attribute(dst, segment);
     } else {
         push_js_single_quoted_string_to_html_attribute(dst, segment);
     }
@@ -152,7 +158,7 @@ fn close_signal_object(dst: &mut String, count: usize) {
 /// - Outside the component that defines the signal, acquire it through the generated associated
 ///   functions such as `YourComponent::signal_name(...)`.
 ///
-/// When rendered in [`JsSource`] context, a signal becomes a `$`-prefixed path
+/// When rendered in [`DatastarSource`] context, a signal becomes a `$`-prefixed path
 /// understood by the client-side runtime.
 ///
 /// # Example
@@ -247,7 +253,7 @@ impl<T> Signal<T> {
     #[doc(hidden)]
     /// Used by the `html!` and `attribute!` macros when expanding computed signal
     /// attributes. Not part of the stable public API.
-    pub fn __computed_open(&self, buffer: &mut Buffer<JsSource>) -> usize {
+    pub fn __computed_open(&self, buffer: &mut Buffer<DatastarSource>) -> usize {
         let Some(close_count) =
             push_signal_object_prefix(self.__path(), buffer.dangerously_get_string())
         else {
@@ -265,17 +271,17 @@ impl Signal<()> {
     #[doc(hidden)]
     /// Used by the `html!` and `attribute!` macros when expanding computed signal
     /// attributes. Not part of the stable public API.
-    pub fn __computed_close(count: usize, buffer: &mut Buffer<JsSource>) {
+    pub fn __computed_close(count: usize, buffer: &mut Buffer<DatastarSource>) {
         // XSS SAFETY: statically closing the JS object
         close_signal_object(buffer.dangerously_get_string(), count);
     }
 }
 
-impl<T: Render<JsSource>> Signal<T> {
+impl<T: Render<DatastarSource>> Signal<T> {
     #[doc(hidden)]
     /// Used by the `html!` and `attribute!` macros when expanding `!signals(...)`.
     /// Not part of the stable public API.
-    pub fn __assign(&self, buffer: &mut Buffer<JsSource>, v: T) {
+    pub fn __assign(&self, buffer: &mut Buffer<DatastarSource>, v: T) {
         let Some(close_count) = ({
             let s = buffer.dangerously_get_string();
             push_signal_object_prefix(self.__path(), s)
@@ -292,14 +298,14 @@ impl<T: Render<JsSource>> Signal<T> {
     }
 }
 
-impl<T> Render<JsSource> for Signal<T> {
-    fn render_to(&self, buffer: &mut Buffer<JsSource>) {
+impl<T> Render<DatastarSource> for Signal<T> {
+    fn render_to(&self, buffer: &mut Buffer<DatastarSource>) {
         let s = buffer.dangerously_get_string();
 
         // XSS SAFETY: `$` is static syntax, while the signal path is
         // framework-generated and HTML-escaped for attribute embedding.
         s.push('$');
-        push_js_source_to_html_attribute(s, self.__path());
+        push_datastar_source_to_html_attribute(s, self.__path());
     }
 }
 
@@ -360,8 +366,14 @@ impl Render<AttributeValue> for FormName {
     }
 }
 
-impl Render<JsSource> for FormName {
-    fn render_to(&self, buffer: &mut Buffer<JsSource>) {
+impl Render<DatastarSource> for FormName {
+    fn render_to(&self, buffer: &mut Buffer<DatastarSource>) {
+        self.0.render_to(buffer);
+    }
+}
+
+impl Render<ScriptSource> for FormName {
+    fn render_to(&self, buffer: &mut Buffer<ScriptSource>) {
         self.0.render_to(buffer);
     }
 }
@@ -417,7 +429,7 @@ mod tests {
     #[test]
     fn element_id_renders_as_js_string() {
         let id = ElementId::__dynamic("row-4<&\"'".to_string());
-        let mut buffer = Buffer::<JsSource>::new();
+        let mut buffer = Buffer::<DatastarSource>::new();
         id.render_to(&mut buffer);
         assert_eq!(
             buffer.rendered().into_inner(),
@@ -428,7 +440,7 @@ mod tests {
     #[test]
     fn form_name_renders_as_js_string() {
         let name = FormName::__static("email");
-        let mut buffer = Buffer::<JsSource>::new();
+        let mut buffer = Buffer::<DatastarSource>::new();
         name.render_to(&mut buffer);
         assert_eq!(buffer.rendered().into_inner(), "'email'");
     }
@@ -436,7 +448,7 @@ mod tests {
     #[test]
     fn signal_object_string_value() {
         let signal = Signal::<&str>::__string("user['name']".to_string());
-        let mut buffer = Buffer::<JsSource>::new();
+        let mut buffer = Buffer::<DatastarSource>::new();
         signal.__assign(&mut buffer, "Nick");
         assert_eq!(buffer.rendered().into_inner(), r#"user:{name:'Nick'}"#);
     }
@@ -444,7 +456,7 @@ mod tests {
     #[test]
     fn signal_object_number_value() {
         let signal = Signal::<f64>::__string("user['age']".to_string());
-        let mut buffer = Buffer::<JsSource>::new();
+        let mut buffer = Buffer::<DatastarSource>::new();
         signal.__assign(&mut buffer, -42.0);
         assert_eq!(buffer.rendered().into_inner(), r#"user:{age:-42.0}"#);
     }
@@ -452,7 +464,7 @@ mod tests {
     #[test]
     fn signal_object_unsafe_segment() {
         let signal = Signal::<&str>::__string("project['user.123']['name']".to_string());
-        let mut buffer = Buffer::<JsSource>::new();
+        let mut buffer = Buffer::<DatastarSource>::new();
         signal.__assign(&mut buffer, "Nick");
         assert_eq!(
             buffer.rendered().into_inner(),

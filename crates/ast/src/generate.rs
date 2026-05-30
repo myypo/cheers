@@ -10,6 +10,37 @@ use syn::{
 
 use super::{AttributeValueNode, DataModifierPart, DataModifiers, SyntaxStatic, UnquotedName};
 
+fn escape_script_source_literal(value: &str) -> std::borrow::Cow<'_, str> {
+    let bytes = value.as_bytes();
+    let script_end = b"</script";
+    let mut i = 0;
+    let mut start = 0;
+    let mut escaped = None::<String>;
+
+    while i + script_end.len() <= bytes.len() {
+        if bytes[i] == b'<'
+            && bytes[i + 1] == b'/'
+            && bytes[i + 2..i + script_end.len()].eq_ignore_ascii_case(b"script")
+        {
+            let escaped = escaped.get_or_insert_with(|| String::with_capacity(value.len() + 1));
+            escaped.push_str(&value[start..i]);
+            escaped.push_str("<\\/");
+            escaped.push_str(&value[i + 2..i + script_end.len()]);
+            i += script_end.len();
+            start = i;
+        } else {
+            i += 1;
+        }
+    }
+
+    if let Some(mut escaped) = escaped {
+        escaped.push_str(&value[start..]);
+        std::borrow::Cow::Owned(escaped)
+    } else {
+        std::borrow::Cow::Borrowed(value)
+    }
+}
+
 fn pinned_stream_tokens_expr(stream: &TokenStream) -> TokenStream {
     quote! {
         ::std::boxed::Box::pin(#stream) as ::std::pin::Pin<::std::boxed::Box<dyn ::cheers::__internal::futures::stream::Stream<Item = ::cheers::Rendered<::std::string::String>> + ::std::marker::Send>>
@@ -383,11 +414,13 @@ impl<'a> Generator<'a> {
 
     pub fn push_escaped_literal(&mut self, context: Context, lit: &LitStr) {
         let value = lit.value();
-        let escaped_value = match context {
+        let effective_context = self.context_override.unwrap_or(context);
+        let escaped_value = match effective_context {
             Context::Element => html_escape::encode_text(&value),
-            Context::AttributeValue | Context::JsSource => {
+            Context::AttributeValue | Context::DatastarSource => {
                 html_escape::encode_double_quoted_attribute(&value)
             }
+            Context::ScriptSource => escape_script_source_literal(&value),
         };
 
         self.parts
@@ -435,23 +468,32 @@ impl<'a> Generator<'a> {
         let buffer_expr = match (self.context, effective_context) {
             (Context::Element, Context::Element)
             | (Context::AttributeValue, Context::AttributeValue)
-            | (Context::JsSource, Context::JsSource) => {
+            | (Context::DatastarSource, Context::DatastarSource)
+            | (Context::ScriptSource, Context::ScriptSource) => {
                 quote!(#buffer_ident)
             }
             (Context::Element, Context::AttributeValue) => {
                 quote!(#buffer_ident.as_attribute_buffer())
             }
-            (Context::Element, Context::JsSource) => {
-                quote!(#buffer_ident.as_js_buffer())
+            (Context::Element, Context::DatastarSource) => {
+                quote!(#buffer_ident.as_datastar_buffer())
             }
-            (Context::AttributeValue, Context::JsSource) => {
-                quote!(#buffer_ident.as_js_buffer())
+            (Context::Element, Context::ScriptSource) => {
+                quote!(#buffer_ident.as_script_buffer())
             }
-            (Context::JsSource, Context::Element) => unreachable!(),
-            (Context::JsSource, Context::AttributeValue) => {
+            (Context::AttributeValue, Context::DatastarSource) => {
+                quote!(#buffer_ident.as_datastar_buffer())
+            }
+            (Context::AttributeValue, Context::ScriptSource) => unreachable!(),
+            (Context::DatastarSource, Context::Element) => unreachable!(),
+            (Context::DatastarSource, Context::AttributeValue) => {
                 quote!(#buffer_ident.as_attribute_buffer())
             }
+            (Context::DatastarSource, Context::ScriptSource) => unreachable!(),
             (Context::AttributeValue, Context::Element) => unreachable!(),
+            (Context::ScriptSource, Context::Element)
+            | (Context::ScriptSource, Context::AttributeValue)
+            | (Context::ScriptSource, Context::DatastarSource) => unreachable!(),
         };
 
         let mut paren_expr = TokenStream::new();
@@ -466,7 +508,7 @@ impl<'a> Generator<'a> {
     }
 
     pub fn push_js_value_node(&mut self, node: &mut AttributeValueNode) {
-        self.with_context_override(Context::JsSource, |g| g.push(node));
+        self.with_context_override(Context::DatastarSource, |g| g.push(node));
     }
 
     pub fn hoist_ref_expr(&mut self, paren_token: Paren, expr: impl ToTokens) -> Ident {
@@ -546,7 +588,8 @@ enum Part {
 pub enum Context {
     Element,
     AttributeValue,
-    JsSource,
+    DatastarSource,
+    ScriptSource,
 }
 
 impl Context {
@@ -554,7 +597,8 @@ impl Context {
         let ident = match self {
             Self::Element => Ident::new("Element", Span::mixed_site()),
             Self::AttributeValue => Ident::new("AttributeValue", Span::mixed_site()),
-            Self::JsSource => Ident::new("JsSource", Span::mixed_site()),
+            Self::DatastarSource => Ident::new("DatastarSource", Span::mixed_site()),
+            Self::ScriptSource => Ident::new("ScriptSource", Span::mixed_site()),
         };
 
         quote!(::cheers::prelude::#ident)

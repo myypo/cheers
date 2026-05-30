@@ -2,10 +2,11 @@
 
 /// A marker trait to represent the context that the value is being rendered to.
 ///
-/// This can be [`Element`], [`AttributeValue`], or [`JsSource`]. [`Element`]
+/// This can be [`Element`], [`AttributeValue`], [`DatastarSource`], or [`ScriptSource`]. [`Element`]
 /// represents an HTML node, [`AttributeValue`] represents an attribute value
-/// which will eventually be surrounded by double quotes, and [`JsSource`] represents
-/// JavaScript source embedded inside a Datastar attribute value.
+/// which will eventually be surrounded by double quotes, and [`DatastarSource`] represents
+/// JavaScript source embedded inside a Datastar attribute value. [`ScriptSource`]
+/// represents JavaScript source embedded inside a `<script>` element.
 ///
 /// This is used to ensure that the correct rendering methods are called
 /// for each context, and to prevent errors such as accidentally rendering
@@ -42,15 +43,26 @@ impl Context for AttributeValue {}
 /// double-quoted HTML attribute, so implementations must ensure the output
 /// is valid JavaScript source and is also safe for HTML attribute parsing.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash)]
-pub struct JsSource;
+pub struct DatastarSource;
 
-impl Context for JsSource {}
+impl Context for DatastarSource {}
+
+/// A marker type to represent JavaScript source inside a `<script>` element.
+///
+/// Values rendered with this context are ultimately embedded directly into a
+/// script body, so implementations must ensure the output is valid JavaScript
+/// source and cannot terminate the surrounding `<script>` element.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash)]
+pub struct ScriptSource;
+
+impl Context for ScriptSource {}
 
 mod sealed {
-    use super::{AttributeValue, Element, JsSource};
+    use super::{AttributeValue, DatastarSource, Element, ScriptSource};
 
     pub trait Sealed {}
     impl Sealed for Element {}
     impl Sealed for AttributeValue {}
-    impl Sealed for JsSource {}
+    impl Sealed for DatastarSource {}
+    impl Sealed for ScriptSource {}
 }

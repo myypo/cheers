@@ -3,7 +3,7 @@ use std::borrow::Cow;
 use serde::Serialize;
 
 use crate::{
-    context::{Element, JsSource},
+    context::{DatastarSource, Element},
     reference::ElementId,
     render::{
         Buffer, Render, push_js_single_quoted_string_to_html_attribute,
@@ -64,7 +64,7 @@ fn push_custom_event_name_from_ident(dst: &mut String, ident: &str) {
 
 #[doc(hidden)]
 pub fn __render_custom_event_to_js<D: Serialize>(
-    buffer: &mut Buffer<JsSource>,
+    buffer: &mut Buffer<DatastarSource>,
     event_ident: &str,
     detail: Option<&D>,
     target: &EventTarget<'_>,
@@ -103,14 +103,14 @@ pub fn __render_custom_event_to_js<D: Serialize>(
 #[doc(hidden)]
 pub fn __render_custom_event_component<E>(event: &E, buffer: &mut Buffer<Element>)
 where
-    E: Render<JsSource>,
+    E: Render<DatastarSource>,
 {
     // XSS SAFETY: the static HTML is framework-generated. The event snippet renders into the
     // JavaScript-source context, which is safe for embedding in this double-quoted attribute.
     buffer
         .dangerously_get_string()
         .push_str("<script data-init=\"queueMicrotask(function(){");
-    event.render_to(buffer.as_js_buffer());
+    event.render_to(buffer.as_datastar_buffer());
     buffer
         .dangerously_get_string()
         .push_str(";el.remove()})\"></script>");

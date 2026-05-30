@@ -147,14 +147,18 @@ pub mod __internal {
 }
 
 pub mod macros {
-    pub use macros::{Cheers, action, attribute, html, js, scoped_signal, svg};
+    pub use macros::{
+        Cheers, action, attribute, datastar_source, html, js_script, scoped_signal, svg,
+    };
 }
 
 pub mod prelude {
-    pub use macros::{Cheers, action, attribute, html, js, scoped_signal, svg};
+    pub use macros::{
+        Cheers, action, attribute, datastar_source, html, js_script, scoped_signal, svg,
+    };
 
     pub use crate::{
-        context::{AttributeValue, Element, JsSource},
+        context::{AttributeValue, DatastarSource, Element, ScriptSource},
         custom_event::EventTarget,
         events::{
             Event, EventReceiver, EventSender, JsScript, PatchElements, PatchElementsMode,
@@ -162,12 +166,15 @@ pub mod prelude {
         },
         include_css, include_js_bundle, include_svg_sprite,
         reference::{ElementId, FormName, Signal},
-        render::{Buffer, Lazy, LazyAttribute, RawJs, Render, RenderExt as _},
+        render::{
+            Buffer, Lazy, LazyAttribute, LazyScript, RawDatastarSource, RawScript, Render,
+            RenderExt as _,
+        },
         response::AsyncLazy,
         router::{Action, ActionDef, ActionRouterExt as _},
         track::TrackAction,
     };
 }
 pub use custom_event::EventTarget;
-pub use render::{Raw, RawAttribute, RawJs, Rendered};
+pub use render::{Raw, RawAttribute, RawDatastarSource, RawScript, Rendered};
 pub use router::{Action, ActionDef, ActionRouterExt};

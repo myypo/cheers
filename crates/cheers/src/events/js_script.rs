@@ -1,6 +1,10 @@
 use axum::response::{IntoResponse, sse};
 
 use super::{DATASTAR_PATCH_ELEMENTS, Event, sanitize_axum_sse_data};
+use crate::{
+    context::ScriptSource,
+    render::{Buffer, Lazy, Render},
+};
 
 /// A JavaScript snippet sent to the client for execution.
 pub struct JsScript {
@@ -9,8 +13,28 @@ pub struct JsScript {
 }
 
 impl JsScript {
-    /// Creates a new script payload.
-    pub fn new(script: impl AsRef<str>) -> Self {
+    /// Creates a new script payload from safely rendered `<script>` source.
+    pub fn new<F>(script: Lazy<F, ScriptSource>) -> Self
+    where
+        F: Fn(&mut Buffer<ScriptSource>),
+    {
+        let mut buffer = Buffer::<ScriptSource>::new();
+        script.render_to(&mut buffer);
+        Self {
+            js: buffer.rendered().into_inner(),
+            persist: false,
+        }
+    }
+
+    /// Creates a new script payload from raw JavaScript source.
+    ///
+    /// Prefer [`JsScript::new`] with `js_script!` when interpolating dynamic values.
+    ///
+    /// # Safety
+    ///
+    /// `script` must already be valid JavaScript source for a `<script>` body and must not allow
+    /// untrusted input to break out of the script context.
+    pub fn dangerously_from_string(script: impl AsRef<str>) -> Self {
         Self {
             js: script.as_ref().to_owned(),
             persist: false,
@@ -62,7 +86,7 @@ impl IntoResponse for JsScript {
 
 #[cfg(test)]
 mod tests {
-    use macros::Cheers;
+    use macros::{Cheers, js_script};
 
     use super::{super::read_sse_body, *};
     use crate::{
@@ -74,7 +98,7 @@ mod tests {
     async fn works_with_into_response() {
         let s = "console.log('yo')".to_owned();
 
-        let script = JsScript::new("console.log('yo')");
+        let script = JsScript::dangerously_from_string("console.log('yo')");
         let rx = script.into_response();
 
         let headers = rx.headers();
@@ -93,7 +117,7 @@ mod tests {
     async fn enclosed_in_script_tags_in_sse() {
         let s = r#"history.pushState({}, "", "456");"#.to_owned();
 
-        let script = JsScript::new(r#"history.pushState({}, "", "456");"#);
+        let script = JsScript::dangerously_from_string(r#"history.pushState({}, "", "456");"#);
         let body = read_sse_body(script).await;
         assert_eq!(
             body,
@@ -107,7 +131,8 @@ mod tests {
     async fn respects_persist_in_sse() {
         let s = r#"history.pushState({}, "", "456");"#.to_owned();
 
-        let script = JsScript::new(r#"history.pushState({}, "", "456");"#).persist();
+        let script =
+            JsScript::dangerously_from_string(r#"history.pushState({}, "", "456");"#).persist();
         let body = read_sse_body(script).await;
         assert_eq!(
             body,
@@ -119,12 +144,28 @@ mod tests {
 
     #[tokio::test]
     async fn works_with_multiline_scripts_in_sse() {
-        let script = JsScript::new("console.log('hi');\nconsole.log('there');");
+        let script = JsScript::dangerously_from_string("console.log('hi');\nconsole.log('there');");
 
         let body = read_sse_body(script).await;
         assert_eq!(
             body,
             "event: datastar-patch-elements\ndata: mode append\ndata: selector body\ndata: elements <script data-init=\"el.remove()\">console.log('hi');\ndata: elements console.log('there');</script>\n\n"
+        );
+    }
+
+    #[tokio::test]
+    async fn new_renders_script_source() {
+        let url = "</script><img>";
+        let script = JsScript::new(js_script! {
+            "window.location.assign("
+            url
+            ");"
+        });
+
+        let body = read_sse_body(script).await;
+        assert_eq!(
+            body,
+            "event: datastar-patch-elements\ndata: mode append\ndata: selector body\ndata: elements <script data-init=\"el.remove()\">window.location.assign('\\x3C/script>\\x3Cimg>');</script>\n\n"
         );
     }
 

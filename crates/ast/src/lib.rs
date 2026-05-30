@@ -40,25 +40,53 @@ pub trait SyntaxStatic {
     fn is_static(&self) -> bool;
 }
 
-pub struct JsSourceNodes(pub Nodes<AttributeValueNode>);
+pub struct DatastarSourceNodes(pub Nodes<AttributeValueNode>);
 
-impl Parse for JsSourceNodes {
+pub struct ScriptSourceNodes(pub Nodes<AttributeValueNode>);
+
+impl Parse for DatastarSourceNodes {
     fn parse(input: ParseStream) -> syn::Result<Self> {
         input.parse().map(Self)
     }
 }
 
-impl SyntaxStatic for JsSourceNodes {
+impl SyntaxStatic for DatastarSourceNodes {
     fn is_static(&self) -> bool {
         self.0.is_static()
     }
 }
 
-impl Generate for JsSourceNodes {
-    const CONTEXT: Context = Context::JsSource;
+impl Generate for DatastarSourceNodes {
+    const CONTEXT: Context = Context::DatastarSource;
 
     fn generate(&mut self, g: &mut Generator<'_>) {
-        g.with_context_override(Context::JsSource, |g| {
+        g.with_context_override(Context::DatastarSource, |g| {
+            if self.0.0.iter().any(Node::is_control) {
+                g.push_in_block(Brace::default(), |g| g.push_all(&mut self.0.0));
+            } else {
+                g.push_all(&mut self.0.0);
+            }
+        });
+    }
+}
+
+impl Parse for ScriptSourceNodes {
+    fn parse(input: ParseStream) -> syn::Result<Self> {
+        input.parse().map(Self)
+    }
+}
+
+impl SyntaxStatic for ScriptSourceNodes {
+    fn is_static(&self) -> bool {
+        self.0.is_static()
+    }
+}
+
+impl Generate for ScriptSourceNodes {
+    const CONTEXT: Context = Context::ScriptSource;
+
+    fn generate(&mut self, g: &mut Generator<'_>) {
+        g.with_context_override(Context::ScriptSource, |g| {
             if self.0.0.iter().any(Node::is_control) {
                 g.push_in_block(Brace::default(), |g| g.push_all(&mut self.0.0));
             } else {
@@ -1252,7 +1280,7 @@ impl Generate for Data {
                     }
 
                     let buffer_ident = Generator::buffer_ident();
-                    let buffer_expr = quote!(#buffer_ident.as_js_buffer());
+                    let buffer_expr = quote!(#buffer_ident.as_datastar_buffer());
 
                     let ident_ref = d.ident.borrowed_expr(g);
                     let expr = &d.value;
@@ -1303,7 +1331,7 @@ impl Generate for Data {
                     g.push_str("{");
 
                     let buffer_ident = Generator::buffer_ident();
-                    let buffer_expr = quote!(#buffer_ident.as_js_buffer());
+                    let buffer_expr = quote!(#buffer_ident.as_datastar_buffer());
                     let ident_ref = d.ident.borrowed_expr(g);
                     g.push_stmt(quote! {
                         let count = ::cheers::prelude::Signal::__computed_open(
