@@ -55,9 +55,7 @@ interface BrowserIterateEvent {
   page?: {
     url?: string;
     title?: string;
-    viewport?: { width?: number; height?: number };
   };
-  click?: { clientX?: number; clientY?: number };
   target?: {
     tag?: string;
     id?: string;
@@ -67,7 +65,6 @@ interface BrowserIterateEvent {
     text?: string;
     accessibleName?: string;
     selector?: string;
-    rect?: { x?: number; y?: number; width?: number; height?: number };
     input?: {
       type?: string;
       name?: string;
@@ -78,7 +75,6 @@ interface BrowserIterateEvent {
     };
     labels?: string[];
     aria?: Record<string, string>;
-    nearestHeading?: { tag?: string; text?: string; selector?: string };
     landmark?: {
       tag?: string;
       role?: string;
@@ -89,19 +85,22 @@ interface BrowserIterateEvent {
     form?: {
       action?: string;
       method?: string;
+      formAction?: string;
+      formMethod?: string;
       selector?: string;
       fields?: string[];
       submitText?: string[];
+      submitter?: {
+        selector?: string;
+        action?: string;
+        method?: string;
+      };
     };
-    nearbyText?: string;
     htmlExcerpt?: string;
-    ancestorExcerpt?: string;
   };
   cheers?: {
     source?: string;
     generatedId?: string;
-    formAction?: string;
-    formMethod?: string;
     datastar?: Record<string, string>;
     datastarContext?: Array<{
       tag?: string;
@@ -197,7 +196,7 @@ function parseRustSourceLocation(
   if (!text) return undefined;
 
   const match = /^(.*):(\d+):(\d+)$/.exec(text);
-  if (!match || !match[1]) return undefined;
+  if (!match?.[1]) return undefined;
 
   const line = Number(match[2]);
   const column = Number(match[3]);
@@ -358,39 +357,7 @@ function formatAgentMessage(
     lines.push(`- ARIA attrs: ${json(event.target.aria)}`);
   }
 
-  if (event.target?.rect) {
-    const { x, y, width, height } = event.target.rect;
-    const parts = [
-      numberLine(x) ? `x=${numberLine(x)}` : undefined,
-      numberLine(y) ? `y=${numberLine(y)}` : undefined,
-      numberLine(width) ? `w=${numberLine(width)}` : undefined,
-      numberLine(height) ? `h=${numberLine(height)}` : undefined,
-    ].filter(Boolean);
-    if (parts.length) lines.push(`- Rect: ${parts.join(" ")}`);
-  }
-
-  if (event.click) {
-    const x = numberLine(event.click.clientX);
-    const y = numberLine(event.click.clientY);
-    if (x && y) lines.push(`- Click: x=${x} y=${y}`);
-  }
-
-  if (event.page?.viewport) {
-    const width = numberLine(event.page.viewport.width);
-    const height = numberLine(event.page.viewport.height);
-    if (width && height) lines.push(`- Viewport: ${width}x${height}`);
-  }
-
   const domLines: string[] = [];
-  if (event.target?.nearestHeading) {
-    const heading = [
-      event.target.nearestHeading.tag,
-      event.target.nearestHeading.text,
-    ]
-      .filter(Boolean)
-      .join(" ");
-    pushField(domLines, "Nearest heading", heading);
-  }
   if (event.target?.landmark) {
     const landmark = [
       event.target.landmark.tag,
@@ -412,6 +379,25 @@ function formatAgentMessage(
     pushField(domLines, "Form selector", event.target.form.selector);
     pushField(domLines, "Form action", event.target.form.action);
     pushField(domLines, "Form method", event.target.form.method);
+    pushField(domLines, "Base form action", event.target.form.formAction);
+    pushField(domLines, "Base form method", event.target.form.formMethod);
+    if (event.target.form.submitter) {
+      pushField(
+        domLines,
+        "Submitter selector",
+        event.target.form.submitter.selector,
+      );
+      pushField(
+        domLines,
+        "Submitter action",
+        event.target.form.submitter.action,
+      );
+      pushField(
+        domLines,
+        "Submitter method",
+        event.target.form.submitter.method,
+      );
+    }
     if (event.target.form.fields?.length)
       domLines.push(`- Form fields: ${event.target.form.fields.join(" | ")}`);
     if (event.target.form.submitText?.length)
@@ -419,7 +405,6 @@ function formatAgentMessage(
         `- Form submit buttons: ${event.target.form.submitText.join(" | ")}`,
       );
   }
-  pushField(domLines, "Nearby text", event.target?.nearbyText);
   if (domLines.length) {
     lines.push("", "DOM context:", ...domLines);
   }
@@ -427,8 +412,6 @@ function formatAgentMessage(
   const cheersLines: string[] = [];
   if (!rustSource) pushField(cheersLines, "Source hint", sourceHint);
   pushField(cheersLines, "Generated/nearest id", event.cheers?.generatedId);
-  pushField(cheersLines, "Form action", event.cheers?.formAction);
-  pushField(cheersLines, "Form method", event.cheers?.formMethod);
   if (event.cheers?.datastar && Object.keys(event.cheers.datastar).length) {
     cheersLines.push(`- Datastar/data attrs: ${json(event.cheers.datastar)}`);
   }
@@ -451,10 +434,6 @@ function formatAgentMessage(
   }
 
   lines.push("", ...fenced("Target DOM excerpt", event.target?.htmlExcerpt));
-  lines.push(
-    "",
-    ...fenced("Nearest useful ancestor excerpt", event.target?.ancestorExcerpt),
-  );
   lines.push(
     "",
     "Treat the browser location as a hint, not authority. Inspect the Cheers code before editing. Use the normal skill-selection rules: load cheers for Cheers code work, and load cheers-design only if this requires UI/UX design judgment.",
@@ -867,10 +846,6 @@ const CLIENT_SCRIPT_TEMPLATE = String.raw`(() => {
     return node ? node.id || undefined : undefined;
   }
 
-  function usefulAncestor(element) {
-    return element && element.closest && element.closest("form,main,section,article,aside,nav,header,footer,dialog,[role]");
-  }
-
   function pickTarget(element) {
     return element && element.closest && (
       element.closest("button,a,input,select,textarea,label,form,[role],[id]") ||
@@ -954,39 +929,34 @@ const CLIENT_SCRIPT_TEMPLATE = String.raw`(() => {
     return Object.keys(result).length ? result : undefined;
   }
 
-  const HEADING_SELECTOR = "h1,h2,h3,h4,h5,h6";
-
-  function lastHeadingWithin(element) {
-    if (!element || element.nodeType !== 1) return undefined;
-    if (element.matches && element.matches(HEADING_SELECTOR)) return element;
-    const headings = element.querySelectorAll ? element.querySelectorAll(HEADING_SELECTOR) : [];
-    return headings.length ? headings[headings.length - 1] : undefined;
+  function submitterFor(element) {
+    const control = element && element.closest && element.closest("button,input");
+    if (!control) return undefined;
+    if (control.localName === "button") {
+      const type = (control.type || attrValue(control, "type") || "submit").toLowerCase();
+      return !type || type === "submit" ? control : undefined;
+    }
+    const type = (control.type || attrValue(control, "type") || "text").toLowerCase();
+    return type === "submit" || type === "image" ? control : undefined;
   }
+
+  function submitterAction(submitter) {
+    if (!submitter || !submitter.hasAttribute || !submitter.hasAttribute("formaction")) return undefined;
+    return attrValue(submitter, "formaction") || submitter.formAction || window.location.href;
+  }
+
+  function submitterMethod(submitter) {
+    if (!submitter || !submitter.hasAttribute || !submitter.hasAttribute("formmethod")) return undefined;
+    return (submitter.formMethod || attrValue(submitter, "formmethod") || "get").toLowerCase();
+  }
+
+  const HEADING_SELECTOR = "h1,h2,h3,h4,h5,h6";
 
   function firstHeadingWithin(element) {
     if (!element || element.nodeType !== 1) return undefined;
     if (element.matches && element.matches(HEADING_SELECTOR)) return element;
     const headings = element.querySelectorAll ? element.querySelectorAll(HEADING_SELECTOR) : [];
     return headings.length ? headings[0] : undefined;
-  }
-
-  function headingSummary(heading) {
-    return heading ? { tag: heading.localName, text: textOf(heading), selector: selectorFor(heading) } : undefined;
-  }
-
-  function nearestHeading(element) {
-    let node = element;
-    while (node && node.nodeType === 1 && node !== document.body) {
-      let previous = node.previousElementSibling;
-      while (previous) {
-        const heading = lastHeadingWithin(previous);
-        if (heading) return headingSummary(heading);
-        previous = previous.previousElementSibling;
-      }
-      if (node.matches && node.matches(HEADING_SELECTOR)) return headingSummary(node);
-      node = node.parentElement;
-    }
-    return headingSummary(firstHeadingWithin(document.body));
   }
 
   function landmarkContext(element) {
@@ -1002,7 +972,7 @@ const CLIENT_SCRIPT_TEMPLATE = String.raw`(() => {
     };
   }
 
-  function formContext(form) {
+  function formContext(form, submitter) {
     if (!form) return undefined;
     const fields = Array.from(form.elements || []).map(function(field) {
       const labels = labelTexts(field);
@@ -1017,13 +987,29 @@ const CLIENT_SCRIPT_TEMPLATE = String.raw`(() => {
     const submitText = Array.from(form.querySelectorAll("button,input[type=submit],input[type=button]")).map(function(button) {
       return textOf(button) || attrValue(button, "value") || attrValue(button, "aria-label");
     });
+    const formAction = attrValue(form, "action") || form.action || undefined;
+    const formMethod = (form.method || attrValue(form, "method") || "get").toLowerCase();
+    const overrideAction = submitterAction(submitter);
+    const overrideMethod = submitterMethod(submitter);
     const result = {
-      action: attrValue(form, "action") || form.action || undefined,
-      method: (attrValue(form, "method") || form.method || "get").toLowerCase(),
+      action: overrideAction || formAction,
+      method: overrideMethod || formMethod,
       selector: selectorFor(form),
       fields: uniqueNonEmpty(fields, 20),
       submitText: uniqueNonEmpty(submitText, 8)
     };
+    if (overrideAction || overrideMethod) {
+      result.submitter = {
+        selector: selectorFor(submitter),
+        action: overrideAction,
+        method: overrideMethod
+      };
+      Object.keys(result.submitter).forEach(function(key) {
+        if (result.submitter[key] === undefined || result.submitter[key] === "") delete result.submitter[key];
+      });
+      result.formAction = formAction;
+      result.formMethod = formMethod;
+    }
     if (!result.fields.length) delete result.fields;
     if (!result.submitText.length) delete result.submitText;
     return result;
@@ -1045,25 +1031,32 @@ const CLIENT_SCRIPT_TEMPLATE = String.raw`(() => {
     return entries;
   }
 
-  function collectContext(target, event) {
-    const rect = target.getBoundingClientRect();
-    const form = target.closest && target.closest("form");
-    const ancestor = usefulAncestor(target);
+  function sanitizedOuterHtml(element) {
+    const clone = element.cloneNode(true);
+    if (clone.nodeType === 1) clone.removeAttribute("data-cheers-source");
+    if (clone.querySelectorAll) {
+      clone.querySelectorAll("[data-cheers-source]").forEach(function(node) {
+        node.removeAttribute("data-cheers-source");
+      });
+    }
+    return clone.outerHTML;
+  }
+
+  function collectContext(target) {
+    const submitter = submitterFor(target);
+    const form = (submitter && submitter.form) || (target.closest && target.closest("form"));
     const datastarAttrs = attrsInAncestry(target, isDatastarAttr, 30);
     const datastarEntries = datastarContext(target);
     const labels = labelTexts(target);
     const aria = ariaAttributes(target);
     const input = inputContext(target);
-    const heading = nearestHeading(target);
     const landmark = landmarkContext(target);
-    const formDetails = formContext(form);
+    const formDetails = formContext(form, submitter);
     return {
       page: {
         url: window.location.href,
-        title: document.title,
-        viewport: { width: window.innerWidth, height: window.innerHeight }
+        title: document.title
       },
-      click: { clientX: event.clientX, clientY: event.clientY },
       target: {
         tag: target.localName,
         id: target.id || undefined,
@@ -1073,22 +1066,16 @@ const CLIENT_SCRIPT_TEMPLATE = String.raw`(() => {
         text: textOf(target),
         accessibleName: target.getAttribute("aria-label") || target.getAttribute("title") || labels[0] || textOf(target),
         selector: selectorFor(target),
-        rect: { x: rect.x, y: rect.y, width: rect.width, height: rect.height },
         input: input,
         labels: labels.length ? labels : undefined,
         aria: Object.keys(aria).length ? aria : undefined,
-        nearestHeading: heading,
         landmark: landmark,
         form: formDetails,
-        nearbyText: ancestor ? truncate(textOf(ancestor), 1000) : undefined,
-        htmlExcerpt: truncate(target.outerHTML, 4000),
-        ancestorExcerpt: ancestor ? truncate(ancestor.outerHTML, 6000) : undefined
+        htmlExcerpt: truncate(sanitizedOuterHtml(target), 2000)
       },
       cheers: {
         source: nearestAttr(target, "data-cheers-source"),
         generatedId: target.id || nearestId(target),
-        formAction: target.getAttribute("formaction") || (form ? form.getAttribute("action") || undefined : undefined),
-        formMethod: target.getAttribute("formmethod") || (form ? form.getAttribute("method") || "get" : undefined),
         datastar: Object.keys(datastarAttrs).length ? datastarAttrs : undefined,
         datastarContext: datastarEntries.length ? datastarEntries : undefined
       }
@@ -1112,7 +1099,7 @@ const CLIENT_SCRIPT_TEMPLATE = String.raw`(() => {
       headers: { "content-type": "application/json" },
       body: JSON.stringify(eventPayload(context, prompt))
     });
-    const body = await response.json().catch(function() { return {}; });
+    const body = await response.json();
     if (!response.ok || !body.ok) {
       throw new Error(body.error || ("HTTP " + response.status));
     }
@@ -1143,7 +1130,6 @@ const CLIENT_SCRIPT_TEMPLATE = String.raw`(() => {
     appendSummaryRow(summary, "Target", displayTarget(context));
     appendSummaryRow(summary, "Source", context.cheers && context.cheers.source);
     appendSummaryRow(summary, "ID", context.cheers && context.cheers.generatedId);
-    appendSummaryRow(summary, "Heading", context.target && context.target.nearestHeading && context.target.nearestHeading.text);
     appendSummaryRow(summary, "Labels", context.target && context.target.labels && context.target.labels.join(" | "));
     appendSummaryRow(summary, "Form", context.target && context.target.form && [context.target.form.method, context.target.form.action || context.target.form.selector].filter(Boolean).join(" "));
     if (context.cheers && context.cheers.datastarContext && context.cheers.datastarContext.length) {
@@ -1160,7 +1146,7 @@ const CLIENT_SCRIPT_TEMPLATE = String.raw`(() => {
     document.querySelectorAll("[" + SELECTED_ATTR + "]").forEach(function(node) {
       node.removeAttribute(SELECTED_ATTR);
     });
-    const context = collectContext(target, event);
+    const context = collectContext(target);
     target.setAttribute(SELECTED_ATTR, "");
 
     const panel = document.createElement("div");
