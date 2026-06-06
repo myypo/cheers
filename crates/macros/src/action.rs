@@ -244,10 +244,8 @@ pub fn generate(args: ActionArgs, item: &mut MaybeItemFn) -> Result<TokenStream,
     };
 
     let method_ident = &args.method;
-    let method_name = LitStr::new(
-        &method_ident.to_string().to_lowercase(),
-        method_ident.span(),
-    );
+    let method_string = method_ident.to_string();
+    let method_name = LitStr::new(&method_string.to_lowercase(), method_ident.span());
     let static_path = LitStr::new(&static_part_path_str(ident), ident.span());
     let path_renders_js: Vec<_> = field_args
         .path
@@ -255,7 +253,7 @@ pub fn generate(args: ActionArgs, item: &mut MaybeItemFn) -> Result<TokenStream,
         .map(|(i, _)| {
             quote! {
                 __cheers_action_path.push('/');
-                __cheers_action_path.push_str(&::std::string::ToString::to_string(&self.#i));
+                ::cheers::__internal::__push_url_path_segment(&mut __cheers_action_path, &self.#i);
             }
         })
         .collect();
@@ -300,6 +298,18 @@ pub fn generate(args: ActionArgs, item: &mut MaybeItemFn) -> Result<TokenStream,
         }
     };
     let method = quote! { ::cheers::__internal::axum::http::Method::#method_ident };
+    let action_route = quote! {
+        ::cheers::__internal::axum::routing::on(#method.try_into().expect("turn method to method filter for action"), #ident)
+    };
+    let action_route = if matches!(method_string.as_str(), "POST" | "PUT" | "PATCH" | "DELETE") {
+        quote! {
+            #action_route.route_layer(::cheers::__internal::axum::middleware::from_fn(
+                ::cheers::__internal::__require_same_origin_action,
+            ))
+        }
+    } else {
+        action_route
+    };
 
     Ok(quote! {
         #item
@@ -321,7 +331,7 @@ pub fn generate(args: ActionArgs, item: &mut MaybeItemFn) -> Result<TokenStream,
 
         impl #register_impl_generics ::cheers::router::Action<#router_state, #handler_state> for #struct_name #ty_generics #register_where_clause {
             fn register(router: ::cheers::__internal::axum::Router<#router_state>) -> ::cheers::__internal::axum::Router<#router_state> {
-                router.route(#path, ::cheers::__internal::axum::routing::on(#method.try_into().expect("turn method to method filter for action"), #ident))
+                router.route(#path, #action_route)
             }
         }
     })

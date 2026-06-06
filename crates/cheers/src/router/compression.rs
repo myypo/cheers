@@ -101,6 +101,7 @@ pub async fn compression_middleware(req: Request<Body>, next: Next) -> axum::res
         header::CONTENT_ENCODING,
         HeaderValue::from_static(encoding.as_str()),
     );
+    append_vary_accept_encoding(&mut parts.headers);
     parts.headers.remove(header::CONTENT_LENGTH);
 
     axum::response::Response::from_parts(
@@ -113,6 +114,18 @@ fn should_compress(res: &axum::response::Response) -> bool {
     let headers = res.headers();
 
     if headers.contains_key(header::CONTENT_ENCODING) {
+        return false;
+    }
+
+    if headers
+        .get(header::CACHE_CONTROL)
+        .and_then(|value| value.to_str().ok())
+        .is_some_and(|value| {
+            value
+                .split(',')
+                .any(|directive| directive.trim().eq_ignore_ascii_case("no-transform"))
+        })
+    {
         return false;
     }
 
@@ -144,4 +157,97 @@ fn should_compress(res: &axum::response::Response) -> bool {
                 | "font/eot"
                 | "application/vnd.ms-fontobject"
         )
+}
+
+fn append_vary_accept_encoding(headers: &mut axum::http::HeaderMap) {
+    let already_varies = headers
+        .get_all(header::VARY)
+        .iter()
+        .filter_map(|value| value.to_str().ok())
+        .flat_map(|value| value.split(','))
+        .map(str::trim)
+        .any(|value| value == "*" || value.eq_ignore_ascii_case("accept-encoding"));
+
+    if !already_varies {
+        headers.append(header::VARY, HeaderValue::from_static("Accept-Encoding"));
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use axum::{
+        Router,
+        body::Body,
+        http::{HeaderMap, Request},
+        routing::get,
+    };
+    use tower::ServiceExt;
+
+    use super::*;
+
+    #[tokio::test]
+    async fn security_repro_compressed_responses_vary_on_accept_encoding() {
+        let app = Router::new()
+            .route(
+                "/",
+                get(async || ([(header::CONTENT_TYPE, "text/plain")], "hello")),
+            )
+            .layer(axum::middleware::from_fn(compression_middleware));
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .uri("/")
+                    .header(header::ACCEPT_ENCODING, "gzip")
+                    .body(Body::empty())
+                    .expect("request should build"),
+            )
+            .await
+            .expect("router should respond");
+
+        assert_eq!(
+            response
+                .headers()
+                .get(header::CONTENT_ENCODING)
+                .and_then(|value| value.to_str().ok()),
+            Some("gzip")
+        );
+
+        let vary = response
+            .headers()
+            .get(header::VARY)
+            .and_then(|value| value.to_str().ok())
+            .unwrap_or_default();
+        assert!(
+            vary.split(',')
+                .any(|value| value.trim().eq_ignore_ascii_case("accept-encoding")),
+            "compressed responses must set `Vary: Accept-Encoding`; got {vary:?}"
+        );
+    }
+
+    #[test]
+    fn append_vary_accept_encoding_preserves_existing_values() {
+        let mut headers = HeaderMap::new();
+        headers.append(header::VARY, HeaderValue::from_static("Origin"));
+
+        append_vary_accept_encoding(&mut headers);
+
+        let values = headers
+            .get_all(header::VARY)
+            .iter()
+            .map(|value| value.to_str().expect("vary value should be valid"))
+            .collect::<Vec<_>>();
+        assert_eq!(values, vec!["Origin", "Accept-Encoding"]);
+    }
+
+    #[test]
+    fn append_vary_accept_encoding_does_not_duplicate_existing_values() {
+        let mut headers = HeaderMap::new();
+        headers.append(header::VARY, HeaderValue::from_static("Origin"));
+        headers.append(header::VARY, HeaderValue::from_static("accept-encoding"));
+
+        append_vary_accept_encoding(&mut headers);
+
+        assert_eq!(headers.get_all(header::VARY).iter().count(), 2);
+    }
 }

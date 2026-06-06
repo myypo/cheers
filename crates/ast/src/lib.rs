@@ -1310,11 +1310,15 @@ impl Generate for Data {
 
                     match d.ident.mode {
                         ParenExprMode::Normal => {
-                            g.push_expr(d.ident.paren_token(), Self::CONTEXT, &d.ident.expr);
+                            g.push_expr(
+                                d.ident.paren_token(),
+                                Context::DatastarSource,
+                                &d.ident.expr,
+                            );
                         }
                         ParenExprMode::Ref => {
                             let ident_ref = d.ident.borrowed_expr(g);
-                            g.push_expr(Paren::default(), Self::CONTEXT, ident_ref);
+                            g.push_expr(Paren::default(), Context::DatastarSource, ident_ref);
                         }
                     }
                     g.push_str(":");

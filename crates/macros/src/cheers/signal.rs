@@ -1,7 +1,7 @@
 use std::collections::BTreeSet;
 
 use proc_macro2::TokenStream;
-use quote::quote;
+use quote::{ToTokens, quote};
 use syn::{
     Attribute, Error, GenericParam, Ident, ItemStruct, LitStr, Meta, Token, Type,
     parse::{Parse, ParseStream},
@@ -99,6 +99,17 @@ struct SignalSpec {
 
 fn signal_method_ident(name: &Ident) -> Ident {
     Ident::new(&format!("signal_{}", name), name.span())
+}
+
+fn validate_signal_path_segment(segment: &str, span: impl ToTokens) -> Result<(), Error> {
+    if segment == "__proto__" {
+        Err(Error::new_spanned(
+            span,
+            "signal path segment `__proto__` is not supported",
+        ))
+    } else {
+        Ok(())
+    }
 }
 
 fn generic_param_to_arg(param: &GenericParam) -> TokenStream {
@@ -241,6 +252,13 @@ pub(crate) fn generate_signal_impl(
         return Ok(TokenStream::new());
     }
 
+    for spec in &specs {
+        validate_signal_path_segment(&spec.name.to_string(), &spec.name)?;
+    }
+    if specs.iter().any(|spec| spec.scope == SignalScope::Global) {
+        validate_signal_path_segment(&struct_snake_case, &item.ident)?;
+    }
+
     let vis = &item.vis;
     let struct_ident = &item.ident;
 
@@ -292,7 +310,7 @@ pub(crate) fn generate_signal_impl(
                     &mut __cheers_signal_path,
                     #signal_root,
                 );
-                ::cheers::__internal::__push_signal_path_segment(
+                ::cheers::__internal::__push_signal_path_dynamic_segment(
                     &mut __cheers_signal_path,
                     &#id_ident,
                 );

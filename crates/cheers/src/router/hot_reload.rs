@@ -5,10 +5,13 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use axum::Json;
 use axum::{
-    Router,
+    Json, Router,
+    body::Body,
     extract::ws::{Message, WebSocket, WebSocketUpgrade},
+    http::{HeaderMap, StatusCode, header},
+    middleware::Next,
+    response::{IntoResponse, Response},
     routing::{get, post},
 };
 use serde::Deserialize;
@@ -154,6 +157,71 @@ fn event_may_add_watchable_directory(event: &notify::Event) -> bool {
     ) && event.paths.iter().any(|path| path.is_dir())
 }
 
+fn request_host_authority(headers: &HeaderMap) -> Option<&str> {
+    let host = headers.get(header::HOST)?.to_str().ok()?.trim();
+
+    if host.is_empty()
+        || host.contains('/')
+        || host.contains('?')
+        || host.contains('#')
+        || host.contains('@')
+    {
+        return None;
+    }
+
+    Some(host)
+}
+
+fn authority_host(authority: &str) -> Option<&str> {
+    if let Some(rest) = authority.strip_prefix('[') {
+        let (host, rest) = rest.split_once(']')?;
+        if rest.is_empty() {
+            return Some(host);
+        }
+        let port = rest.strip_prefix(':')?;
+        if port.is_empty() || !port.chars().all(|ch| ch.is_ascii_digit()) {
+            return None;
+        }
+        return Some(host);
+    }
+
+    if authority.contains(['[', ']']) || authority.matches(':').count() > 1 {
+        return None;
+    }
+
+    if let Some((host, port)) = authority.rsplit_once(':') {
+        if host.is_empty() || port.is_empty() || !port.chars().all(|ch| ch.is_ascii_digit()) {
+            return None;
+        }
+        return Some(host);
+    }
+
+    Some(authority)
+}
+
+fn is_loopback_host(host: &str) -> bool {
+    if host.eq_ignore_ascii_case("localhost") || host.eq_ignore_ascii_case("localhost.") {
+        return true;
+    }
+
+    host.parse::<std::net::IpAddr>()
+        .is_ok_and(|addr| addr.is_loopback())
+}
+
+fn local_debug_host(headers: &HeaderMap) -> bool {
+    request_host_authority(headers)
+        .and_then(authority_host)
+        .is_some_and(is_loopback_host)
+}
+
+async fn require_local_debug_host(req: axum::http::Request<Body>, next: Next) -> Response {
+    if !local_debug_host(req.headers()) {
+        return StatusCode::FORBIDDEN.into_response();
+    }
+
+    next.run(req).await
+}
+
 pub fn router<S>() -> Router<S>
 where
     S: Clone + Send + Sync + 'static,
@@ -171,11 +239,13 @@ where
 
     let router = Router::new().route("/live-reload", get(handler));
 
-    if crate::subsecond::enabled() {
+    let router = if crate::subsecond::enabled() {
         router.route("/async-islands/render", post(render_async_islands))
     } else {
         router
-    }
+    };
+
+    router.layer(axum::middleware::from_fn(require_local_debug_host))
 }
 
 async fn render_async_islands(
@@ -288,4 +358,54 @@ async fn send_message(
 ) -> Result<(), axum::Error> {
     let text = serde_json::to_string(&message).expect("live-reload message should serialize");
     socket.send(Message::Text(text.into())).await
+}
+
+#[cfg(test)]
+mod tests {
+    use axum::http::{HeaderMap, HeaderValue, Request};
+    use tower::ServiceExt;
+
+    use super::*;
+
+    fn headers(host: &'static str) -> HeaderMap {
+        let mut headers = HeaderMap::new();
+        headers.insert(header::HOST, HeaderValue::from_static(host));
+        headers
+    }
+
+    #[test]
+    fn local_debug_host_allows_loopback_ipv4() {
+        assert!(local_debug_host(&headers("127.0.0.1:8080")));
+    }
+
+    #[test]
+    fn local_debug_host_allows_loopback_ipv6() {
+        assert!(local_debug_host(&headers("[::1]:8080")));
+    }
+
+    #[test]
+    fn local_debug_host_allows_localhost() {
+        assert!(local_debug_host(&headers("localhost:8080")));
+    }
+
+    #[test]
+    fn local_debug_host_rejects_dns_rebinding_hostnames() {
+        assert!(!local_debug_host(&headers("evil.example:8080")));
+    }
+
+    #[tokio::test]
+    async fn router_rejects_non_local_live_reload_hosts_by_default() {
+        let response = router::<()>()
+            .oneshot(
+                Request::builder()
+                    .uri("/live-reload")
+                    .header(header::HOST, "evil.example:8080")
+                    .body(Body::empty())
+                    .expect("request should build"),
+            )
+            .await
+            .expect("router should respond");
+
+        assert_eq!(response.status(), StatusCode::FORBIDDEN);
+    }
 }

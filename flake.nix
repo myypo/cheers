@@ -437,6 +437,7 @@
                   lockFile = ./Cargo.lock;
                   outputHashes = {
                     "selenium-manager-0.4.36" = "sha256-MQX14lk6X/ShAnqRe6GGkC+SnOO2J2x43wFi2uB7uRc=";
+                    "time-0.3.47" = "sha256-QF336Oy9P8Z9FGqD94PsBidLOk8eH0Z4Rht4qsRLgfk=";
                   };
                 };
               };
@@ -452,7 +453,13 @@
             src = ./.;
             cargoBuildFlags = [ "-p=cargo-cheers" ];
 
-            cargoHash = "sha256-E96u4sqYd871qqZiNMq9YJxFnQ3W+2l6gkw9r4O9ytU=";
+            cargoLock = {
+              lockFile = ./Cargo.lock;
+              outputHashes = {
+                "selenium-manager-0.4.36" = "sha256-MQX14lk6X/ShAnqRe6GGkC+SnOO2J2x43wFi2uB7uRc=";
+                "time-0.3.47" = "sha256-QF336Oy9P8Z9FGqD94PsBidLOk8eH0Z4Rht4qsRLgfk=";
+              };
+            };
 
             doCheck = false;
           };

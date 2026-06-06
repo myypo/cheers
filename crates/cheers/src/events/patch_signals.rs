@@ -3,7 +3,7 @@ use serde::Serialize;
 use serde_json::{Map, Value};
 
 use super::{DATASTAR_PATCH_SIGNALS, Error, Event, sanitize_axum_sse_data};
-use crate::{reference::Signal, signal_path::parse_signal_path};
+use crate::{reference::Signal, signal_path::try_parse_signal_path};
 
 /// A signal patch command that merges JSON values into the client-side signal store.
 ///
@@ -32,8 +32,7 @@ use crate::{reference::Signal, signal_path::parse_signal_path};
 /// # tokio::runtime::Runtime::new().unwrap().block_on(async {
 /// use axum::{body::to_bytes, response::IntoResponse};
 ///
-/// let patch = PatchSignals::new()
-///     .set(Project::signal_name(1), "Website Redesign".to_owned());
+/// let patch = PatchSignals::new().set(Project::signal_name(1), "Website Redesign".to_owned());
 ///
 /// let response = patch.into_response();
 /// let body = String::from_utf8(
@@ -83,10 +82,10 @@ impl PatchSignals {
         }
 
         match serde_json::to_value(value) {
-            Ok(value) => {
-                let patch = fragment_from_path(signal.__path(), value);
-                compose_patch(&mut self.patch, patch);
-            }
+            Ok(value) => match fragment_from_path(signal.__path(), value) {
+                Ok(patch) => compose_patch(&mut self.patch, patch),
+                Err(error) => self.error = Some(error),
+            },
             Err(error) => self.error = Some(error.to_string()),
         }
 
@@ -99,21 +98,23 @@ impl PatchSignals {
             return self;
         }
 
-        let patch = fragment_from_path(signal.__path(), Value::Null);
-        compose_patch(&mut self.patch, patch);
+        match fragment_from_path(signal.__path(), Value::Null) {
+            Ok(patch) => compose_patch(&mut self.patch, patch),
+            Err(error) => self.error = Some(error.to_string()),
+        }
         self
     }
 }
 
-fn fragment_from_path(path: &str, leaf: Value) -> Value {
-    parse_signal_path(path)
+fn fragment_from_path(path: &str, leaf: Value) -> Result<Value, String> {
+    Ok(try_parse_signal_path(path)?
         .into_iter()
         .rev()
         .fold(leaf, |acc, segment| {
             let mut object = Map::new();
             object.insert(segment, acc);
             Value::Object(object)
-        })
+        }))
 }
 
 fn compose_patch(dst: &mut Value, src: Value) {
@@ -385,6 +386,42 @@ mod tests {
                     }
                 }
             })
+        );
+    }
+
+    #[tokio::test]
+    async fn generated_signals_encode_proto_path_segments() {
+        let patch = PatchSignals::new().set(
+            ProjectBySlug::signal_name("__proto__"),
+            "Website Redesign".to_owned(),
+        );
+
+        let body = read_axum_body(patch.into_response()).await;
+        let body: Value =
+            serde_json::from_str(&body).expect("signal patch response should be valid JSON");
+
+        assert_eq!(
+            body,
+            json!({
+                "_project_by_slug": {
+                    "$cheers$5f5f70726f746f5f5f": {
+                        "name": "Website Redesign",
+                    }
+                }
+            })
+        );
+    }
+
+    #[tokio::test]
+    async fn patch_signals_rejects_proto_path_segments() {
+        let patch = PatchSignals::new().set(
+            Signal::<bool>::__string("project['__proto__']['polluted']".to_owned()),
+            true,
+        );
+
+        assert!(
+            Event::try_from(patch).is_err(),
+            "`__proto__` signal path segments must be rejected before serializing a patch"
         );
     }
 

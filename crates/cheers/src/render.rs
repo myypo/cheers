@@ -635,28 +635,6 @@ pub(crate) fn push_js_single_quoted_string_to_script(dst: &mut String, value: &s
     dst.push('\'');
 }
 
-#[doc(hidden)]
-pub fn __render_action_call(
-    buffer: &mut Buffer<DatastarSource>,
-    method: &str,
-    path: &str,
-    form: bool,
-) {
-    let s = buffer.dangerously_get_string();
-
-    // XSS SAFETY: the static action syntax is framework-generated, while the
-    // dynamic path is emitted as a JS single-quoted string literal that also
-    // remains safe for embedding in a double-quoted HTML attribute value.
-    s.push('@');
-    s.push_str(method);
-    s.push('(');
-    push_js_single_quoted_string_to_html_attribute(s, path);
-    if form {
-        s.push_str(",{contentType:'form'}");
-    }
-    s.push(')');
-}
-
 impl Render for fmt::Arguments<'_> {
     #[inline]
     fn render_to(&self, buffer: &mut Buffer) {

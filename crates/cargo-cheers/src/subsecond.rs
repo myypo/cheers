@@ -1,6 +1,6 @@
 use std::{ffi::OsString, process::Command};
 
-use anyhow::{Context, Result, anyhow};
+use anyhow::{Context, Result, anyhow, bail};
 use clap::Parser;
 
 /// Run a Cheers app through Dioxus/Subsecond hot-patching.
@@ -18,7 +18,7 @@ pub(crate) struct SubsecondArgs {
 
 pub(crate) fn run(args: SubsecondArgs) -> Result<()> {
     let mut command = Command::new("dx");
-    command.args(build_dx_serve_args(&args));
+    command.args(build_dx_serve_args(&args)?);
 
     let status = command
         .status()
@@ -30,9 +30,13 @@ pub(crate) fn run(args: SubsecondArgs) -> Result<()> {
     Ok(())
 }
 
-fn build_dx_serve_args(args: &SubsecondArgs) -> Vec<OsString> {
+fn build_dx_serve_args(args: &SubsecondArgs) -> Result<Vec<OsString>> {
+    reject_addr_args(&args.args)?;
+
     let mut out = vec![
         OsString::from("serve"),
+        OsString::from("--addr"),
+        OsString::from("127.0.0.1"),
         OsString::from("--hot-patch"),
         OsString::from("--hot-reload"),
         OsString::from("true"),
@@ -49,7 +53,17 @@ fn build_dx_serve_args(args: &SubsecondArgs) -> Vec<OsString> {
     ));
 
     out.extend(args.args.iter().cloned());
-    out
+    Ok(out)
+}
+
+fn reject_addr_args(args: &[OsString]) -> Result<()> {
+    for arg in args {
+        if arg == "--addr" || arg.to_str().is_some_and(|arg| arg.starts_with("--addr=")) {
+            bail!("`cargo cheers subsecond` always serves on 127.0.0.1; remove `--addr`");
+        }
+    }
+
+    Ok(())
 }
 
 #[cfg(test)]
@@ -64,7 +78,8 @@ mod tests {
 
     #[test]
     fn defaults_to_server_hot_patch_and_subsecond_feature() {
-        let built = build_dx_serve_args(&args(&["--manifest-path", "Cargo.toml"]));
+        let built = build_dx_serve_args(&args(&["--manifest-path", "Cargo.toml"]))
+            .expect("args should build");
         let built = built
             .iter()
             .map(|value| value.to_string_lossy().into_owned())
@@ -72,6 +87,8 @@ mod tests {
 
         assert!(built.starts_with(&[
             "serve".to_owned(),
+            "--addr".to_owned(),
+            "127.0.0.1".to_owned(),
             "--hot-patch".to_owned(),
             "--hot-reload".to_owned(),
             "true".to_owned(),
@@ -86,12 +103,31 @@ mod tests {
 
     #[test]
     fn appends_user_args_after_required_dx_args() {
-        let built = build_dx_serve_args(&args(&["--package", "cheers-example-realtime"]));
+        let built = build_dx_serve_args(&args(&["--package", "cheers-example-realtime"]))
+            .expect("args should build");
         let built = built
             .iter()
             .map(|value| value.to_string_lossy().into_owned())
             .collect::<Vec<_>>();
 
         assert!(built.ends_with(&["--package".to_owned(), "cheers-example-realtime".to_owned(),]));
+    }
+
+    #[test]
+    fn addr_arg_is_rejected() {
+        let err = build_dx_serve_args(&args(&["--addr", "127.0.0.1"]))
+            .expect_err("addr override should be rejected")
+            .to_string();
+
+        assert!(err.contains("always serves on 127.0.0.1"));
+    }
+
+    #[test]
+    fn addr_equals_arg_is_rejected() {
+        let err = build_dx_serve_args(&args(&["--addr=127.0.0.1"]))
+            .expect_err("addr override should be rejected")
+            .to_string();
+
+        assert!(err.contains("always serves on 127.0.0.1"));
     }
 }

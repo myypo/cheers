@@ -35,6 +35,12 @@ fn js_script_new_rejects_string() {
 }
 
 #[test]
+fn unsupported_signal_path_segment_is_rejected() {
+    let tests = trybuild::TestCases::new();
+    tests.compile_fail("tests/ui/unsupported_signal_path_segment.rs");
+}
+
+#[test]
 fn datastar_event_does_not_ambiguous_glob_import() {
     let tests = trybuild::TestCases::new();
     tests.pass("tests/ui/datastar_event_does_not_ambiguous_glob_import.rs");

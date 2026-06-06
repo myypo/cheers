@@ -19,6 +19,9 @@ all-features = true
 [dependencies]
 axum = { workspace = true, features = ["ws"] }
 html-escape.workspace = true
+percent-encoding.workspace = true
+cssparser.workspace = true
+headers.workspace = true
 hmac = { workspace = true, optional = true }
 macros.workspace = true
 itoa.workspace = true

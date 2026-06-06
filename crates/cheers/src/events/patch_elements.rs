@@ -93,22 +93,21 @@ impl PatchElements {
     ///
     /// Can be called multiple times to target several elements by IDs
     pub fn id<I: AsRef<ElementId>>(self, id: I) -> Self {
-        self.selector(format!("#{}", id.as_ref().0))
+        self.selector(format!("#{}", css_escape_identifier(&id.as_ref().0)))
     }
 
     /// Targets elements with an arbitrary CSS selector.
     ///
     /// Can be called multiple times to target element by several selectors
     pub fn selector(mut self, selector: impl Into<String>) -> Self {
-        let new = selector.into();
-        self.selector = Some(match self.selector {
-            Some(mut existing) => {
+        let new = sanitize_datastar_scalar_value(selector.into());
+        match &mut self.selector {
+            Some(existing) => {
                 existing.push(',');
                 existing.push_str(&new);
-                existing
             }
-            None => new,
-        });
+            None => self.selector = Some(new),
+        }
         self
     }
 
@@ -139,6 +138,34 @@ impl PatchElements {
             self
         }
     }
+}
+
+fn sanitize_datastar_scalar_value(value: String) -> String {
+    if !value.chars().any(is_datastar_scalar_control) {
+        return value;
+    }
+
+    value
+        .chars()
+        .map(|ch| {
+            if is_datastar_scalar_control(ch) {
+                ' '
+            } else {
+                ch
+            }
+        })
+        .collect()
+}
+
+fn is_datastar_scalar_control(ch: char) -> bool {
+    ch == '\r' || ch == '\n' || (ch.is_control() && ch != '\t')
+}
+
+fn css_escape_identifier(value: &str) -> String {
+    let mut escaped = String::with_capacity(value.len());
+    cssparser::serialize_identifier(value, &mut escaped)
+        .expect("writing CSS identifier to String should not fail");
+    escaped
 }
 
 /// The DOM operation performed by [`PatchElements`].
@@ -276,6 +303,50 @@ mod tests {
             "event: datastar-patch-elements
 data: mode remove
 data: selector #foo\n\n"
+        );
+    }
+
+    #[tokio::test]
+    async fn id_selector_is_css_escaped() {
+        let patch = PatchElements::new()
+            .id(ElementId::__dynamic("row 1".to_owned()))
+            .mode(PatchElementsMode::Outer);
+
+        let response = patch.into_response();
+        let selector = response
+            .headers()
+            .get("datastar-selector")
+            .and_then(|value| value.to_str().ok())
+            .expect("patch response should set datastar-selector header");
+
+        assert_eq!(selector, r#"#row\ 1"#);
+    }
+
+    #[tokio::test]
+    async fn id_selector_cannot_inject_extra_sse_fields() {
+        let patch = PatchElements::new()
+            .id(ElementId::__dynamic(
+                "bad\nelements <script>alert(1)</script>".to_owned(),
+            ))
+            .mode(PatchElementsMode::Outer);
+
+        let body = read_sse_body(patch).await;
+        assert!(
+            !body.contains("data: elements <script>alert(1)</script>"),
+            "selector/id content must not create a second Datastar SSE field:\n{body}"
+        );
+    }
+
+    #[tokio::test]
+    async fn raw_selector_cannot_inject_extra_sse_fields() {
+        let patch = PatchElements::new()
+            .selector("#bad\nelements <script>alert(1)</script>")
+            .mode(PatchElementsMode::Outer);
+
+        let body = read_sse_body(patch).await;
+        assert!(
+            !body.contains("data: elements <script>alert(1)</script>"),
+            "selector content must not create a second Datastar SSE field:\n{body}"
         );
     }
 

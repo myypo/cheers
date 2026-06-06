@@ -16,6 +16,10 @@ pub async fn redirect_trailing_slash(
     }
 
     let path = path.trim_end_matches('/');
+    if path.is_empty() || path.starts_with("//") {
+        return next.run(req).await;
+    }
+
     let uri = if let Some(query) = uri.query() {
         format!("{}?{}", path, query)
     } else {
@@ -90,6 +94,33 @@ mod tests {
                 .get("location")
                 .expect("redirect response should set location header"),
             ROUTE
+        );
+    }
+
+    #[tokio::test]
+    async fn trailing_slash_redirect_does_not_emit_scheme_relative_location() {
+        let app = app();
+
+        let request = axum::http::Request::builder()
+            .uri("//evil.example/")
+            .body(Body::empty())
+            .expect("request should build");
+
+        let response = app
+            .clone()
+            .oneshot(request)
+            .await
+            .expect("router should return a response");
+
+        let location = response
+            .headers()
+            .get("location")
+            .and_then(|value| value.to_str().ok())
+            .unwrap_or_default();
+
+        assert!(
+            !location.starts_with("//"),
+            "redirect Location must not be browser-interpreted as cross-origin: {location}"
         );
     }
 

@@ -3,7 +3,10 @@
 use std::{
     fmt::{self, Debug, Display, Formatter},
     marker::Sync,
-    sync::Arc,
+    sync::{
+        Arc,
+        atomic::{AtomicBool, Ordering},
+    },
     time::Duration,
 };
 
@@ -11,7 +14,7 @@ use axum::{
     Form,
     body::Body,
     extract::{FromRequest, FromRequestParts, Path, State},
-    http::StatusCode,
+    http::{Method, StatusCode, header},
     response::IntoResponse,
 };
 use cheers::{
@@ -1344,6 +1347,7 @@ async fn async_block_gets_hot_root_without_cached_syntax() {
     let response = cheers_router()
         .oneshot(
             axum::http::Request::post("/cheers/async-islands/render")
+                .header("host", "127.0.0.1:8080")
                 .header("content-type", "application/json")
                 .body(Body::from(
                     serde_json::json!({ "keys": [key.clone()] }).to_string(),
@@ -2142,8 +2146,40 @@ fn data_style() {
 
     assert_eq!(
         result.as_inner(),
-        r#"<pre data-style="{display:$_options['hiding'] ? 'none' : 'flex',color:'red'}"></pre>"#
+        r#"<pre data-style="{'display':$_options['hiding'] ? 'none' : 'flex','color':'red'}"></pre>"#
     )
+}
+
+#[test]
+fn security_repro_dynamic_datastar_style_key_should_be_quoted() {
+    let key = "x:alert(1),color";
+
+    let rendered = html! {
+        pre !style(key: "'red'") {}
+    }
+    .render()
+    .into_inner();
+
+    assert_eq!(
+        rendered,
+        r#"<pre data-style="{'x:alert(1),color':'red'}"></pre>"#
+    );
+}
+
+#[test]
+fn security_repro_dynamic_datastar_attr_key_should_be_quoted() {
+    let key = "onclick:alert(1),data-safe";
+
+    let rendered = html! {
+        div !attr(key: "'value'") {}
+    }
+    .render()
+    .into_inner();
+
+    assert_eq!(
+        rendered,
+        r#"<div data-attr="{'onclick:alert(1),data-safe':'value'}"></div>"#
+    );
 }
 
 #[test]
@@ -2449,6 +2485,31 @@ fn signal_id_with_inline_js_macro() {
 }
 
 #[test]
+fn signal_id_encodes_unsupported_path_segment() {
+    #[derive(Cheers)]
+    #[expect(dead_code)]
+    struct GhostUser {
+        #[id]
+        id: &'static str,
+        #[signal]
+        name: String,
+    }
+
+    let expected_path = "$_ghost_user['$cheers$5f5f70726f746f5f5f']['name']";
+    assert_eq!(
+        GhostUser::signal_name("__proto__").render().into_inner(),
+        expected_path
+    );
+
+    let ghost = GhostUser {
+        id: "__proto__",
+        name: "Ole".to_owned(),
+    };
+    let GhostUserSignals { signal_name } = ghost.signals();
+    assert_eq!(signal_name.render().into_inner(), expected_path);
+}
+
+#[test]
 fn signal_id_with_unsafe_segment() {
     #[derive(Cheers)]
     #[expect(dead_code)]
@@ -2682,7 +2743,10 @@ fn action_with_plain_path() {
         name: "Bob".to_owned(),
     }
     .render();
-    assert_eq!(result.as_inner(), "@post('/cheers/actions/do_stuff/Bob')");
+    assert_eq!(
+        result.as_inner(),
+        r#"@post('/cheers/actions/do_stuff/Bob')"#
+    );
 }
 
 #[test]
@@ -2691,6 +2755,102 @@ fn action_can_be_registered_explicitly() {
     async fn do_stuff() {}
 
     let _router: axum::Router<()> = axum::Router::new().action::<DoStuffAction>();
+}
+
+#[tokio::test]
+async fn unsafe_action_rejects_cross_origin_posts_before_handler_runs() {
+    #[action(POST)]
+    async fn mutate(State(called): State<Arc<AtomicBool>>) -> StatusCode {
+        called.store(true, Ordering::SeqCst);
+        StatusCode::NO_CONTENT
+    }
+
+    let called = Arc::new(AtomicBool::new(false));
+    let app = axum::Router::new()
+        .action::<MutateAction>()
+        .with_state(Arc::clone(&called));
+
+    let response = app
+        .oneshot(
+            axum::http::Request::builder()
+                .method(Method::POST)
+                .uri(MutateAction::PATH)
+                .header(header::ORIGIN, "https://evil.example")
+                .body(Body::empty())
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+
+    assert_eq!(response.status(), StatusCode::FORBIDDEN);
+    assert!(
+        !called.load(Ordering::SeqCst),
+        "cross-origin request must not execute the action handler"
+    );
+}
+
+#[tokio::test]
+async fn unsafe_action_rejects_missing_origin_before_handler_runs() {
+    #[action(POST)]
+    async fn mutate(State(called): State<Arc<AtomicBool>>) -> StatusCode {
+        called.store(true, Ordering::SeqCst);
+        StatusCode::NO_CONTENT
+    }
+
+    let called = Arc::new(AtomicBool::new(false));
+    let app = axum::Router::new()
+        .action::<MutateAction>()
+        .with_state(Arc::clone(&called));
+
+    let response = app
+        .oneshot(
+            axum::http::Request::builder()
+                .method(Method::POST)
+                .uri(MutateAction::PATH)
+                .body(Body::empty())
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+
+    assert_eq!(response.status(), StatusCode::FORBIDDEN);
+    assert!(
+        !called.load(Ordering::SeqCst),
+        "missing-origin request must not execute the action handler"
+    );
+}
+
+#[tokio::test]
+async fn security_repro_same_origin_action_with_origin_form_uri_should_run() {
+    #[action(POST)]
+    async fn mutate(State(called): State<Arc<AtomicBool>>) -> StatusCode {
+        called.store(true, Ordering::SeqCst);
+        StatusCode::NO_CONTENT
+    }
+
+    let called = Arc::new(AtomicBool::new(false));
+    let app = axum::Router::new()
+        .action::<MutateAction>()
+        .with_state(Arc::clone(&called));
+
+    let response = app
+        .oneshot(
+            axum::http::Request::builder()
+                .method(Method::POST)
+                .uri(MutateAction::PATH)
+                .header(header::HOST, "example.com")
+                .header(header::ORIGIN, "https://example.com")
+                .body(Body::empty())
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+
+    assert_eq!(response.status(), StatusCode::NO_CONTENT);
+    assert!(
+        called.load(Ordering::SeqCst),
+        "same-origin action request should execute the action handler"
+    );
 }
 
 #[test]
@@ -2728,7 +2888,10 @@ fn action_registration_supports_generic_state() {
         id: "Bob".to_owned(),
     }
     .render();
-    assert_eq!(result.as_inner(), "@post('/cheers/actions/do_stuff/Bob')");
+    assert_eq!(
+        result.as_inner(),
+        r#"@post('/cheers/actions/do_stuff/Bob')"#
+    );
 }
 
 #[test]
@@ -2744,7 +2907,24 @@ fn action_path_segments_are_escaped_for_js_attributes() {
 
     assert_eq!(
         result.as_inner(),
-        "@post('/cheers/actions/do_stuff/O\\'Reilly &amp; &lt;friends&gt; &quot;x&quot;')"
+        r#"@post('/cheers/actions/do_stuff/O%27Reilly%20%26%20%3Cfriends%3E%20%22x%22')"#
+    );
+}
+
+#[test]
+fn action_path_segments_are_percent_encoded_for_url_paths() {
+    #[action(POST)]
+    #[expect(unused_variables)]
+    async fn open_document(Path(slug): Path<String>) {}
+
+    let result = OpenDocumentAction {
+        slug: "a/b?draft=true#frag".to_owned(),
+    }
+    .render();
+
+    assert_eq!(
+        result.as_inner(),
+        r#"@post('/cheers/actions/open_document/a%2Fb%3Fdraft%3Dtrue%23frag')"#
     );
 }
 
@@ -2761,7 +2941,7 @@ fn action_with_tuple_path() {
     .render();
     assert_eq!(
         result.as_inner(),
-        "@post('/cheers/actions/do_stuff/Bob/42')"
+        r#"@post('/cheers/actions/do_stuff/Bob/42')"#
     );
 }
 
@@ -2784,7 +2964,7 @@ fn action_explicit_path() {
     async fn my_handler(#[path] _: NotPath) {}
 
     let result = MyHandlerAction {}.render();
-    assert_eq!(result.as_inner(), "@put('/cheers/actions/my_handler')");
+    assert_eq!(result.as_inner(), r#"@put('/cheers/actions/my_handler')"#);
 }
 
 #[test]
@@ -2816,7 +2996,7 @@ fn action_form_generics() {
     let result = MyHandlerAction {}.render();
     assert_eq!(
         result.as_inner(),
-        "@put('/cheers/actions/my_handler',{contentType:'form'})"
+        r#"@put('/cheers/actions/my_handler',{contentType:'form'})"#
     );
 
     let stuff = Stuff {
@@ -2847,7 +3027,7 @@ fn action_explicit_form() {
     let result = MyHandlerAction {}.render();
     assert_eq!(
         result.as_inner(),
-        "@post('/cheers/actions/my_handler',{contentType:'form'})"
+        r#"@post('/cheers/actions/my_handler',{contentType:'form'})"#
     );
 }
 
@@ -2914,6 +3094,7 @@ fn form_without_field() {
 }
 
 #[test]
+#[allow(dead_code)]
 fn form_names_remains_const_without_flatten() {
     #[derive(Cheers)]
     #[form(name: String)]
@@ -2928,11 +3109,13 @@ fn form_names_remains_const_without_flatten() {
 }
 
 #[test]
+#[allow(dead_code)]
 fn form_names_remains_const_with_flatten() {
     #[derive(Cheers)]
     #[form(value: String)]
     struct Child;
 
+    #[expect(dead_code)]
     #[derive(Cheers)]
     struct Parent {
         #[form(flatten)]
@@ -2949,6 +3132,7 @@ fn form_names_remains_const_with_flatten() {
 
 #[test]
 fn form_flatten_deserializes_and_nests_names() {
+    #[expect(dead_code)]
     #[derive(Cheers)]
     #[form_derive(Debug, PartialEq)]
     struct KnownBy {
@@ -2956,6 +3140,7 @@ fn form_flatten_deserializes_and_nests_names() {
         known_by_scope: String,
     }
 
+    #[expect(dead_code)]
     #[derive(Cheers)]
     #[form_derive(Debug, PartialEq)]
     struct BodyPart {
@@ -2997,6 +3182,7 @@ fn form_flatten_deserializes_and_nests_names() {
 
 #[test]
 fn form_flatten_supports_generic_child_components() {
+    #[expect(dead_code)]
     #[derive(Cheers)]
     #[form_derive(Debug, Clone, PartialEq)]
     struct Child<'a, T: Clone> {
@@ -3005,6 +3191,7 @@ fn form_flatten_supports_generic_child_components() {
         value: &'a T,
     }
 
+    #[expect(dead_code)]
     #[derive(Cheers)]
     #[form_derive(Debug, Clone, PartialEq)]
     struct Parent<'a, T: Clone> {
@@ -3038,6 +3225,7 @@ fn form_flatten_supports_generic_child_components() {
 
 #[test]
 fn form_flatten_supports_referenced_child_components() {
+    #[expect(dead_code)]
     #[derive(Cheers)]
     #[form_derive(Debug, PartialEq)]
     struct Child {
@@ -3045,6 +3233,7 @@ fn form_flatten_supports_referenced_child_components() {
         name: String,
     }
 
+    #[expect(dead_code)]
     #[derive(Cheers)]
     #[form_derive(Debug, PartialEq)]
     struct Parent<'a> {
@@ -3075,12 +3264,14 @@ fn form_flatten_supports_referenced_child_components() {
 
 #[tokio::test]
 async fn action_form_flatten_accepts_urlencoded_payload() {
+    #[expect(dead_code)]
     #[derive(Cheers)]
     struct KnownBy {
         #[form]
         known_by_scope: String,
     }
 
+    #[expect(dead_code)]
     #[derive(Cheers)]
     struct BodyPart {
         #[form]
@@ -3098,6 +3289,8 @@ async fn action_form_flatten_accepts_urlencoded_payload() {
     let request = axum::http::Request::builder()
         .method("POST")
         .uri("/cheers/actions/submit_flattened_known_by")
+        .header(header::HOST, "example.com")
+        .header(header::ORIGIN, "https://example.com")
         .header("content-type", "application/x-www-form-urlencoded")
         .body(Body::from("id=body-1&known_by_scope=selected"))
         .expect("request should build");
@@ -3147,6 +3340,7 @@ fn form_with_derive() {
 
 #[test]
 fn form_derive_without_fields_generates_only_form_type() {
+    #[expect(dead_code)]
     #[derive(Cheers)]
     #[form_derive(Debug, Default, PartialEq)]
     struct Empty;

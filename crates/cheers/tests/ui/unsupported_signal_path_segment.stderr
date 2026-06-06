@@ -1,0 +1,5 @@
+error: signal path segment `__proto__` is not supported
+ --> tests/ui/unsupported_signal_path_segment.rs:6:5
+  |
+6 |     __proto__: String,
+  |     ^^^^^^^^^

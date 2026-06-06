@@ -38,6 +38,9 @@ base64.version = "0.22"
 tracing = "0.1"
 ignore = { version = "0.4" }
 html-escape = { version = "0.2" }
+percent-encoding = "2"
+cssparser = "0.33"
+headers = "0.4"
 hmac = "0.12"
 rustc-hash = { version = "2" }
 sha2 = "0.10"
@@ -58,7 +61,7 @@ async-compression = { version = "0.4", features = [
   "brotli",
 ] }
 tokio-util = { version = "0.7", features = ["io"] }
-thirtyfour = { git = "https://github.com/vrtgs/thirtyfour", features = [
+thirtyfour = { git = "https://github.com/vrtgs/thirtyfour", rev = "0ea8e3b6a696bdeffa41fd66a5ac48ee71e52a65", features = [
   "tokio-multi-threaded",
   "rustls-tls",
 ] }
