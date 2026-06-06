@@ -17,12 +17,18 @@ if [[ -z "$webdriver_host" || -z "$webdriver_port" || "$webdriver_host" == "$web
     exit 1
 fi
 
-can_connect() {
+webdriver_ready() {
+    local response
     # shellcheck disable=SC2016 # Inner shell expands positional parameters.
-    timeout 1 bash -c '</dev/tcp/"$1"/"$2"' _ "$webdriver_host" "$webdriver_port" >/dev/null 2>&1
+    response="$(timeout 1 bash -c '
+      exec 3<>/dev/tcp/"$1"/"$2"
+      printf "GET /status HTTP/1.1\r\nHost: %s:%s\r\nConnection: close\r\n\r\n" "$1" "$2" >&3
+      dd bs=4096 count=1 <&3 2>/dev/null
+    ' _ "$webdriver_host" "$webdriver_port" 2>/dev/null)" || return 1
+    grep -q '"ready"[[:space:]]*:[[:space:]]*true' <<<"$response"
 }
 
-if can_connect; then
+if webdriver_ready; then
     echo "using existing WebDriver at $webdriver_url" >&2
     echo "WEBDRIVER_URL=$webdriver_url" >>"$NEXTEST_ENV"
     exit 0
@@ -37,7 +43,22 @@ log_dir="${CARGO_TARGET_DIR:-target}/nextest"
 mkdir -p "$log_dir"
 log_file="$log_dir/chromedriver-$webdriver_port.log"
 pid_file="$log_dir/chromedriver-$webdriver_port.pid"
-nextest_pid="$PPID"
+
+find_nextest_pid() {
+    local pid comm args
+    pid="$PPID"
+    while [[ -n "$pid" && "$pid" != "1" ]]; do
+        comm="$(ps -p "$pid" -o comm= 2>/dev/null || true)"
+        args="$(ps -p "$pid" -o args= 2>/dev/null || true)"
+        if [[ "$comm" == *cargo-nextest* || "$args" == *cargo-nextest* || "$args" == *"cargo nextest"* ]]; then
+            echo "$pid"
+            return 0
+        fi
+        pid="$(ps -p "$pid" -o ppid= 2>/dev/null | tr -d '[:space:]')"
+    done
+}
+
+nextest_pid="$(find_nextest_pid)"
 
 # Start ChromeDriver detached from this setup script so nextest doesn't treat the
 # long-running server as a leaked child process. A small watcher tears it down
@@ -50,22 +71,24 @@ setsid bash -c '
   pid_file="$3"
   nextest_pid="$4"
 
-  chromedriver --port="$port" >"$log_file" 2>&1 &
+  nohup chromedriver --port="$port" >"$log_file" 2>&1 &
   driver_pid="$!"
   echo "$driver_pid" >"$pid_file"
 
-  (
-    while kill -0 "$nextest_pid" >/dev/null 2>&1; do
-      sleep 1
-    done
-    kill "$driver_pid" >/dev/null 2>&1 || true
-    wait "$driver_pid" >/dev/null 2>&1 || true
-    rm -f "$pid_file"
-  ) >/dev/null 2>&1 &
+  if [[ -n "$nextest_pid" ]]; then
+    (
+      while kill -0 "$nextest_pid" >/dev/null 2>&1; do
+        sleep 1
+      done
+      kill "$driver_pid" >/dev/null 2>&1 || true
+      wait "$driver_pid" >/dev/null 2>&1 || true
+      rm -f "$pid_file"
+    ) >/dev/null 2>&1 &
+  fi
 ' _ "$webdriver_port" "$log_file" "$pid_file" "$nextest_pid" >/dev/null 2>&1 </dev/null
 
 for _ in {1..50}; do
-    if can_connect; then
+    if webdriver_ready; then
         echo "started ChromeDriver at $webdriver_url (log: $log_file)" >&2
         echo "WEBDRIVER_URL=$webdriver_url" >>"$NEXTEST_ENV"
         exit 0
