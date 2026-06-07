@@ -6,7 +6,7 @@ resolver = "3"
 version = "0.1.0-alpha.1"
 authors = ["Mykyta Polchanov <nikirsmcgl@gmail.com>"]
 edition = "2024"
-rust-version = "1.87"
+rust-version = "1.88"
 description = "Fullstack hypermedia framework"
 readme = "README.md"
 homepage = "https://github.com/myypo/cheers"
@@ -61,10 +61,7 @@ async-compression = { version = "0.4", features = [
   "brotli",
 ] }
 tokio-util = { version = "0.7", features = ["io"] }
-thirtyfour = { git = "https://github.com/vrtgs/thirtyfour", rev = "0ea8e3b6a696bdeffa41fd66a5ac48ee71e52a65", features = [
-  "tokio-multi-threaded",
-  "rustls-tls",
-] }
+thirtyfour = { version = "0.37.1", features = ["rustls"] }
 dioxus-devtools = { version = "0.7.6", default-features = false }
 
 # Bundler
@@ -94,6 +91,3 @@ unwrap_used = "deny"
 panic_in_result_fn = "deny"
 undocumented_unsafe_blocks = "deny"
 
-[patch.crates-io]
-# https://rustsec.org/advisories/RUSTSEC-2026-0009
-time = { git = "https://github.com/time-rs/time", tag = "v0.3.47" }

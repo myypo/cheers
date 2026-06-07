@@ -20,6 +20,9 @@ jobs:
       - name: Run flake checks
         run: nix flake check -L
 
+      - name: Check crate packaging
+        run: nix develop --command cargo package --workspace --allow-dirty
+
       - name: Run flake-defined manual hook checks
         run: nix develop --command prek run --config .pre-commit-config.yaml --all-files --stage manual --skip cargo-deny
 
