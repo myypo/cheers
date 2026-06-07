@@ -5,7 +5,7 @@ use anyhow::{Context, Error, bail};
 fn main() -> Result<(), Error> {
     let manifest_dir = std::env::var("CARGO_MANIFEST_DIR")
         .context("read CARGO_MANIFEST_DIR env var to infer vendor path")?;
-    let vendor_dir = Path::new(&manifest_dir).join("../../vendor/datastar/src");
+    let vendor_dir = Path::new(&manifest_dir).join("vendor/datastar/src");
     if !vendor_dir.exists() {
         bail!("vendor dir does not exist: {}", vendor_dir.display());
     }
