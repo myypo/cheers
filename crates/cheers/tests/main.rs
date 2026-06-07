@@ -525,6 +525,31 @@ fn component_fns() {
 }
 
 #[test]
+fn component_accepts_tuple_prop_expression() {
+    struct Point {
+        coords: (i32, i32),
+    }
+
+    impl Render for Point {
+        fn render_to(&self, buffer: &mut Buffer<Element>) {
+            html! {
+                span { (format!("{},{}", self.coords.0, self.coords.1)) }
+            }
+            .render_to(buffer);
+        }
+    }
+
+    let x = 2;
+    let y = 3;
+    let result = html! {
+        Point coords=(x, y);
+    }
+    .render();
+
+    assert_eq!(result.as_inner(), "<span>2,3</span>");
+}
+
+#[test]
 fn borrow() {
     let s = "Hello, world!".to_owned();
     let result = html! {

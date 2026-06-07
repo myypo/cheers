@@ -90,4 +90,3 @@ cli = { package = "cargo-cheers", path = "./crates/cargo-cheers", version = "=0.
 unwrap_used = "deny"
 panic_in_result_fn = "deny"
 undocumented_unsafe_blocks = "deny"
-

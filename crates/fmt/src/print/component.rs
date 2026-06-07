@@ -247,6 +247,30 @@ mod test {
     );
 
     test_default!(
+        component_with_unit_expr_attribute,
+        r#"
+        html! { Page styles=() { "Content" } }
+        "#,
+        r#"
+        html! {
+            Page styles=() { "Content" }
+        }
+        "#
+    );
+
+    test_default!(
+        component_with_tuple_expr_attribute,
+        r#"
+        html! { Chart point=(x, y) { "Content" } }
+        "#,
+        r#"
+        html! {
+            Chart point=(x, y) { "Content" }
+        }
+        "#
+    );
+
+    test_default!(
         component_with_ref_expression_attribute,
         r#"
         html! { Card title=(@&title) { "Content" } }

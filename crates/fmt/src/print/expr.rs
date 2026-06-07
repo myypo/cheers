@@ -1,9 +1,8 @@
-use ast::{DatastarSourceNodes, Document, Node, ParenExpr, ScriptSourceNodes};
+use ast::{DatastarSourceNodes, Document, Node, ParenExpr, ParenExprBody, ScriptSourceNodes};
 use proc_macro2::Span;
 use syn::{
-    Expr, ExprMacro,
+    Expr, ExprMacro, ExprTuple,
     parse::{Parse, ParseStream, Parser},
-    parse2,
     spanned::Spanned as _,
 };
 
@@ -152,6 +151,34 @@ impl<'a, 'b> Printer<'a, 'b> {
         lines
     }
 
+    fn lines_from_tuple_body(&self, tuple: ExprTuple, indent_level: usize) -> Vec<String> {
+        let mut lines = self.lines_from_expr(Expr::Tuple(tuple), indent_level);
+
+        if lines.len() == 1 {
+            let line = lines.remove(0);
+            let trimmed = line.trim();
+
+            if let Some(line) = trimmed
+                .strip_prefix('(')
+                .and_then(|line| line.strip_suffix(')'))
+            {
+                return vec![line.to_string()];
+            }
+
+            return vec![line];
+        }
+
+        if lines.first().is_some_and(|line| line.trim() == "(") {
+            lines.remove(0);
+        }
+
+        if lines.last().is_some_and(|line| line.trim() == ")") {
+            lines.pop();
+        }
+
+        lines
+    }
+
     pub fn print_expr(&mut self, expr: Expr, indent_level: usize) {
         let span = expr.span();
         if self.span_contains_comments(span) {
@@ -230,26 +257,45 @@ impl<'a, 'b> Printer<'a, 'b> {
 
     pub fn print_paren_expr<N: Node>(&mut self, paren_expr: ParenExpr<N>, indent_level: usize) {
         let paren_span = paren_expr.paren_token.span.span();
-        let expr: Expr =
-            parse2(paren_expr.expr.clone()).unwrap_or_else(|_| Expr::Verbatim(paren_expr.expr));
         let has_comments = self.span_contains_comments(paren_span);
-
-        if has_comments && let Some(lines) = self.macro_expr_lines(&expr, indent_level) {
-            self.consume_comments_in_span(paren_span);
-            self.print_paren_expr_lines(paren_expr.mode.is_ref(), false, lines, indent_level);
-            return;
-        }
+        let is_ref = paren_expr.mode.is_ref();
 
         if has_comments {
+            if let ParenExprBody::Expr(expr) = &paren_expr.body
+                && let Some(lines) = self.macro_expr_lines(expr, indent_level)
+            {
+                self.consume_comments_in_span(paren_span);
+                self.print_paren_expr_lines(is_ref, false, lines, indent_level);
+                return;
+            }
+
             let original_text = self.source_text(paren_span);
             self.consume_comments_in_span(paren_span);
             self.write(original_text.trim());
             return;
         }
 
-        let is_block = matches!(expr, Expr::Block(_));
-        let lines = self.lines_from_expr(expr, indent_level);
-        self.print_paren_expr_lines(paren_expr.mode.is_ref(), is_block, lines, indent_level);
+        match paren_expr.body {
+            ParenExprBody::Unit => {
+                self.print_paren_expr_lines(is_ref, false, vec![String::new()], indent_level);
+            }
+            ParenExprBody::Expr(expr) => {
+                let is_block = matches!(expr, Expr::Block(_));
+                let lines = self.lines_from_expr(expr, indent_level);
+                self.print_paren_expr_lines(is_ref, is_block, lines, indent_level);
+            }
+            ParenExprBody::Tuple(elems) => {
+                let lines = self.lines_from_tuple_body(
+                    ExprTuple {
+                        attrs: Vec::new(),
+                        paren_token: Default::default(),
+                        elems,
+                    },
+                    indent_level,
+                );
+                self.print_paren_expr_lines(is_ref, false, lines, indent_level);
+            }
+        }
     }
 
     fn print_paren_expr_lines(

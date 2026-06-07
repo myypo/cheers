@@ -153,10 +153,10 @@ impl App {
     async fn shutdown(mut self) -> WebDriverResult<()> {
         let mut first_error = None;
 
-        if let Some(driver) = self.driver.take() {
-            if let Err(err) = driver.quit().await {
-                Self::remember_error(&mut first_error, err);
-            }
+        if let Some(driver) = self.driver.take()
+            && let Err(err) = driver.quit().await
+        {
+            Self::remember_error(&mut first_error, err);
         }
         if let Some(tx) = self.shutdown_tx.take() {
             let _ = tx.send(());

@@ -229,13 +229,13 @@ impl ComponentAttribute {
                     let mut tokens = TokenStream::new();
 
                     expr.paren_token.surround(&mut tokens, |tokens| {
-                        expr.expr.to_tokens(tokens);
+                        expr.body.to_tokens(tokens);
                     });
 
                     tokens
                 }
                 ParenExprMode::Ref => g
-                    .hoist_ref_expr(expr.paren_token, &expr.expr)
+                    .hoist_ref_expr(expr.paren_token, &expr.body)
                     .to_token_stream(),
             },
             Some(ComponentAttributeValue::Ident(ident)) => ident.to_token_stream(),

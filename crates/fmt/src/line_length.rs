@@ -1,14 +1,38 @@
 use ast::{
     Attribute, AttributeKind, AttributeName, AttributeValueNode, DataContent, DataExpr,
     DataExprValue, DataModifierPart, DataModifiers, ElementBody, ElementNode, Node, ParenExpr,
-    Toggle,
+    ParenExprBody, Toggle,
     component::{ComponentAttribute, ComponentAttributeValue, ComponentDefaultAttributes},
     control::{self, ControlBlock},
 };
 use syn::{Expr, Ident, Token, punctuated::Punctuated, spanned::Spanned};
 
 fn paren_expr_len<N: Node>(paren_expr: &ParenExpr<N>) -> Option<usize> {
-    span_len(&paren_expr.expr).map(|len| len + 2 + paren_expr.mode.prefix_len())
+    let body_len = match &paren_expr.body {
+        ParenExprBody::Unit => 0,
+        ParenExprBody::Expr(expr) => span_len(expr)?,
+        ParenExprBody::Tuple(elems) => {
+            let mut len = 0;
+
+            for (idx, expr) in elems.iter().enumerate() {
+                len += span_len(expr)?;
+
+                if idx + 1 < elems.len() {
+                    // `, `
+                    len += 2;
+                }
+            }
+
+            if elems.trailing_punct() {
+                // `,`
+                len += 1;
+            }
+
+            len
+        }
+    };
+
+    Some(body_len + 2 + paren_expr.mode.prefix_len())
 }
 
 fn data_expr_len(expr: &DataExpr) -> Option<usize> {

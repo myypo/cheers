@@ -145,8 +145,25 @@ impl Generate for ElementNode {
 pub struct ParenExpr<N: Node> {
     pub paren_token: Paren,
     pub mode: ParenExprMode,
-    pub expr: TokenStream,
+    pub body: ParenExprBody,
     phantom: PhantomData<N>,
+}
+
+#[allow(clippy::large_enum_variant)]
+pub enum ParenExprBody {
+    Unit,
+    Expr(Expr),
+    Tuple(Punctuated<Expr, Token![,]>),
+}
+
+impl ToTokens for ParenExprBody {
+    fn to_tokens(&self, tokens: &mut TokenStream) {
+        match self {
+            Self::Unit => {}
+            Self::Expr(expr) => expr.to_tokens(tokens),
+            Self::Tuple(elems) => elems.to_tokens(tokens),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -164,7 +181,7 @@ impl ParenExprMode {
         if self.is_ref() { "@&".len() } else { 0 }
     }
 
-    fn validate_ref_expr(expr: &TokenStream) -> syn::Result<()> {
+    fn validate_ref_expr(expr: &Expr) -> syn::Result<()> {
         fn is_supported(expr: &Expr) -> bool {
             match expr {
                 Expr::Path(_) => true,
@@ -174,9 +191,7 @@ impl ParenExprMode {
             }
         }
 
-        let expr = syn::parse2::<Expr>(expr.clone())?;
-
-        if is_supported(&expr) {
+        if is_supported(expr) {
             Ok(())
         } else {
             Err(Error::new_spanned(expr, "unsupported borrow expression"))
@@ -193,20 +208,61 @@ impl ParenExprMode {
         }
     }
 
-    fn parse_expr(input: ParseStream) -> syn::Result<(Self, TokenStream)> {
+    fn parse_expr(input: ParseStream) -> syn::Result<(Self, ParenExprBody)> {
         let mode = Self::parse_prefix(input)?;
-        let expr: TokenStream = input.parse()?;
 
-        if mode.is_ref() {
-            Self::validate_ref_expr(&expr).map_err(|err| {
-                Error::new(
-                    err.span(),
-                    "`(@&...)` only supports simple path and field expressions",
-                )
-            })?;
+        if input.is_empty() {
+            if mode.is_ref() {
+                return Err(Error::new(input.span(), "expected expression after `@&`"));
+            }
+
+            return Ok((mode, ParenExprBody::Unit));
         }
 
-        Ok((mode, expr))
+        let expr: Expr = input.parse()?;
+        let body = if input.peek(Token![,]) {
+            let mut elems = Punctuated::new();
+            elems.push_value(expr);
+
+            while input.peek(Token![,]) {
+                elems.push_punct(input.parse()?);
+
+                if input.is_empty() {
+                    break;
+                }
+
+                elems.push_value(input.parse()?);
+            }
+
+            ParenExprBody::Tuple(elems)
+        } else {
+            ParenExprBody::Expr(expr)
+        };
+
+        if !input.is_empty() {
+            return Err(input.error("unexpected tokens after expression"));
+        }
+
+        if mode.is_ref() {
+            match &body {
+                ParenExprBody::Expr(expr) => {
+                    Self::validate_ref_expr(expr).map_err(|err| {
+                        Error::new(
+                            err.span(),
+                            "`(@&...)` only supports simple path and field expressions",
+                        )
+                    })?;
+                }
+                ParenExprBody::Unit | ParenExprBody::Tuple(_) => {
+                    return Err(Error::new_spanned(
+                        &body,
+                        "`(@&...)` only supports simple path and field expressions",
+                    ));
+                }
+            }
+        }
+
+        Ok((mode, body))
     }
 }
 
@@ -232,7 +288,7 @@ impl Parse for BorrowExpr<Expr> {
         };
 
         if mode.is_ref() {
-            ParenExprMode::validate_ref_expr(&expr.to_token_stream()).map_err(|err| {
+            ParenExprMode::validate_ref_expr(&expr).map_err(|err| {
                 Error::new(
                     err.span(),
                     "`(@&...)` only supports simple path and field expressions",
@@ -269,12 +325,12 @@ impl<N: Node> Parse for ParenExpr<N> {
     fn parse(input: ParseStream) -> syn::Result<Self> {
         let content;
         let paren_token = parenthesized!(content in input);
-        let (mode, expr) = ParenExprMode::parse_expr(&content)?;
+        let (mode, body) = ParenExprMode::parse_expr(&content)?;
 
         Ok(Self {
             paren_token,
             mode,
-            expr,
+            body,
             phantom: PhantomData,
         })
     }
@@ -285,8 +341,8 @@ impl<N: Node> Generate for ParenExpr<N> {
 
     fn generate(&mut self, g: &mut Generator<'_>) {
         match self.mode {
-            ParenExprMode::Normal => g.push_expr(self.paren_token, Self::CONTEXT, &self.expr),
-            ParenExprMode::Ref => g.push_ref_expr(self.paren_token, Self::CONTEXT, &self.expr),
+            ParenExprMode::Normal => g.push_expr(self.paren_token, Self::CONTEXT, &self.body),
+            ParenExprMode::Ref => g.push_ref_expr(self.paren_token, Self::CONTEXT, &self.body),
         }
     }
 }
@@ -297,7 +353,7 @@ impl<N: Node> ToTokens for ParenExpr<N> {
             if self.mode.is_ref() {
                 quote!(@&).to_tokens(tokens);
             }
-            self.expr.to_tokens(tokens);
+            self.body.to_tokens(tokens);
         });
     }
 }
@@ -1389,7 +1445,10 @@ impl Generate for Data {
 mod tests {
     use syn::parse_str;
 
-    use super::{Attribute, DataContent, DataName, Document, SyntaxStatic};
+    use super::{
+        Attribute, AttributeValueNode, DataContent, DataName, Document, ParenExpr, ParenExprBody,
+        SyntaxStatic,
+    };
 
     #[test]
     fn syntax_static_accepts_literal_markup() {
@@ -1427,6 +1486,22 @@ mod tests {
             .expect("expected document to parse");
 
         assert!(!doc.is_static());
+    }
+
+    #[test]
+    fn paren_expr_parses_unit_body_explicitly() {
+        let expr = parse_str::<ParenExpr<AttributeValueNode>>("()")
+            .expect("expected unit paren expression to parse");
+
+        assert!(matches!(expr.body, ParenExprBody::Unit));
+    }
+
+    #[test]
+    fn paren_expr_requires_a_single_valid_rust_expression() {
+        assert!(parse_str::<ParenExpr<AttributeValueNode>>("(foo())").is_ok());
+        assert!(parse_str::<ParenExpr<AttributeValueNode>>("(foo, bar)").is_ok());
+        assert!(parse_str::<ParenExpr<AttributeValueNode>>("(foo bar)").is_err());
+        assert!(parse_str::<ParenExpr<AttributeValueNode>>("(@&)").is_err());
     }
 
     #[test]

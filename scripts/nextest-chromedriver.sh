@@ -11,11 +11,17 @@ webdriver_host_port="${webdriver_url#http://}"
 webdriver_host_port="${webdriver_host_port%%/*}"
 webdriver_host="${webdriver_host_port%%:*}"
 webdriver_port="${webdriver_host_port##*:}"
+webdriver_url_from_env="${WEBDRIVER_URL:-}"
 
 if [[ -z "$webdriver_host" || -z "$webdriver_port" || "$webdriver_host" == "$webdriver_port" ]]; then
     echo "unsupported WEBDRIVER_URL '$webdriver_url'; expected http://host:port" >&2
     exit 1
 fi
+
+log_dir="${CARGO_TARGET_DIR:-target}/nextest"
+mkdir -p "$log_dir"
+log_file="$log_dir/chromedriver-$webdriver_port.log"
+pid_file="$log_dir/chromedriver-$webdriver_port.pid"
 
 webdriver_ready() {
     local response
@@ -28,21 +34,76 @@ webdriver_ready() {
     grep -q '"ready"[[:space:]]*:[[:space:]]*true' <<<"$response"
 }
 
+managed_webdriver_pid() {
+    local pid args
+
+    if [[ ! -f "$pid_file" ]]; then
+        return 1
+    fi
+
+    read -r pid <"$pid_file" || return 1
+    if [[ ! "$pid" =~ ^[0-9]+$ ]]; then
+        rm -f "$pid_file"
+        return 1
+    fi
+
+    args="$(ps -p "$pid" -o args= 2>/dev/null || true)"
+    if [[ "$args" != *chromedriver* ]]; then
+        rm -f "$pid_file"
+        return 1
+    fi
+
+    echo "$pid"
+}
+
+stop_managed_webdriver() {
+    local pid
+    pid="$(managed_webdriver_pid)" || return 1
+
+    echo "stopping stale managed WebDriver at $webdriver_url" >&2
+    kill "$pid" >/dev/null 2>&1 || true
+    for _ in {1..50}; do
+        if ! kill -0 "$pid" >/dev/null 2>&1; then
+            rm -f "$pid_file"
+            return 0
+        fi
+        sleep 0.1
+    done
+
+    kill -9 "$pid" >/dev/null 2>&1 || true
+    rm -f "$pid_file"
+}
+
 if webdriver_ready; then
-    echo "using existing WebDriver at $webdriver_url" >&2
-    echo "WEBDRIVER_URL=$webdriver_url" >>"$NEXTEST_ENV"
-    exit 0
+    if [[ -n "$webdriver_url_from_env" ]]; then
+        echo "using existing WebDriver at $webdriver_url" >&2
+        echo "WEBDRIVER_URL=$webdriver_url" >>"$NEXTEST_ENV"
+        exit 0
+    fi
+
+    if stop_managed_webdriver; then
+        for _ in {1..50}; do
+            if ! webdriver_ready; then
+                break
+            fi
+            sleep 0.1
+        done
+
+        if webdriver_ready; then
+            echo "managed WebDriver at $webdriver_url did not stop" >&2
+            exit 1
+        fi
+    else
+        echo "using existing unmanaged WebDriver at $webdriver_url" >&2
+        echo "WEBDRIVER_URL=$webdriver_url" >>"$NEXTEST_ENV"
+        exit 0
+    fi
 fi
 
 if ! command -v chromedriver >/dev/null 2>&1; then
     echo "chromedriver not found in PATH" >&2
     exit 1
 fi
-
-log_dir="${CARGO_TARGET_DIR:-target}/nextest"
-mkdir -p "$log_dir"
-log_file="$log_dir/chromedriver-$webdriver_port.log"
-pid_file="$log_dir/chromedriver-$webdriver_port.pid"
 
 find_nextest_pid() {
     local pid comm args
