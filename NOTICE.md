@@ -9,6 +9,7 @@ Package-local notices and license texts are kept next to the code or skill mater
 `skills/cheers-design` adapts material from Impeccable.
 
 - Original work: <https://github.com/pbakaus/impeccable>
+- Upstream sync/base: `e587004ee42883dad40d14cd0f5e1b21ae1933df`
 - Copyright: 2025-2026 Paul Bakaus
 - License: Apache License 2.0
 - Local notice: [`skills/cheers-design/NOTICE.md`](skills/cheers-design/NOTICE.md)
@@ -19,6 +20,7 @@ Package-local notices and license texts are kept next to the code or skill mater
 Templating implementation code is derived from Hypertext.
 
 - Original work: <https://github.com/vidhanio/hypertext>
+- Upstream sync/base: `95691f5bd97b1adb6b0138a3ce7c91b6e4e8e7ab`
 - License: MIT
 - Local notices:
   - [`crates/ast/NOTICE.md`](crates/ast/NOTICE.md)
@@ -32,6 +34,7 @@ Templating implementation code is derived from Hypertext.
 `cheers` vendors and/or bundles Datastar runtime code.
 
 - Original work: <https://github.com/starfederation/datastar>
+- Upstream sync/base: `329e797316e5b9add0256e64ee0ca2b5bf9ba6ba`
 - Copyright: © Star Federation
 - License: MIT
 - Local notice: [`crates/cheers/NOTICE.md`](crates/cheers/NOTICE.md)
@@ -43,6 +46,7 @@ Templating implementation code is derived from Hypertext.
 `cargo-cheers` contains formatter implementation code based on Maudfmt.
 
 - Original work: <https://github.com/Jeosas/maudfmt>
+- Upstream sync/base: `445d40f9eaa4bb4e966e1a7c1717b18b3cf77f61`
 - Copyright: 2025 Jean-Baptiste WINTERGERST
 - License: MIT
 - Local notice: [`crates/cargo-cheers/NOTICE.md`](crates/cargo-cheers/NOTICE.md)
