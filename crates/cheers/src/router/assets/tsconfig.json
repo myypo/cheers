@@ -1,12 +1,12 @@
 {
-  "extends": "../../../../../vendor/datastar/tsconfig.json",
+  "extends": "../../../vendor/datastar/tsconfig.json",
   "compilerOptions": {
     "noEmit": true,
     "paths": {
-      "@engine": ["../../../../../vendor/datastar/src/engine/engine.ts"],
-      "@engine/*": ["../../../../../vendor/datastar/src/engine/*"],
-      "@plugins/*": ["../../../../../vendor/datastar/src/plugins/*"],
-      "@utils/*": ["../../../../../vendor/datastar/src/utils/*"]
+      "@engine": ["../../../vendor/datastar/src/engine/engine.ts"],
+      "@engine/*": ["../../../vendor/datastar/src/engine/*"],
+      "@plugins/*": ["../../../vendor/datastar/src/plugins/*"],
+      "@utils/*": ["../../../vendor/datastar/src/utils/*"]
     }
   },
   "include": [

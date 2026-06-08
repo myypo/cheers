@@ -21,6 +21,7 @@ use lightningcss::{
 use crate::__internal::assets::{
     AssetSourceLocation, CssBundleRegistration, JsBundleRegistration, SvgSpriteRegistration,
 };
+use crate::bundle;
 use crate::components::{CssBundle, JsBundle};
 use crate::router::Error;
 use crate::track::TrackConfig;

@@ -36,14 +36,14 @@ Templating implementation code is derived from Hypertext.
 - License: MIT
 - Local notice: [`crates/cheers/NOTICE.md`](crates/cheers/NOTICE.md)
 - License text: [`crates/cheers/LICENSES/datastar-MIT.txt`](crates/cheers/LICENSES/datastar-MIT.txt)
-- Vendored license copy: [`vendor/datastar/LICENSE.md`](vendor/datastar/LICENSE.md)
+- Vendored license copy: [`crates/cheers/vendor/datastar/LICENSE.md`](crates/cheers/vendor/datastar/LICENSE.md)
 
 ## Maudfmt
 
-`cheers-fmt` contains formatter implementation code based on Maudfmt.
+`cargo-cheers` contains formatter implementation code based on Maudfmt.
 
 - Original work: <https://github.com/Jeosas/maudfmt>
 - Copyright: 2025 Jean-Baptiste WINTERGERST
 - License: MIT
-- Local notice: [`crates/fmt/NOTICE.md`](crates/fmt/NOTICE.md)
-- License text: [`crates/fmt/LICENSES/maudfmt-MIT.txt`](crates/fmt/LICENSES/maudfmt-MIT.txt)
+- Local notice: [`crates/cargo-cheers/NOTICE.md`](crates/cargo-cheers/NOTICE.md)
+- License text: [`crates/cargo-cheers/LICENSES/maudfmt-MIT.txt`](crates/cargo-cheers/LICENSES/maudfmt-MIT.txt)

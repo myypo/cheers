@@ -458,11 +458,17 @@ dependencies = [
  "anyhow",
  "assert_cmd",
  "assert_fs",
- "cheers-fmt",
+ "cheers-ast",
  "clap",
+ "crop",
  "glob",
  "predicates",
  "pretty_assertions",
+ "prettyplease",
+ "proc-macro2",
+ "quote",
+ "rustc_lexer",
+ "syn 2.0.117",
 ]
 
 [[package]]
@@ -502,10 +508,10 @@ checksum = "613afe47fcd5fac7ccf1db93babcb082c5994d996f20b8b159f2ad1658eb5724"
 name = "cheers"
 version = "0.1.0-alpha.1"
 dependencies = [
+ "anyhow",
  "async-compression",
  "axum",
  "base64",
- "cheers-bundle",
  "cheers-macros",
  "cssparser",
  "dioxus-devtools",
@@ -522,6 +528,16 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2",
+ "swc_bundler",
+ "swc_common",
+ "swc_ecma_ast",
+ "swc_ecma_codegen",
+ "swc_ecma_loader",
+ "swc_ecma_minifier",
+ "swc_ecma_parser",
+ "swc_ecma_transforms_base",
+ "swc_ecma_transforms_typescript",
+ "swc_ecma_visit",
  "thirtyfour",
  "tokio",
  "tokio-stream",
@@ -529,6 +545,7 @@ dependencies = [
  "tower",
  "tracing",
  "trybuild",
+ "walkdir",
  "zmij",
 ]
 
@@ -542,24 +559,6 @@ dependencies = [
  "quote",
  "rustc-hash",
  "syn 2.0.117",
-]
-
-[[package]]
-name = "cheers-bundle"
-version = "0.1.0-alpha.1"
-dependencies = [
- "anyhow",
- "swc_bundler",
- "swc_common",
- "swc_ecma_ast",
- "swc_ecma_codegen",
- "swc_ecma_loader",
- "swc_ecma_minifier",
- "swc_ecma_parser",
- "swc_ecma_transforms_base",
- "swc_ecma_transforms_typescript",
- "swc_ecma_visit",
- "walkdir",
 ]
 
 [[package]]
@@ -601,21 +600,6 @@ dependencies = [
  "cheers",
  "serde",
  "tokio",
-]
-
-[[package]]
-name = "cheers-fmt"
-version = "0.1.0-alpha.1"
-dependencies = [
- "anyhow",
- "cheers-ast",
- "crop",
- "pretty_assertions",
- "prettyplease",
- "proc-macro2",
- "quote",
- "rustc_lexer",
- "syn 2.0.117",
 ]
 
 [[package]]

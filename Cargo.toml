@@ -79,11 +79,9 @@ anyhow = "1"
 walkdir = "2"
 
 # Workspace crates
-bundle = { package = "cheers-bundle", path = "./crates/bundle", version = "=0.1.0-alpha.1" }
 cheers = { path = "./crates/cheers", version = "=0.1.0-alpha.1" }
 ast = { package = "cheers-ast", path = "./crates/ast", version = "=0.1.0-alpha.1" }
 macros = { package = "cheers-macros", path = "./crates/macros", version = "=0.1.0-alpha.1" }
-fmt = { package = "cheers-fmt", path = "./crates/fmt", version = "=0.1.0-alpha.1" }
 cli = { package = "cargo-cheers", path = "./crates/cargo-cheers", version = "=0.1.0-alpha.1" }
 
 [workspace.lints.clippy]

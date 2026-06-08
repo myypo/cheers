@@ -16,6 +16,9 @@ categories.workspace = true
 [package.metadata.docs.rs]
 all-features = true
 
+[package.metadata.cargo-machete]
+ignored = ["walkdir"]
+
 [dependencies]
 axum = { workspace = true, features = ["ws"] }
 html-escape.workspace = true
@@ -30,10 +33,20 @@ futures.workspace = true
 ignore.workspace = true
 tokio.workspace = true
 tokio-stream.workspace = true
-bundle.workspace = true
 notify.workspace = true
 lightningcss.workspace = true
 base64.workspace = true
+anyhow.workspace = true
+swc_common.workspace = true
+swc_ecma_ast.workspace = true
+swc_ecma_parser.workspace = true
+swc_ecma_minifier.workspace = true
+swc_ecma_codegen.workspace = true
+swc_ecma_transforms_base.workspace = true
+swc_bundler.workspace = true
+swc_ecma_loader.workspace = true
+swc_ecma_transforms_typescript.workspace = true
+swc_ecma_visit.workspace = true
 tracing.workspace = true
 tower.workspace = true
 serde.workspace = true
@@ -44,6 +57,10 @@ async-compression.workspace = true
 tokio-util.workspace = true
 thirtyfour = { workspace = true, optional = true }
 dioxus-devtools = { workspace = true, optional = true }
+
+[build-dependencies]
+anyhow.workspace = true
+walkdir.workspace = true
 
 [dev-dependencies]
 trybuild = "1"

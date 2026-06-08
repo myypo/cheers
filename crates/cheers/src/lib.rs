@@ -5,6 +5,7 @@ extern crate self as cheers;
 mod readme_doctests {}
 
 mod async_stream;
+mod bundle;
 pub mod components;
 mod context;
 mod custom_event;
