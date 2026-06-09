@@ -62,7 +62,7 @@ use crate::{
 pub struct PatchElements {
     mode: Option<PatchElementsMode>,
     selector: Option<String>,
-    use_view_transition: bool,
+    view_transition: ViewTransition,
     components: Option<Buffer>,
 }
 
@@ -78,7 +78,7 @@ impl PatchElements {
         Self {
             mode: None,
             selector: None,
-            use_view_transition: false,
+            view_transition: ViewTransition::None,
             components: None,
         }
     }
@@ -111,9 +111,9 @@ impl PatchElements {
         self
     }
 
-    /// Enables a view transition for the patch.
-    pub fn use_view_transition(mut self) -> Self {
-        self.use_view_transition = true;
+    /// Sets the view transition behavior for the patch.
+    pub fn view_transition(mut self, view_transition: ViewTransition) -> Self {
+        self.view_transition = view_transition;
         self
     }
 
@@ -128,7 +128,7 @@ impl PatchElements {
             Self {
                 mode: self.mode,
                 selector: self.selector,
-                use_view_transition: self.use_view_transition,
+                view_transition: self.view_transition,
                 components: Some(components),
             }
         } else {
@@ -166,6 +166,20 @@ fn css_escape_identifier(value: &str) -> String {
     cssparser::serialize_identifier(value, &mut escaped)
         .expect("writing CSS identifier to String should not fail");
     escaped
+}
+
+/// The view transition behavior for a [`PatchElements`] update.
+#[derive(Debug, Clone, Default)]
+pub enum ViewTransition {
+    /// Does not run the patch inside a view transition.
+    #[default]
+    None,
+    /// Runs the patch inside a document-level view transition.
+    Document,
+    /// Runs the patch inside a view transition scoped to an arbitrary CSS selector.
+    Selector(String),
+    /// Runs the patch inside a view transition scoped to a component-generated [`ElementId`].
+    Id(ElementId),
 }
 
 /// The DOM operation performed by [`PatchElements`].
@@ -209,7 +223,7 @@ impl From<PatchElements> for Event {
         PatchElements {
             mode,
             selector,
-            use_view_transition,
+            view_transition,
             components,
         }: PatchElements,
     ) -> Self {
@@ -228,8 +242,31 @@ impl From<PatchElements> for Event {
         if let Some(selector) = selector {
             add_sse_line(&mut data, format!("selector {selector}"));
         }
-        if use_view_transition {
-            add_sse_line(&mut data, "useViewTransition true".to_owned());
+        match view_transition {
+            ViewTransition::None => {}
+            ViewTransition::Document => {
+                add_sse_line(&mut data, "useViewTransition true".to_owned());
+            }
+            ViewTransition::Selector(selector) => {
+                add_sse_line(&mut data, "useViewTransition true".to_owned());
+                add_sse_line(
+                    &mut data,
+                    format!(
+                        "viewTransitionSelector {}",
+                        sanitize_datastar_scalar_value(selector),
+                    ),
+                );
+            }
+            ViewTransition::Id(id) => {
+                add_sse_line(&mut data, "useViewTransition true".to_owned());
+                add_sse_line(
+                    &mut data,
+                    format!(
+                        "viewTransitionSelector #{}",
+                        sanitize_datastar_scalar_value(css_escape_identifier(&id.0)),
+                    ),
+                );
+            }
         }
         if let Some(components) = components {
             let components = components.rendered().into_inner();
@@ -261,7 +298,7 @@ impl IntoResponse for PatchElements {
         let Self {
             mode,
             selector,
-            use_view_transition,
+            view_transition,
             components,
         }: Self = self;
 
@@ -273,8 +310,26 @@ impl IntoResponse for PatchElements {
         if let Some(selector) = selector {
             r = r.header("datastar-selector", selector);
         }
-        if use_view_transition {
-            r = r.header("datastar-use-view-transition", "true");
+        match view_transition {
+            ViewTransition::None => {}
+            ViewTransition::Document => {
+                r = r.header("datastar-use-view-transition", "true");
+            }
+            ViewTransition::Selector(selector) => {
+                r = r.header("datastar-use-view-transition", "true").header(
+                    "datastar-view-transition-selector",
+                    sanitize_datastar_scalar_value(selector),
+                );
+            }
+            ViewTransition::Id(id) => {
+                r = r.header("datastar-use-view-transition", "true").header(
+                    "datastar-view-transition-selector",
+                    format!(
+                        "#{}",
+                        sanitize_datastar_scalar_value(css_escape_identifier(&id.0)),
+                    ),
+                );
+            }
         }
         let body = components
             .map(|c| c.rendered().into_inner())
@@ -351,6 +406,61 @@ data: selector #foo\n\n"
     }
 
     #[tokio::test]
+    async fn selector_view_transition_is_sent_for_sse_and_headers() {
+        let patch = PatchElements::new()
+            .mode(PatchElementsMode::Outer)
+            .view_transition(ViewTransition::Selector("#shell".to_owned()));
+
+        let body = read_sse_body(patch.clone()).await;
+        assert_eq!(
+            body,
+            "event: datastar-patch-elements\ndata: mode outer\ndata: useViewTransition true\ndata: viewTransitionSelector #shell\n\n"
+        );
+
+        let response = patch.into_response();
+        assert_eq!(
+            response
+                .headers()
+                .get("datastar-use-view-transition")
+                .and_then(|value| value.to_str().ok()),
+            Some("true")
+        );
+        assert_eq!(
+            response
+                .headers()
+                .get("datastar-view-transition-selector")
+                .and_then(|value| value.to_str().ok()),
+            Some("#shell")
+        );
+    }
+
+    #[tokio::test]
+    async fn id_view_transition_is_css_escaped() {
+        let patch = PatchElements::new().view_transition(ViewTransition::Id(ElementId::__dynamic(
+            "panel 1".to_owned(),
+        )));
+
+        let body = read_sse_body(patch).await;
+        assert_eq!(
+            body,
+            "event: datastar-patch-elements\ndata: useViewTransition true\ndata: viewTransitionSelector #panel\\ 1\n\n"
+        );
+    }
+
+    #[tokio::test]
+    async fn selector_view_transition_cannot_inject_extra_sse_fields() {
+        let patch = PatchElements::new().view_transition(ViewTransition::Selector(
+            "#bad\nelements <script>alert(1)</script>".to_owned(),
+        ));
+
+        let body = read_sse_body(patch).await;
+        assert!(
+            !body.contains("data: elements <script>alert(1)</script>"),
+            "view transition selector content must not create a second Datastar SSE field:\n{body}"
+        );
+    }
+
+    #[tokio::test]
     async fn sends_patch_elements_with_component() {
         struct Content<'a> {
             content: &'a str,
@@ -366,7 +476,7 @@ data: selector #foo\n\n"
         let patch = PatchElements::new()
             .element(Content { content })
             .mode(PatchElementsMode::Append)
-            .use_view_transition();
+            .view_transition(ViewTransition::Document);
 
         let body = read_sse_body(patch).await;
         assert_eq!(

@@ -34,7 +34,7 @@ Templating implementation code is derived from Hypertext.
 `cheers` vendors and/or bundles Datastar runtime code.
 
 - Original work: <https://github.com/starfederation/datastar>
-- Upstream sync/base: `329e797316e5b9add0256e64ee0ca2b5bf9ba6ba`
+- Upstream sync/base: `cd85a635f9fcf9422c2eea122f9ad8e1e55179a5`
 - Copyright: © Star Federation
 - License: MIT
 - Local notice: [`crates/cheers/NOTICE.md`](crates/cheers/NOTICE.md)

@@ -11,7 +11,7 @@ mod patch_elements;
 mod patch_signals;
 
 pub use js_script::JsScript;
-pub use patch_elements::{PatchElements, PatchElementsMode};
+pub use patch_elements::{PatchElements, PatchElementsMode, ViewTransition};
 pub use patch_signals::PatchSignals;
 
 // TODO: write an impl that allows to construct this type from a stream

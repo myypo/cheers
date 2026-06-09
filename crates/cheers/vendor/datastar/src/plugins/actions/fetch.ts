@@ -116,11 +116,6 @@ const createHttpMethod = (
               // don't retry if the content-type is wrong
               throw error('FetchExpectedTextEventStream', { url })
             }
-            // do nothing and it will retry
-            if (error) {
-              console.error(error.message)
-              dispatchFetch(RETRYING, el, { message: error.message })
-            }
           },
         }
 
@@ -253,6 +248,7 @@ type ResponseOverrides =
       mode?: string
       namespace?: string
       useViewTransition?: boolean
+      viewTransitionSelector?: string
     }
   | {
       onlyIfMissing?: boolean
@@ -520,6 +516,27 @@ const fetchEventSource = (
 
     let retries = 0
     let baseRetryInterval = retryInterval
+
+    const retryRequest = (
+      interval = retryInterval,
+      argsRaw: WatcherArgs = {},
+    ): boolean => {
+      if (retries < retryMaxCount) {
+        dispatchFetch(RETRYING, el, argsRaw)
+        clearTimeout(retryTimer)
+        retryTimer = setTimeout(create, interval)
+        retries++
+        // Prepare the interval for the next retry (exponential backoff)
+        retryInterval = Math.min(retryInterval * retryScaler, retryMaxWait)
+        return true
+      } else {
+        dispatchFetch(RETRIES_FAILED, el, {})
+        dispose()
+        reject('Max retries reached.')
+        return false
+      }
+    }
+
     const create = async () => {
       curRequestController = new AbortController()
       const curRequestSignal = curRequestController.signal
@@ -569,8 +586,7 @@ const fetchEventSource = (
             !isRedirectStatus &&
             (retry === 'always' || (retry === 'error' && isErrorStatus))
           ) {
-            clearTimeout(retryTimer)
-            retryTimer = setTimeout(create, retryInterval)
+            retryRequest()
             return
           }
           dispose()
@@ -593,6 +609,7 @@ const fetchEventSource = (
             'mode',
             'namespace',
             'useViewTransition',
+            'viewTransitionSelector',
           )
         }
 
@@ -649,8 +666,7 @@ const fetchEventSource = (
         onclose?.()
 
         if (retry === 'always' && !isRedirectStatus) {
-          clearTimeout(retryTimer)
-          retryTimer = setTimeout(create, retryInterval)
+          retryRequest()
           return
         }
 
@@ -662,18 +678,8 @@ const fetchEventSource = (
           try {
             // check if we need to retry:
             const interval: any = onerror?.(err) || retryInterval
-            clearTimeout(retryTimer)
-            retryTimer = setTimeout(create, interval)
-            retryInterval = Math.min(
-              retryInterval * retryScaler,
-              retryMaxWait,
-            ) // exponential backoff
-            if (++retries >= retryMaxCount) {
-              dispatchFetch(RETRIES_FAILED, el, {})
-              // we should not retry anymore:
-              dispose()
-              reject('Max retries reached.') // Max retries reached, check your server or network connection
-            } else {
+            const message = err instanceof Error ? err.message : undefined
+            if (retryRequest(interval, message ? { message } : {})) {
               console.error(
                 `Datastar failed to reach ${input.toString()} retrying in ${interval}ms.`,
               )

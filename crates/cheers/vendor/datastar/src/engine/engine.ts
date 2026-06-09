@@ -127,7 +127,7 @@ const cleanupEls = (els: Iterable<HTMLOrSVG>): void => {
   }
 };
 
-const ignore = "ignore";
+const ignore = "data-ignore";
 const ignoreAttr = `[${ignore}]`;
 const shouldIgnore = (el: HTMLOrSVG) =>
   el.hasAttribute(`${ignore}__self`) || !!el.closest(ignoreAttr);

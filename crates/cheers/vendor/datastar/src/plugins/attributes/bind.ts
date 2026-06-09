@@ -60,27 +60,28 @@ const valueAdapter = (
 const dataURIRegex = /^data:(?<mime>[^;]+);base64,(?<contents>.*)$/;
 const empty = Symbol("empty");
 
-const bind = "bind";
+const dataAttribute = (rawKey: string) => `data-${CSS.escape(rawKey)}`;
 
 const boundPath = (
   el: Element,
   key: string | null | undefined,
-  value: string | null | undefined,
+  rawKey: string,
+  signalName: string,
   signalPath: Path,
   adapter: BindAdapter,
   initialValue: any,
 ): Path => {
+  const rawAttribute = dataAttribute(rawKey);
+  const selector = key
+    ? `[${rawAttribute}]`
+    : `[${rawAttribute}="${CSS.escape(signalName)}"]`;
+
   if (
     initialValue === undefined &&
     el instanceof HTMLInputElement &&
     el.type === "radio"
   ) {
-    const signalNameKebab = key ? key : value!;
-    const checked = [
-      ...document.querySelectorAll(
-        `[${bind}\\:${CSS.escape(signalNameKebab)}],[${bind}="${CSS.escape(signalNameKebab)}"]`,
-      ),
-    ].find(
+    const checked = [...document.querySelectorAll(selector)].find(
       (input): input is HTMLInputElement =>
         input instanceof HTMLInputElement && input.checked,
     );
@@ -100,10 +101,7 @@ const boundPath = (
     return signalPath;
   }
 
-  const signalNameKebab = key ? key : value!;
-  const inputs = document.querySelectorAll(
-    `[${bind}\\:${CSS.escape(signalNameKebab)}],[${bind}="${CSS.escape(signalNameKebab)}"]`,
-  ) as NodeListOf<Element>;
+  const inputs = document.querySelectorAll(selector) as NodeListOf<Element>;
 
   const paths: Paths = [];
   let i = 0;
@@ -128,7 +126,7 @@ const boundPath = (
 attribute({
   name: "bind",
   requirement: "exclusive",
-  apply({ el, key, mods, value, error }) {
+  apply({ el, key, rawKey, mods, value, error }) {
     const signalName = key != null ? modifyCasing(key, mods) : value;
     const signalPath = parseSignalPath(signalName);
 
@@ -276,7 +274,15 @@ attribute({
     }
 
     const initialValue = getPath(signalPath);
-    const path = boundPath(el, key, value, signalPath, adapter, initialValue);
+    const path = boundPath(
+      el,
+      key,
+      rawKey,
+      signalName,
+      signalPath,
+      adapter,
+      initialValue,
+    );
 
     const syncSignal = () => {
       const signalValue = getPath(path);

@@ -76,7 +76,11 @@ const parseQuotedSegment = (path: string, index: number): [string, number] => {
           break
         }
         default:
-          throwInvalidPath(path, `unsupported escape ${JSON.stringify(`\\${escaped}`)}`, index - 1)
+          return throwInvalidPath(
+            path,
+            `unsupported escape ${JSON.stringify(`\\${escaped}`)}`,
+            index - 1,
+          )
       }
 
       index++
@@ -91,7 +95,7 @@ const parseQuotedSegment = (path: string, index: number): [string, number] => {
     index++
   }
 
-  throwInvalidPath(path, 'unterminated quoted segment', index)
+  return throwInvalidPath(path, 'unterminated quoted segment', index)
 }
 
 export const parsePath = (path: string): Path => {
@@ -100,9 +104,10 @@ export const parsePath = (path: string): Path => {
     return []
   }
 
-  const root = path.match(ROOT_SEGMENT_RE)?.[0]
+  const rootMatch = path.match(ROOT_SEGMENT_RE)
+  const root = rootMatch?.[0]
   if (root == null) {
-    throwInvalidPath(path, 'expected a root segment', 0)
+    return throwInvalidPath(path, 'expected a root segment', 0)
   }
 
   const segments: Path = [root]

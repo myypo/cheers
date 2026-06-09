@@ -35,7 +35,6 @@ type PatchElementsArgs = {
   selector: string;
   mode: PatchElementsMode;
   namespace: Namespace;
-  useViewTransition: boolean;
   elements: WatcherArgsValue;
 };
 
@@ -46,8 +45,13 @@ watcher({
     const mode = typeof args.mode === "string" ? args.mode : "outer";
     const namespace =
       typeof args.namespace === "string" ? args.namespace : "html";
-    const useViewTransitionRaw =
-      typeof args.useViewTransition === "string" ? args.useViewTransition : "";
+    const useViewTransition =
+      typeof args.useViewTransition === "string" &&
+      args.useViewTransition.trim() === "true";
+    const viewTransitionSelector =
+      typeof args.viewTransitionSelector === "string"
+        ? args.viewTransitionSelector
+        : "";
     const elements = args.elements;
 
     if (!isValidType(PATCH_MODES, mode)) {
@@ -62,19 +66,31 @@ watcher({
       throw ctx.error("PatchElementsInvalidNamespace", { namespace });
     }
 
-    const args2: PatchElementsArgs = {
+    const patchElementsArgs: PatchElementsArgs = {
       selector,
       mode,
       namespace,
-      useViewTransition: useViewTransitionRaw.trim() === "true",
       elements,
     };
 
-    if (supportsViewTransitions && args2.useViewTransition) {
-      document.startViewTransition(() => onPatchElements(ctx, args2));
-    } else {
-      onPatchElements(ctx, args2);
+    if (useViewTransition) {
+      if (viewTransitionSelector) {
+        const element = document.querySelector(viewTransitionSelector);
+        if (element && supportsViewTransitions(element)) {
+          element.startViewTransition(() =>
+            onPatchElements(ctx, patchElementsArgs),
+          );
+          return;
+        }
+      } else if (supportsViewTransitions(document)) {
+        document.startViewTransition(() =>
+          onPatchElements(ctx, patchElementsArgs),
+        );
+        return;
+      }
     }
+
+    onPatchElements(ctx, patchElementsArgs);
   },
 });
 
@@ -83,7 +99,7 @@ const onPatchElements = (
   { selector, mode, namespace, elements }: PatchElementsArgs,
 ) => {
   let newContent = document.createDocumentFragment();
-  const consume = typeof elements !== "string" && !!elements;
+  let consume = typeof elements !== "string" && !!elements;
 
   if (typeof elements === "string") {
     const elementsWithSvgsRemoved = elements.replace(
@@ -154,7 +170,8 @@ const onPatchElements = (
         }
       }
 
-      applyToTargets(mode as PatchElementsMode, child, [target], consume);
+      // Consume the new content so we don’t deep clone.
+      applyToTargets(mode as PatchElementsMode, child, [target], true);
     }
   } else {
     const targets = document.querySelectorAll(selector);
@@ -164,6 +181,12 @@ const onPatchElements = (
     }
 
     const targetList = consume && mode !== "remove" ? [targets[0]!] : targets;
+
+    // If only one target exists, we can safely consume the new content which prevents deep cloning (https://github.com/starfederation/datastar/issues/1155).
+    if (targetList.length === 1) {
+      consume = true;
+    }
+
     applyToTargets(mode as PatchElementsMode, newContent, targetList, consume);
   }
 };
@@ -265,7 +288,7 @@ const duplicateIds = new Set<string>();
 const ctxPantry = document.createElement("div");
 ctxPantry.hidden = true;
 
-const ignoreMorph = "ignore-morph";
+const ignoreMorph = "data-ignore-morph";
 const ignoreMorphAttr = `[${ignoreMorph}]`;
 export const morph = (
   oldElt: Element | ShadowRoot,
@@ -551,7 +574,7 @@ const moveBefore = (parentNode: Node, node: Node, after: Node | null): void => {
   parentNode.insertBefore(node, after);
 };
 
-const preserveAttr = "preserve-attr";
+const preserveAttr = "data-preserve-attr";
 
 // syncs the oldNode to the newNode, copying over all attributes and
 // inner element state from the newNode to the oldNode
