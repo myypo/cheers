@@ -1,6 +1,6 @@
-# Teach
+# Init
 
-Gather project design context and write strategic docs for future Cheers UI work.
+Gather project design context and write strategic docs for future Cheers UI work. Init creates the strategic base that later `shape`, `craft`, `critique`, and `polish` runs rely on.
 
 ## Outputs
 
@@ -76,6 +76,8 @@ The register value should be exactly `product` or `brand`.
 
 If UI code exists, offer to run `document` in scan mode. If the project is new, offer seed mode. Do not write DESIGN.md unless the user agrees or explicitly asked for it.
 
+When writing or refreshing DESIGN.md, use the Google Stitch-compatible frontmatter and section shape described in `document.md`.
+
 ## Step 5: wrap up
 
-Summarize what was written and the principles that future `cheers-design` commands should follow. If this teach flow was a blocker for `craft`, resume into `shape`; teach context is not a task-specific brief.
+Summarize what was written and the principles that future `cheers-design` commands should follow. If this init flow was a blocker for `craft`, resume into `shape`; init context is not a task-specific brief.

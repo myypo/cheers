@@ -1,7 +1,7 @@
 ---
 name: cheers-design
 description: "Use when a Cheers task requires UI/UX design judgment: shaping a new visible surface, materially changing layout, hierarchy, copy, interaction states, motion, onboarding, or requested design audit/polish."
-argument-hint: "[teach|document|shape|craft|extract|critique|audit|polish|harden|optimize|clarify|adapt|onboard|layout|typeset|colorize|bolder|quieter|distill|delight|animate|overdrive] [target]"
+argument-hint: "[init|document|shape|craft|extract|critique|audit|polish|harden|optimize|clarify|adapt|onboard|layout|typeset|colorize|bolder|quieter|distill|delight|animate|overdrive] [target]"
 user-invocable: true
 ---
 
@@ -14,7 +14,7 @@ Design and iterate production-grade interfaces for Cheers apps. This skill owns 
 Before design work or file edits:
 
 1. If the task involves code edits and `cheers` is not already loaded, read it for implementation mechanics. Do not duplicate those mechanics here.
-2. Read existing `PRODUCT.md` and `DESIGN.md` when present. If they are missing and the task depends on strategic context, use `teach` or `document` rather than inventing a brand or system.
+2. Read existing `PRODUCT.md` and `DESIGN.md` when present. If they are missing and the task depends on strategic context, use `init` or `document` rather than inventing a brand or system.
 3. Classify the surface as **product** or **brand**, then read the matching register reference:
    - [reference/product.md](reference/product.md) for authenticated app UI, dashboards, settings, tools, forms, and data surfaces. Design serves a task.
    - [reference/brand.md](reference/brand.md) for landing pages, marketing, long-form, portfolio, campaign, public storytelling. Design is the product.
@@ -69,7 +69,7 @@ Apply these without fighting the Cheers interaction guardrails.
 
 | Command | Use | Reference |
 |---|---|---|
-| `teach` | Capture strategic product/brand context in PRODUCT.md | [reference/teach.md](reference/teach.md) |
+| `init` | Capture strategic product/brand context in PRODUCT.md and set up design docs | [reference/init.md](reference/init.md) |
 | `document` | Create or refresh DESIGN.md from Cheers UI code | [reference/document.md](reference/document.md) |
 | `shape [target]` | Produce a task-specific UX/UI brief before code | [reference/shape.md](reference/shape.md) |
 | `craft [target]` | Build a confirmed brief into Cheers code and iterate | [reference/craft.md](reference/craft.md) |

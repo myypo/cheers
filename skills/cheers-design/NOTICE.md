@@ -6,7 +6,7 @@ This skill adapts material from Impeccable.
 - Copyright: 2025-2026 Paul Bakaus
 - License: Apache License 2.0
 - License text: [`LICENSES/impeccable-Apache-2.0.txt`](LICENSES/impeccable-Apache-2.0.txt)
-- Changes: adapted the design-skill guidance for Cheers/Rust/Datastar, added a clear boundary with the main `cheers` implementation skill, and kept only design-level interaction guardrails such as backend-confirmed state and no optimistic UI.
+- Changes: adapted the design-skill guidance for Cheers/Rust/Datastar, added a clear boundary with the main `cheers` implementation skill, kept only design-level interaction guardrails such as backend-confirmed state and no optimistic UI, migrated setup language to `init`, added critique snapshot persistence under `.cheers-design/critique/`, and adopted Google Stitch-style `DESIGN.md` frontmatter guidance.
 
 Upstream Impeccable `NOTICE.md` attribution is reproduced below:
 

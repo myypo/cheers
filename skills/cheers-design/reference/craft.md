@@ -14,6 +14,18 @@ Before editing, load `cheers` for implementation rules, the matching register re
 
 Briefly state: confirmed brief status, register, primary action, interaction contract, and the fact that success remains backend-confirmed.
 
+## Visual direction and assets capability gate
+
+If the harness provides native image generation, screenshot comparison, or sub-agent asset production, use those capabilities before implementation when the brief is visually open-ended, image-led, brand-heavy, or production-ready:
+
+1. Ask 2-3 targeted visual direction questions if palette, atmosphere, or references are still unresolved.
+2. Produce or request 1-3 distinct visual direction probes or mocks.
+3. Stop for approval or explicit delegation before coding.
+4. Inventory the approved direction's major ingredients: hero silhouette, imagery/media, typography, palette, section structure, signature motifs, motion cues, and what should remain semantic HTML/CSS/SVG rather than raster.
+5. Use a scoped sub-agent for asset production only when the harness supports sub-agents and the user allows it.
+
+This flow is **not Codex-exclusive**; upstream names one file `codex.md` because Codex exposes native image generation there. In Pi, only run the generated-mock or asset-subagent steps when those capabilities are actually available. If they are unavailable, state that the visual-generation step is skipped and implement directly from the confirmed brief.
+
 ## Build passes
 
 ### 1. Re-anchor the design

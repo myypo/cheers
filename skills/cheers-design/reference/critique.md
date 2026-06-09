@@ -2,9 +2,33 @@
 
 Run a design-director review of a Cheers UI and produce prioritized feedback. Critique may inspect code and rendered output, but does not fix issues.
 
+Critique is also the source of a reusable backlog: persist the final report under `.cheers-design/critique/` so later `polish` runs can consume prior P0/P1 findings without copy-paste.
+
 ## Inputs
 
 Clarify the surface goal if it is not obvious. A critique without knowing the intended primary action is mostly taste.
+
+Resolve the target to a stable file path or URL before reviewing. Prefer a source path over a dev-server URL when both identify the same surface; ports drift, paths do not.
+
+Examples:
+
+- "the homepage" -> `src/pages/home.rs`, `templates/home.html`, or equivalent source
+- "the settings modal" -> the primary component file
+- "this page" -> current URL only if no source path is identifiable
+
+## Persistence setup
+
+Use the helper script from this skill directory: `scripts/critique-storage.mjs`. Resolve it against the skill directory before running commands.
+
+1. Compute the slug:
+
+   ```bash
+   node <skill-dir>/scripts/critique-storage.mjs slug "<resolved-path-or-url>"
+   ```
+
+   Keep the slug. If it exits non-zero because the target is vague or root-level, continue the critique and skip persistence.
+
+2. Read `.cheers-design/critique/ignore.md` if it exists. Drop matching findings silently; it is the user's explicit ignore list for repeated critique noise.
 
 ## Assessment passes
 
@@ -19,7 +43,7 @@ If browser automation is available, inspect the live UI at mobile and desktop. I
 
 ### AI-slop and visual quality
 
-Look for gradient text, decorative glass, side-stripe card accents, generic hero metrics, equal icon-card grids, nested cards, centered-stack defaults, category-reflex palettes, and vague filler copy.
+Look for gradient text, decorative glass, side-stripe card accents, generic hero metrics, equal icon-card grids, nested cards, centered-stack defaults, category-reflex palettes, repeated tiny section kickers, default numbered section markers, oversized display type, text overflow, and vague filler copy.
 
 ### Heuristics
 
@@ -106,3 +130,30 @@ Severity:
 - **P1**: major user harm or backend-confirmed trust violation.
 - **P2**: meaningful quality issue.
 - **P3**: polish.
+
+## Persist the snapshot
+
+After finalizing the report, write it to `.cheers-design/critique/` if a slug was computed.
+
+1. Write the full report body to a temporary file. Exclude any final conversational question that is not part of the critique report.
+2. Run:
+
+   ```bash
+   CHEERS_DESIGN_CRITIQUE_META='{"target":"<resolved>","score":<total>,"p0":<count>,"p1":<count>}' \
+     node <skill-dir>/scripts/critique-storage.mjs write <slug> <body-file>
+   ```
+
+   The helper prints the absolute path it wrote.
+
+3. Delete the temporary body file whether the write succeeds or fails.
+4. Read trend metadata:
+
+   ```bash
+   node <skill-dir>/scripts/critique-storage.mjs trend <slug> 5
+   ```
+
+5. Add one concise line after the report:
+
+   > Wrote `.cheers-design/critique/<filename>`. Trend for `<slug>`: 24 -> 28 -> 32.
+
+If this is the first run, say: `First run for <slug>, no trend yet.` If persistence fails, report the error briefly and continue; the chat report remains the primary deliverable.
