@@ -768,10 +768,6 @@ const CLIENT_SCRIPT_TEMPLATE = String.raw`(() => {
       "#" + POPUP_ID + " textarea{box-sizing:border-box;width:100%;min-height:104px;margin:8px 0;padding:8px;border-radius:8px;border:1px solid #475569;background:#020617;color:#f8fafc;font:12px/1.4 system-ui,-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif}" +
       "#" + POPUP_ID + " button{margin-right:6px;border:0;border-radius:999px;padding:6px 10px;background:#93c5fd;color:#0f172a;font-weight:700;cursor:pointer}" +
       "#" + POPUP_ID + " button.secondary{background:#cbd5e1}" +
-      "#" + POPUP_ID + " .summary{margin-top:8px;padding:8px;border:1px solid #1e293b;border-radius:10px;background:#020617;color:#cbd5e1}" +
-      "#" + POPUP_ID + " .row{display:grid;grid-template-columns:84px 1fr;gap:6px;margin:3px 0}" +
-      "#" + POPUP_ID + " .label{color:#93c5fd;font-weight:700}" +
-      "#" + POPUP_ID + " .muted{color:#94a3b8}" +
       "#" + POPUP_ID + " .status{margin-top:6px;color:#c4b5fd;white-space:pre-wrap}";
     document.head.appendChild(style);
   }
@@ -1106,39 +1102,6 @@ const CLIENT_SCRIPT_TEMPLATE = String.raw`(() => {
     status.textContent = "Sent to Pi. You can close this popup.";
   }
 
-  function displayTarget(context) {
-    const target = context.target || {};
-    return truncate([target.selector || target.tag, target.text].filter(Boolean).join(" · "), 180);
-  }
-
-  function appendSummaryRow(summary, label, value) {
-    if (!value) return;
-    const row = document.createElement("div");
-    row.className = "row";
-    const labelNode = document.createElement("div");
-    labelNode.className = "label";
-    labelNode.textContent = label;
-    const valueNode = document.createElement("div");
-    valueNode.textContent = truncate(value, 220);
-    row.append(labelNode, valueNode);
-    summary.appendChild(row);
-  }
-
-  function createSummary(context) {
-    const summary = document.createElement("div");
-    summary.className = "summary";
-    appendSummaryRow(summary, "Target", displayTarget(context));
-    appendSummaryRow(summary, "Source", context.cheers && context.cheers.source);
-    appendSummaryRow(summary, "ID", context.cheers && context.cheers.generatedId);
-    appendSummaryRow(summary, "Labels", context.target && context.target.labels && context.target.labels.join(" | "));
-    appendSummaryRow(summary, "Form", context.target && context.target.form && [context.target.form.method, context.target.form.action || context.target.form.selector].filter(Boolean).join(" "));
-    if (context.cheers && context.cheers.datastarContext && context.cheers.datastarContext.length) {
-      appendSummaryRow(summary, "Datastar", context.cheers.datastarContext.map(function(entry) {
-        return Object.keys(entry.attributes || {}).join(", ");
-      }).filter(Boolean).join(" | "));
-    }
-    return summary;
-  }
 
   function openPopup(target, event) {
     addStyle();
@@ -1154,7 +1117,6 @@ const CLIENT_SCRIPT_TEMPLATE = String.raw`(() => {
     panel.style.left = Math.max(12, Math.min(event.clientX + 12, window.innerWidth - 432)) + "px";
     panel.style.top = Math.max(12, Math.min(event.clientY + 12, window.innerHeight - 340)) + "px";
 
-    const summary = createSummary(context);
     const textarea = document.createElement("textarea");
     textarea.placeholder = "What should change here?";
     const send = document.createElement("button");
@@ -1180,7 +1142,7 @@ const CLIENT_SCRIPT_TEMPLATE = String.raw`(() => {
       if (keyEvent.key === "Escape") cancel.click();
     });
 
-    panel.append(summary, textarea, send, cancel, status);
+    panel.append(textarea, send, cancel, status);
     document.body.appendChild(panel);
     textarea.focus();
   }
