@@ -1,6 +1,7 @@
 {
   "name": "cheers-pi",
   "version": "0.1.0",
+  "private": true,
   "description": "Pi package for Cheers framework skills and browser iteration tooling.",
   "keywords": [
     "pi-package",
