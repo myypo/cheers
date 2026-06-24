@@ -117,18 +117,6 @@ fn should_compress(res: &axum::response::Response) -> bool {
         return false;
     }
 
-    if headers
-        .get(header::CACHE_CONTROL)
-        .and_then(|value| value.to_str().ok())
-        .is_some_and(|value| {
-            value
-                .split(',')
-                .any(|directive| directive.trim().eq_ignore_ascii_case("no-transform"))
-        })
-    {
-        return false;
-    }
-
     let content_type = headers
         .get(header::CONTENT_TYPE)
         .and_then(|v| v.to_str().ok())
@@ -175,9 +163,11 @@ fn append_vary_accept_encoding(headers: &mut axum::http::HeaderMap) {
 
 #[cfg(test)]
 mod tests {
+    use std::convert::Infallible;
+
     use axum::{
         Router,
-        body::Body,
+        body::{Body, Bytes, to_bytes},
         http::{HeaderMap, Request},
         routing::get,
     };
@@ -223,6 +213,60 @@ mod tests {
                 .any(|value| value.trim().eq_ignore_ascii_case("accept-encoding")),
             "compressed responses must set `Vary: Accept-Encoding`; got {vary:?}"
         );
+    }
+
+    #[tokio::test]
+    async fn origin_compression_handles_no_transform_streams() {
+        let app = Router::new()
+            .route(
+                "/",
+                get(async || {
+                    let stream = futures::stream::iter([
+                        Ok::<_, Infallible>(Bytes::from_static(b"<p>Loading</p>")),
+                        Ok::<_, Infallible>(Bytes::from_static(b"<p>Loaded</p>")),
+                    ]);
+
+                    (
+                        [
+                            (header::CONTENT_TYPE, "text/html; charset=UTF-8"),
+                            (header::CACHE_CONTROL, "no-transform"),
+                        ],
+                        Body::from_stream(stream),
+                    )
+                }),
+            )
+            .layer(axum::middleware::from_fn(compression_middleware));
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .uri("/")
+                    .header(header::ACCEPT_ENCODING, "gzip")
+                    .body(Body::empty())
+                    .expect("request should build"),
+            )
+            .await
+            .expect("router should respond");
+
+        assert_eq!(
+            response
+                .headers()
+                .get(header::CONTENT_ENCODING)
+                .and_then(|value| value.to_str().ok()),
+            Some("gzip")
+        );
+        assert_eq!(
+            response
+                .headers()
+                .get(header::CACHE_CONTROL)
+                .and_then(|value| value.to_str().ok()),
+            Some("no-transform")
+        );
+
+        let body = to_bytes(response.into_body(), usize::MAX)
+            .await
+            .expect("compressed stream should be readable");
+        assert!(!body.is_empty());
     }
 
     #[test]
