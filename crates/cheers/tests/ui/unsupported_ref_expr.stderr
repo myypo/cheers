@@ -2,4 +2,4 @@ error: `(@&...)` only supports simple path and field expressions
  --> tests/ui/unsupported_ref_expr.rs:7:16
   |
 7 |         p { (@&format!("Hello, {name}!")) }
-  |                ^^^^^^
+  |                ^^^^^^^^^^^^^^^^^^^^^^^^^
