@@ -1,8 +1,8 @@
-use std::sync::OnceLock;
 use std::{
     collections::HashSet,
     ffi::OsStr,
     path::{Path, PathBuf},
+    sync::OnceLock,
 };
 
 use axum::{
@@ -14,11 +14,9 @@ use axum::{
     response::{IntoResponse, Response},
     routing::{get, post},
 };
-use serde::Deserialize;
-use serde::Serialize;
-use tokio::sync::broadcast;
-
 use notify::{RecommendedWatcher, Watcher};
+use serde::{Deserialize, Serialize};
+use tokio::sync::broadcast;
 
 static LIVE_RELOAD_TX: OnceLock<broadcast::Sender<LiveReloadMessage>> = OnceLock::new();
 

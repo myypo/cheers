@@ -1,11 +1,10 @@
+#[cfg(debug_assertions)]
+use std::path::{Component, PathBuf};
 use std::{
     collections::HashSet,
     hash::{DefaultHasher, Hash, Hasher},
     sync::OnceLock,
 };
-
-#[cfg(debug_assertions)]
-use std::path::{Component, PathBuf};
 
 use axum::{
     Router,
@@ -18,13 +17,15 @@ use lightningcss::{
     stylesheet::{ParserFlags, ParserOptions, StyleSheet},
 };
 
-use crate::__internal::assets::{
-    AssetSourceLocation, CssBundleRegistration, JsBundleRegistration, SvgSpriteRegistration,
+use crate::{
+    __internal::assets::{
+        AssetSourceLocation, CssBundleRegistration, JsBundleRegistration, SvgSpriteRegistration,
+    },
+    bundle,
+    components::{CssBundle, JsBundle},
+    router::Error,
+    track::TrackConfig,
 };
-use crate::bundle;
-use crate::components::{CssBundle, JsBundle};
-use crate::router::Error;
-use crate::track::TrackConfig;
 
 fn assets_headers(content_type: &'static str) -> HeaderMap {
     let mut headers = HeaderMap::new();

@@ -3057,6 +3057,77 @@ fn action_explicit_form() {
 }
 
 #[test]
+fn action_form_selector_targets_explicit_form() {
+    #[action(POST)]
+    async fn my_handler(_: Form<String>) {}
+
+    let result = MyHandlerAction {}
+        .form_selector("form.search[data-name='main']")
+        .render();
+
+    assert_eq!(
+        result.as_inner(),
+        r#"@post('/cheers/actions/my_handler',{contentType:'form',selector:'form.search[data-name=\'main\']'})"#
+    );
+}
+
+#[test]
+fn action_form_id_targets_generated_form_id() {
+    #[derive(Cheers)]
+    struct HomeSearch {
+        #[id]
+        id: u64,
+    }
+
+    #[action(POST)]
+    async fn my_handler(_: Form<String>) {}
+
+    let result = MyHandlerAction {}.form_id(HomeSearch::id(7)).render();
+
+    assert_eq!(
+        result.as_inner(),
+        r#"@post('/cheers/actions/my_handler',{contentType:'form',selector:'#home_search-7'})"#
+    );
+}
+
+#[test]
+fn action_form_id_css_escapes_generated_form_id() {
+    #[derive(Cheers)]
+    struct HomeSearch {
+        #[id]
+        id: String,
+    }
+
+    #[action(POST)]
+    async fn my_handler(_: Form<String>) {}
+
+    let result = MyHandlerAction {}
+        .form_id(HomeSearch::id("a.b:c[0]".to_owned()))
+        .render();
+
+    assert_eq!(
+        result.as_inner(),
+        r#"@post('/cheers/actions/my_handler',{contentType:'form',selector:'#home_search-a\\.b\\:c\\[0\\]'})"#
+    );
+}
+
+#[test]
+fn action_form_selector_renders_inside_html_macro() {
+    #[action(POST)]
+    async fn my_handler(_: Form<String>) {}
+
+    let result = html! {
+        button !on:click((MyHandlerAction {}.form_selector("#external-form"))) { "Search" }
+    }
+    .render();
+
+    assert_eq!(
+        result.as_inner(),
+        r#"<button data-on:click="@post('/cheers/actions/my_handler',{contentType:'form',selector:'#external-form'})">Search</button>"#
+    );
+}
+
+#[test]
 fn action_form_serde() {
     fn default_whatever() -> String {
         String::from("lol")

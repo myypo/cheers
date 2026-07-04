@@ -105,14 +105,31 @@
           };
           readme-doctest-check = pkgs.writeShellApplication {
             name = "readme-doctest-check";
+            runtimeInputs = [ rust-hook-env ];
+            text = ''
+              rust-hook-env cargo test --doc -p cheers --all-features
+            '';
+          };
+          rust-hook-env = pkgs.writeShellApplication {
+            name = "rust-hook-env";
             runtimeInputs = with pkgs; [
+              bash
               cargo
-              rustc
-              chromium
+              cargo-nextest
               chromedriver
+              chromium
+              clippy
+              cmake
+              coreutils
+              openssl
+              pkg-config
+              rustc
+              stdenv.cc
+              util-linux
             ];
             text = ''
-              cargo test --doc -p cheers --all-features
+              export CHROME_BIN=${pkgs.chromium}/bin/chromium
+              exec "$@"
             '';
           };
           nix-package-build-check = pkgs.writeShellApplication {
@@ -295,7 +312,7 @@
                   raw.priority = 30;
                   name = "cargo-machete";
                   entry = ''
-                    sh -eu -c '${pkgs.cargo}/bin/cargo metadata --no-deps --format-version 1 \
+                    sh -eu -c '${rust-hook-env}/bin/rust-hook-env cargo metadata --no-deps --format-version 1 \
                       | ${pkgs.jq}/bin/jq -r ".packages[] | select(.name != \"workspace-hack\") | .manifest_path" \
                       | while IFS= read -r manifest; do
                           ${pkgs.cargo-machete}/bin/cargo-machete --with-metadata --fix "$manifest";
@@ -384,29 +401,20 @@
                   raw.priority = 30;
                   settings.write = true;
                 };
-                clippy = {
+                clippy-workspace = {
                   enable = true;
+                  name = "clippy";
+                  entry = "${rust-hook-env}/bin/rust-hook-env cargo clippy --offline --all-features --keep-going -- -D warnings";
+                  files = "\\.rs$";
+                  pass_filenames = false;
                   raw.priority = 40;
-                  settings = {
-                    allFeatures = true;
-                    denyWarnings = true;
-                    extraArgs = "--keep-going";
-                  };
                 };
                 nextest = {
                   enable = true;
                   raw.priority = 41;
                   name = "nextest";
-                  entry = "${pkgs.cargo}/bin/cargo nextest run --workspace";
+                  entry = "${rust-hook-env}/bin/rust-hook-env cargo nextest run --workspace";
                   pass_filenames = false;
-                  extraPackages = with pkgs; [
-                    bash
-                    cargo-nextest
-                    chromium
-                    chromedriver
-                    coreutils
-                    util-linux
-                  ];
                 };
                 readme-doctests = {
                   enable = true;
@@ -420,16 +428,8 @@
                   enable = true;
                   raw.priority = 44;
                   name = "nextest (--release)";
-                  entry = "${pkgs.cargo}/bin/cargo nextest run --workspace --release";
+                  entry = "${rust-hook-env}/bin/rust-hook-env cargo nextest run --workspace --release";
                   pass_filenames = false;
-                  extraPackages = with pkgs; [
-                    bash
-                    cargo-nextest
-                    chromium
-                    chromedriver
-                    coreutils
-                    util-linux
-                  ];
                 };
               };
               settings = {

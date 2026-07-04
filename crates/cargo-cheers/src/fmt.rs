@@ -5,10 +5,11 @@ use std::{
     process::{Command, Stdio},
 };
 
-use crate::{FormatOptions, try_fmt_file};
 use anyhow::{Context, Result, bail};
 use clap::Args;
 use glob::glob;
+
+use crate::{FormatOptions, try_fmt_file};
 
 #[derive(Args)]
 pub struct FmtArgs {

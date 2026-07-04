@@ -12,11 +12,9 @@ mod unparse;
 use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
 use crop::Rope;
-
-use crate::fmt::FmtArgs;
-use crate::subsecond::SubsecondArgs;
-
 pub use format::FormatOptions;
+
+use crate::{fmt::FmtArgs, subsecond::SubsecondArgs};
 
 pub fn try_fmt_file(source: &str, options: &format::FormatOptions) -> Result<String> {
     let ast = syn::parse_file(source).context("Failed to parse source")?;

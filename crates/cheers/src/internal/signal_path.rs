@@ -1,4 +1,7 @@
-use std::{borrow::Cow, fmt::Display, fmt::Write as _};
+use std::{
+    borrow::Cow,
+    fmt::{Display, Write as _},
+};
 
 use crate::signal_path::is_bare_signal_path_segment;
 

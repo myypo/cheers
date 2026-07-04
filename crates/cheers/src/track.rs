@@ -1,11 +1,11 @@
-use crate::{prelude::*, render::push_json_source_to_html_attribute};
-
 use axum::{
     Json,
     extract::{FromRequest, Request},
     response::{IntoResponse, Response},
 };
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
+
+use crate::{prelude::*, render::push_json_source_to_html_attribute};
 
 /// Global tracking configuration embedded into the Cheers runtime bundle.
 ///

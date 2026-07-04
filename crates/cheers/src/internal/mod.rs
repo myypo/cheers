@@ -19,7 +19,9 @@ pub mod async_islands;
 pub mod custom_event;
 pub mod signal_path;
 
-pub use action_rendering::{__push_url_path_segment, __render_action_call};
+pub use action_rendering::{
+    __css_id_selector, __push_url_path_segment, __render_action_call, __render_form_action_call,
+};
 pub use action_security::__require_same_origin_action;
 pub use custom_event::{__render_custom_event_component, __render_custom_event_to_js};
 pub use signal_path::{__push_signal_path_dynamic_segment, __push_signal_path_segment};

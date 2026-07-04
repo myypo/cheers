@@ -205,7 +205,7 @@ Keep backend state authoritative; do not mirror broad backend state into signals
 
 # Actions, patches, signals, streams
 
-Actions generate `...Action` types. `Path<_>` arguments become action fields/path segments. `Form<_>` or `#[form]` makes the generated action string include form content-type options; do not add those manually.
+Actions generate `...Action` types. `Path<_>` arguments become action fields/path segments. `Form<_>` or `#[form]` makes the generated action string include form content-type options; do not add those manually. When a form action is triggered outside the form it should serialize, render it with `.form_id(GeneratedComponent::id(...))` for a generated form id or `.form_selector("...")` for an explicit CSS selector.
 
 When adding a field to a generated form, keep the `#[form(...)]` declaration, `self.form_names()` destructuring, input `name=...` attributes, and handler `Form<GeneratedForm>` type in sync.
 

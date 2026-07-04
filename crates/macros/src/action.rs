@@ -257,6 +257,13 @@ pub fn generate(args: ActionArgs, item: &mut MaybeItemFn) -> Result<TokenStream,
             }
         })
         .collect();
+    let action_path = quote! {
+        {
+            let mut __cheers_action_path = ::std::string::String::from(#static_path);
+            #(#path_renders_js)*
+            __cheers_action_path
+        }
+    };
     let form = field_args.form;
     let generics = filter_generics(
         item.sig.generics.clone(),
@@ -310,6 +317,26 @@ pub fn generate(args: ActionArgs, item: &mut MaybeItemFn) -> Result<TokenStream,
     } else {
         action_route
     };
+    let form_action_methods = if form {
+        quote! {
+            impl #impl_generics #struct_name #ty_generics #where_clause {
+                #[inline]
+                #[must_use = "action calls do nothing unless rendered"]
+                pub fn form_selector(self, selector: impl ::std::convert::Into<::std::string::String>) -> ::cheers::prelude::RawDatastarSource<::std::string::String> {
+                    let __cheers_action_path = #action_path;
+                    ::cheers::__internal::__render_form_action_call(#method_name, &__cheers_action_path, selector)
+                }
+
+                #[inline]
+                #[must_use = "action calls do nothing unless rendered"]
+                pub fn form_id(self, id: impl ::std::fmt::Display) -> ::cheers::prelude::RawDatastarSource<::std::string::String> {
+                    self.form_selector(::cheers::__internal::__css_id_selector(id))
+                }
+            }
+        }
+    } else {
+        quote! {}
+    };
 
     Ok(quote! {
         #item
@@ -318,9 +345,8 @@ pub fn generate(args: ActionArgs, item: &mut MaybeItemFn) -> Result<TokenStream,
 
         impl #impl_generics ::cheers::prelude::Render<::cheers::prelude::DatastarSource> for #struct_name #ty_generics #where_clause {
             fn render_to(&self, buffer: &mut ::cheers::prelude::Buffer<::cheers::prelude::DatastarSource>) {
-                let mut __cheers_action_path = ::std::string::String::from(#static_path);
-                #(#path_renders_js)*
-                ::cheers::__internal::__render_action_call(buffer, #method_name, &__cheers_action_path, #form);
+                let __cheers_action_path = #action_path;
+                ::cheers::__internal::__render_action_call(buffer, #method_name, &__cheers_action_path, #form, None);
             }
         }
 
@@ -328,6 +354,8 @@ pub fn generate(args: ActionArgs, item: &mut MaybeItemFn) -> Result<TokenStream,
             const PATH: &'static str = #path;
             const METHOD: ::cheers::__internal::axum::http::Method = #method;
         }
+
+        #form_action_methods
 
         impl #register_impl_generics ::cheers::router::Action<#router_state, #handler_state> for #struct_name #ty_generics #register_where_clause {
             fn register(router: ::cheers::__internal::axum::Router<#router_state>) -> ::cheers::__internal::axum::Router<#router_state> {

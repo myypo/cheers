@@ -268,8 +268,9 @@ async fn main() {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use thirtyfour::{prelude::*, stringmatch::StringMatchable};
+
+    use super::*;
 
     #[tokio::test]
     async fn stock_increments() {

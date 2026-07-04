@@ -323,7 +323,8 @@ pub fn scoped_signal(tokens: proc_macro::TokenStream) -> proc_macro::TokenStream
 /// client-side action string used by Cheers attributes such as `!on:click`.
 ///
 /// Path parameters are taken from `Path<_>` arguments. Form submission is enabled when the
-/// handler takes a `Form<_>` argument or an argument marked with `#[form]`.
+/// handler takes a `Form<_>` argument or an argument marked with `#[form]`. Form actions can
+/// target an explicit form to serialize with `.form_id(...)` or `.form_selector(...)`.
 /// Register the generated route explicitly with `Router::action::<...Action>()`.
 ///
 /// # Example
