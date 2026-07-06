@@ -1,10 +1,9 @@
-use std::fmt::Display;
-
 use percent_encoding::{AsciiSet, NON_ALPHANUMERIC, utf8_percent_encode};
 
 use crate::{
     context::DatastarSource,
     render::{Buffer, RawDatastarSource, push_js_single_quoted_string_to_html_attribute},
+    router::ActionOptions,
 };
 
 pub fn __push_url_path_segment<T: ToString + ?Sized>(dst: &mut String, segment: &T) {
@@ -18,25 +17,25 @@ pub fn __push_url_path_segment<T: ToString + ?Sized>(dst: &mut String, segment: 
     dst.extend(utf8_percent_encode(&segment, PATH_SEGMENT_ENCODE_SET));
 }
 
-pub fn __css_id_selector(id: impl Display) -> String {
-    let mut selector = String::from("#");
-    cssparser::serialize_identifier(&id.to_string(), &mut selector)
-        .expect("writing CSS identifier to String should not fail");
-    selector
-}
-
-pub fn __render_form_action_call(
+pub fn __render_action_options_call(
     method: &str,
     path: &str,
-    form_selector: impl Into<String>,
+    form: bool,
+    options: ActionOptions,
 ) -> RawDatastarSource<String> {
-    let form_selector = form_selector.into();
     let mut buffer = Buffer::<DatastarSource>::new();
-    __render_action_call(&mut buffer, method, path, true, Some(&form_selector));
+    __render_action_call(&mut buffer, method, path, form, &options);
 
     // XSS SAFETY: `__render_action_call` emits framework-generated action syntax and escapes
     // dynamic path/selector values for the Datastar HTML attribute context.
     RawDatastarSource::dangerously_create(buffer.rendered().into_inner())
+}
+
+fn push_action_option_separator(s: &mut String, separator: &mut bool) {
+    if *separator {
+        s.push(',');
+    }
+    *separator = true;
 }
 
 pub fn __render_action_call(
@@ -44,23 +43,62 @@ pub fn __render_action_call(
     method: &str,
     path: &str,
     form: bool,
-    form_selector: Option<&str>,
+    options: &ActionOptions,
 ) {
     let s = buffer.dangerously_get_string();
 
     // XSS SAFETY: the static action syntax is framework-generated, while the
-    // dynamic path and form selector are emitted as JS single-quoted string
+    // dynamic path and selector values are emitted as JS single-quoted string
     // literals that also remain safe for embedding in a double-quoted HTML
-    // attribute value.
+    // attribute value. Retry values are emitted from a framework-owned enum, and numeric retry
+    // options are emitted as JS number literals.
     s.push('@');
     s.push_str(method);
     s.push('(');
     push_js_single_quoted_string_to_html_attribute(s, path);
-    if form {
-        s.push_str(",{contentType:'form'");
-        if let Some(form_selector) = form_selector {
-            s.push_str(",selector:");
+    if form
+        || options.selector.is_some()
+        || options.retry.is_some()
+        || options.retry_interval.is_some()
+        || options.retry_scaler.is_some()
+        || options.retry_max_wait.is_some()
+        || options.retry_max_count.is_some()
+    {
+        s.push_str(",{");
+        let mut separator = false;
+        if form {
+            push_action_option_separator(s, &mut separator);
+            s.push_str("contentType:'form'");
+        }
+        if let Some(form_selector) = &options.selector {
+            push_action_option_separator(s, &mut separator);
+            s.push_str("selector:");
             push_js_single_quoted_string_to_html_attribute(s, form_selector);
+        }
+        if let Some(retry) = options.retry {
+            push_action_option_separator(s, &mut separator);
+            s.push_str("retry:");
+            push_js_single_quoted_string_to_html_attribute(s, retry.as_str());
+        }
+        if let Some(retry_interval) = options.retry_interval {
+            push_action_option_separator(s, &mut separator);
+            s.push_str("retryInterval:");
+            s.push_str(&retry_interval.to_string());
+        }
+        if let Some(retry_scaler) = options.retry_scaler {
+            push_action_option_separator(s, &mut separator);
+            s.push_str("retryScaler:");
+            s.push_str(&retry_scaler.to_string());
+        }
+        if let Some(retry_max_wait) = options.retry_max_wait {
+            push_action_option_separator(s, &mut separator);
+            s.push_str("retryMaxWait:");
+            s.push_str(&retry_max_wait.to_string());
+        }
+        if let Some(retry_max_count) = options.retry_max_count {
+            push_action_option_separator(s, &mut separator);
+            s.push_str("retryMaxCount:");
+            s.push_str(&retry_max_count.to_string());
         }
         s.push('}');
     }

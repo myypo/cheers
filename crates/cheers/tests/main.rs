@@ -3057,12 +3057,83 @@ fn action_explicit_form() {
 }
 
 #[test]
+fn action_options_retry() {
+    #[action(GET)]
+    async fn my_handler() {}
+
+    let result = MyHandlerAction {}
+        .options(ActionOptions::new().retry(ActionRetry::Never))
+        .render();
+
+    assert_eq!(
+        result.as_inner(),
+        r#"@get('/cheers/actions/my_handler',{retry:'never'})"#
+    );
+}
+
+#[test]
+fn action_options_render_after_form_defaults() {
+    #[action(POST)]
+    async fn my_handler(_: Form<String>) {}
+
+    let result = MyHandlerAction {}
+        .options(ActionOptions::new().retry(ActionRetry::Error))
+        .render();
+
+    assert_eq!(
+        result.as_inner(),
+        r#"@post('/cheers/actions/my_handler',{contentType:'form',retry:'error'})"#
+    );
+}
+
+#[test]
+fn action_options_render_retry_timing_options() {
+    #[action(GET)]
+    async fn my_handler() {}
+
+    let result = MyHandlerAction {}
+        .options(
+            ActionOptions::new()
+                .retry(ActionRetry::Error)
+                .retry_interval(250)
+                .retry_scaler(1.5)
+                .retry_max_wait(4000)
+                .retry_max_count(3),
+        )
+        .render();
+
+    assert_eq!(
+        result.as_inner(),
+        r#"@get('/cheers/actions/my_handler',{retry:'error',retryInterval:250,retryScaler:1.5,retryMaxWait:4000,retryMaxCount:3})"#
+    );
+}
+
+#[test]
+fn action_options_render_content_type_selector_retry_order() {
+    #[action(POST)]
+    async fn my_handler(_: Form<String>) {}
+
+    let result = MyHandlerAction {}
+        .options(
+            ActionOptions::new()
+                .retry(ActionRetry::Always)
+                .form_selector("form.search[data-name='main']"),
+        )
+        .render();
+
+    assert_eq!(
+        result.as_inner(),
+        r#"@post('/cheers/actions/my_handler',{contentType:'form',selector:'form.search[data-name=\'main\']',retry:'always'})"#
+    );
+}
+
+#[test]
 fn action_form_selector_targets_explicit_form() {
     #[action(POST)]
     async fn my_handler(_: Form<String>) {}
 
     let result = MyHandlerAction {}
-        .form_selector("form.search[data-name='main']")
+        .options(ActionOptions::new().form_selector("form.search[data-name='main']"))
         .render();
 
     assert_eq!(
@@ -3082,7 +3153,9 @@ fn action_form_id_targets_generated_form_id() {
     #[action(POST)]
     async fn my_handler(_: Form<String>) {}
 
-    let result = MyHandlerAction {}.form_id(HomeSearch::id(7)).render();
+    let result = MyHandlerAction {}
+        .options(ActionOptions::new().form_id(HomeSearch::id(7)))
+        .render();
 
     assert_eq!(
         result.as_inner(),
@@ -3102,7 +3175,7 @@ fn action_form_id_css_escapes_generated_form_id() {
     async fn my_handler(_: Form<String>) {}
 
     let result = MyHandlerAction {}
-        .form_id(HomeSearch::id("a.b:c[0]".to_owned()))
+        .options(ActionOptions::new().form_id(HomeSearch::id("a.b:c[0]".to_owned())))
         .render();
 
     assert_eq!(
@@ -3117,7 +3190,7 @@ fn action_form_selector_renders_inside_html_macro() {
     async fn my_handler(_: Form<String>) {}
 
     let result = html! {
-        button !on:click((MyHandlerAction {}.form_selector("#external-form"))) { "Search" }
+        button !on:click((MyHandlerAction {}.options(ActionOptions::new().form_selector("#external-form")))) { "Search" }
     }
     .render();
 

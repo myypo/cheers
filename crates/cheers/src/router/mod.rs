@@ -65,6 +65,94 @@ pub fn new<S: Clone + Send + Sync + 'static>(
     Ok(router)
 }
 
+/// Retry policy for a Datastar action request.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ActionRetry {
+    Auto,
+    Error,
+    Always,
+    Never,
+}
+
+impl ActionRetry {
+    pub(crate) fn as_str(self) -> &'static str {
+        match self {
+            Self::Auto => "auto",
+            Self::Error => "error",
+            Self::Always => "always",
+            Self::Never => "never",
+        }
+    }
+}
+
+/// Options rendered into a Datastar action call.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct ActionOptions {
+    pub(crate) selector: Option<String>,
+    pub(crate) retry: Option<ActionRetry>,
+    pub(crate) retry_interval: Option<u64>,
+    pub(crate) retry_scaler: Option<f64>,
+    pub(crate) retry_max_wait: Option<u64>,
+    pub(crate) retry_max_count: Option<u64>,
+}
+
+impl ActionOptions {
+    #[must_use]
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    #[must_use]
+    pub fn selector(mut self, selector: impl Into<String>) -> Self {
+        self.selector = Some(selector.into());
+        self
+    }
+
+    #[must_use]
+    pub fn form_selector(self, selector: impl Into<String>) -> Self {
+        self.selector(selector)
+    }
+
+    #[must_use]
+    pub fn form_id(self, id: impl Display) -> Self {
+        let mut selector = String::from("#");
+        cssparser::serialize_identifier(&id.to_string(), &mut selector)
+            .expect("writing CSS identifier to String should not fail");
+        self.form_selector(selector)
+    }
+
+    #[must_use]
+    pub fn retry(mut self, retry: ActionRetry) -> Self {
+        self.retry = Some(retry);
+        self
+    }
+
+    #[must_use]
+    pub fn retry_interval(mut self, milliseconds: u64) -> Self {
+        self.retry_interval = Some(milliseconds);
+        self
+    }
+
+    #[must_use]
+    pub fn retry_scaler(mut self, scaler: f64) -> Self {
+        assert!(scaler.is_finite(), "retry scaler must be finite");
+        self.retry_scaler = Some(scaler);
+        self
+    }
+
+    #[must_use]
+    pub fn retry_max_wait(mut self, milliseconds: u64) -> Self {
+        self.retry_max_wait = Some(milliseconds);
+        self
+    }
+
+    #[must_use]
+    pub fn retry_max_count(mut self, count: u64) -> Self {
+        self.retry_max_count = Some(count);
+        self
+    }
+}
+
 /// Compile-time metadata about an action's path and HTTP method.
 ///
 /// Automatically implemented by the `#[action]` macro on each generated action struct.
