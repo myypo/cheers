@@ -306,10 +306,7 @@ pub fn control_block_len_with<N: Node>(
     element_len += 2;
 
     for node in &block.nodes.0 {
-        match node_len(node) {
-            Some(value) => element_len += value,
-            None => return None,
-        }
+        element_len += node_len(node)?;
         // ` `
         element_len += 1;
     }

@@ -1,5 +1,5 @@
-error[E0425]: cannot find value `prevent` in module `cheers::validation::data::modifiers::on_interval`
+error[E0425]: cannot find value `prevent` in module `::cheers::validation::data::modifiers::on_interval`
  --> tests/ui/invalid_datastar_modifier.rs:5:26
   |
 5 |         div !on_interval[prevent]("count++") {}
-  |                          ^^^^^^^ not found in `cheers::validation::data::modifiers::on_interval`
+  |                          ^^^^^^^ not found in `::cheers::validation::data::modifiers::on_interval`
