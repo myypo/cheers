@@ -183,6 +183,12 @@ pub fn element_len(ident: &Ident, attrs: &[Attribute], body: &ElementBody) -> Op
                     DataContent::Computed(decls) => {
                         element_len += data_decl_len_attr_values(decls)?;
                     }
+                    DataContent::Show { value, initially } => {
+                        // `, initially: `
+                        element_len += 13;
+                        element_len += attribute_value_len(value)?;
+                        element_len += span_len(initially)?;
+                    }
                     DataContent::Empty | DataContent::Recovered => {}
                 }
 
@@ -306,10 +312,7 @@ pub fn control_block_len_with<N: Node>(
     element_len += 2;
 
     for node in &block.nodes.0 {
-        match node_len(node) {
-            Some(value) => element_len += value,
-            None => return None,
-        }
+        element_len += node_len(node)?;
         // ` `
         element_len += 1;
     }

@@ -54,6 +54,7 @@ fn data_end(data: &ast::Data) -> LineColumn {
 
     match &data.content {
         DataContent::Node(node) => attribute_value_end(node),
+        DataContent::Show { initially, .. } => initially.span().end(),
         DataContent::Signals(decls) => decls
             .last()
             .map(|decl| decl.value.span().end())
@@ -260,6 +261,17 @@ impl<'a, 'b> Printer<'a, 'b> {
                                 attr_indent_level,
                                 preserve_blank_lines,
                             );
+                            self.write(")");
+                        }
+                        DataContent::Show { value, initially } => {
+                            self.write("(");
+                            self.print_attribute_value_node(
+                                value,
+                                attr_indent_level,
+                                preserve_blank_lines,
+                            );
+                            self.write(", initially: ");
+                            self.print_expr(initially, attr_indent_level + 1);
                             self.write(")");
                         }
                         DataContent::Bind(expr) => {
@@ -568,6 +580,22 @@ impl<'a, 'b> Printer<'a, 'b> {
 #[cfg(test)]
 mod test {
     use crate::testing::*;
+
+    test_default!(
+        data_show_keeps_its_initially_argument,
+        r#"
+        html! {
+            div   !show(  signal_open ,  initially : false  ) { "Panel" }
+            span !show({ "!" (signal_open) }, initially: true) {}
+        }
+        "#,
+        r#"
+        html! {
+            div !show(signal_open, initially: false) { "Panel" }
+            span !show({ "!" (signal_open) }, initially: true) {}
+        }
+        "#
+    );
 
     test_default!(
         elements_with_contents,
@@ -1164,7 +1192,7 @@ mod test {
         data_attributes_long_style,
         r#"
         html! {
-            div !style("display":{(hiding)"? 'none' : 'flex'"},"flex-direction": "'column'",  "color":{(using_red)"? 'red' : 'green'"}) !show({(hiding)"? 'block' : 'none'"}) { "Hey" }
+            div !style("display":{(hiding)"? 'none' : 'flex'"},"flex-direction": "'column'",  "color":{(using_red)"? 'red' : 'green'"}) !show({(hiding)"? 'block' : 'none'"}, initially: false) { "Hey" }
         }
         "#,
         r#"
@@ -1183,7 +1211,7 @@ mod test {
                 !show({
                     (hiding)
                     "? 'block' : 'none'"
-                })
+                }, initially: false)
             { "Hey" }
         }
         "#

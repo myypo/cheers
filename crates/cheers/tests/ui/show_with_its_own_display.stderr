@@ -1,0 +1,11 @@
+error: this element writes `display` in its own `style`, which Datastar drops the first time `!show` reveals it — the reveal clears the inline property rather than restoring what was there. Put the `display` in a class and leave the inline one to `initially`.
+  --> tests/ui/show_with_its_own_display.rs:14:39
+   |
+14 |             div style="display:flex" !show(signal_open, initially: false) { "Panel" }
+   |                                       ^^^^
+
+error: this element writes `display` in its own `style`, which Datastar drops the first time `!show` reveals it — the reveal clears the inline property rather than restoring what was there. Put the `display` in a class and leave the inline one to `initially`.
+  --> tests/ui/show_with_its_own_display.rs:15:39
+   |
+15 |             div style="DISPLAY:flex" !show(signal_open, initially: false) { "Shouty" }
+   |                                       ^^^^

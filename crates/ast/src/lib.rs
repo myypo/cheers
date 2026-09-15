@@ -455,6 +455,10 @@ impl Generate for Element {
         let module = flavour.elements_module();
         let mut el_checks = ElementCheck::new(&self.name, self.body.kind(flavour), module);
 
+        if let Some(e) = self.show_style_error() {
+            g.push_diagnostic(e.to_compile_error());
+        }
+
         g.push_str("<");
         g.push_literal(self.name.lit());
         #[cfg(feature = "pi-extension")]
@@ -469,11 +473,36 @@ impl Generate for Element {
             }
         }
 
+        // `initially` renders as an inline `display` and an element has only one `style`, so the
+        // two are written together here — the only place that sees both.
+        let initially = self.show_initially();
+        let mut merged_into_style = false;
+
         for attr in &mut self.attrs {
-            g.push(&mut *attr);
+            match (&initially, Attribute::style_value_mut(attr)) {
+                (Some(initially), Some((name, value))) => {
+                    merged_into_style = true;
+                    g.push_str(" ");
+                    g.push_literals(name.literals());
+                    g.push_str("=\"");
+                    g.push(value);
+                    g.push_conditional(quote!(!(#initially)), |g| g.push_str(";display:none"));
+                    g.push_str("\"");
+                }
+                _ => g.push(&mut *attr),
+            }
+
             if let Some(check) = attr.check() {
                 el_checks.push_attribute(check);
             }
+        }
+
+        if let Some(initially) = &initially
+            && !merged_into_style
+        {
+            g.push_conditional(quote!(!(#initially)), |g| {
+                g.push_str(" style=\"display:none\"");
+            });
         }
 
         match &mut self.body {
@@ -508,6 +537,78 @@ impl Element {
                 if attr_name.literals().into_iter().map(|l| l.value()).collect::<String>() == name
             )
         })
+    }
+
+    /// The `initially` expression of this element's `!show`, if it has one.
+    fn show_initially(&self) -> Option<Expr> {
+        self.attrs.iter().find_map(|attr| match attr {
+            Attribute::Data { data, .. } if data.namespace.is_none() => match &data.content {
+                DataContent::Show { initially, .. } => Some(initially.clone()),
+                _ => None,
+            },
+            _ => None,
+        })
+    }
+
+    /// Rejects the two `style` values `initially` cannot be appended to: a `display` of the
+    /// author's own, which the reveal deletes rather than restores, and a conditional `style`,
+    /// which on some renders is not there to append to.
+    ///
+    /// Generating rather than parsing, so the formatter still works on markup that does not
+    /// compile yet.
+    fn show_style_error(&self) -> Option<Error> {
+        let show = self.attrs.iter().find_map(|attr| match attr {
+            Attribute::Data { data, .. }
+                if data.namespace.is_none() && matches!(data.content, DataContent::Show { .. }) =>
+            {
+                Some(data.name.span())
+            }
+            _ => None,
+        })?;
+
+        let kind = self.attrs.iter().find_map(|attr| match attr {
+            Attribute::Regular { name, kind } if name.is_style() => Some(kind),
+            _ => None,
+        })?;
+
+        match kind {
+            AttributeKind::Value {
+                value,
+                toggle: None,
+            } => {
+                let AttributeValueNode::Literal(lit) = value else {
+                    return None;
+                };
+
+                // Declaration names, not a substring search: `--display-gap` sets no `display`,
+                // and CSS property names are ASCII case-insensitive, so `DISPLAY` sets one.
+                let declares_display = lit.lit_str().value().split(';').any(|declaration| {
+                    declaration
+                        .split_once(':')
+                        .is_some_and(|(name, _)| name.trim().eq_ignore_ascii_case("display"))
+                });
+
+                declares_display.then(|| {
+                    Error::new(
+                        show,
+                        "this element writes `display` in its own `style`, which Datastar drops \
+                         the first time `!show` reveals it — the reveal clears the inline property \
+                         rather than restoring what was there. Put the `display` in a class and \
+                         leave the inline one to `initially`.",
+                    )
+                })
+            }
+            AttributeKind::Value {
+                toggle: Some(_), ..
+            }
+            | AttributeKind::Option(_)
+            | AttributeKind::Empty(_) => Some(Error::new(
+                show,
+                "`!show` appends its `initially` to this element's `style`, so the `style` cannot \
+                 itself be conditional — there would be nothing to append to on the renders where \
+                 it is absent. Use a plain `style=\"...\"` or `style=(expr)`.",
+            )),
+        }
     }
 }
 
@@ -558,6 +659,22 @@ impl SyntaxStatic for Attribute {
 }
 
 impl Attribute {
+    /// The plain `style="..."` / `style=(expr)` that `!show` appends to. Conditional forms are
+    /// rejected by [`Element::show_style_error`].
+    fn style_value_mut(&mut self) -> Option<(&AttributeName, &mut AttributeValueNode)> {
+        match self {
+            Self::Regular {
+                name,
+                kind:
+                    AttributeKind::Value {
+                        value,
+                        toggle: None,
+                    },
+            } if name.is_style() => Some((name, value)),
+            _ => None,
+        }
+    }
+
     fn check(&self) -> Option<AttributeNameCheck> {
         match &self {
             Attribute::Regular { name, .. } => name.check(false),
@@ -693,6 +810,11 @@ impl AttributeName {
                 data,
             )),
         }
+    }
+
+    fn is_style(&self) -> bool {
+        matches!(self, Self::Normal { name } if name == &"style")
+            || matches!(self, Self::Unchecked(lit) if lit.value() == "style")
     }
 
     fn literals(&self) -> Vec<LitStr> {
@@ -1114,6 +1236,16 @@ pub enum DataContent {
     Kv(Punctuated<DataExprValue<AttributeValueNode>, Token![,]>),
     Computed(Punctuated<DataExprValue<AttributeValueNode>, Token![,]>),
     Bind(DataExpr),
+    /// `!show(expr, initially: bool)`.
+    ///
+    /// `initially` answers on the server the question `expr` answers on the client. Datastar only
+    /// applies `data-show` once it has loaded, so without it the element is drawn as written for
+    /// the whole first paint. [`Element`] renders it, since it becomes an inline `display` and
+    /// only the element knows whether there is a `style` to append to.
+    Show {
+        value: AttributeValueNode,
+        initially: Expr,
+    },
     Empty,
     /// Fallback for parsing failures that allows rust-analyzer to emit better completions
     Recovered,
@@ -1128,6 +1260,7 @@ impl SyntaxStatic for DataContent {
             | Self::Kv(_)
             | Self::Computed(_)
             | Self::Bind(_)
+            | Self::Show { .. }
             | Self::Recovered => false,
         }
     }
@@ -1149,21 +1282,62 @@ enum DataParseKind {
     Kv,
     Computed,
     Bind,
+    Show,
 }
 
 impl DataParseKind {
+    /// Named after `show`, whose predicate it repeats, rather than the CSS property it sets.
+    const INITIALLY: &'static str = "initially";
+
     fn new(name: Option<&UnquotedName>) -> Self {
         match name {
             Some(name) if name == &"signals" => Self::Signals,
             Some(name) if name == &"style" || name == &"attr" => Self::Kv,
             Some(name) if name == &"computed" => Self::Computed,
             Some(name) if name == &"indicator" || name == &"bind" => Self::Bind,
+            Some(name) if name == &"show" => Self::Show,
             _ => Self::Node,
         }
     }
 
+    fn parse_show(input: ParseStream) -> syn::Result<DataContent> {
+        let value = input.parse::<AttributeValueNode>()?;
+
+        if input.is_empty() {
+            return Err(Error::new(
+                input.span(),
+                format!(
+                    "`!show` needs a second argument saying whether the element is shown in the \
+                     server-rendered HTML, because Datastar cannot apply `data-show` until it has \
+                     loaded:\n    \
+                     !show(signal_open, {k}: false) — starts hidden\n    \
+                     !show(signal_preview, {k}: url.is_some()) — starts hidden when there is no url\n    \
+                     !show({{ \"!\" (signal_preview) }}, {k}: url.is_none()) — the other half of that pair",
+                    k = Self::INITIALLY,
+                ),
+            ));
+        }
+
+        input.parse::<Token![,]>()?;
+
+        let keyword = input.parse::<Ident>()?;
+        if keyword != Self::INITIALLY {
+            return Err(Error::new(
+                keyword.span(),
+                format!("expected `{}`", Self::INITIALLY),
+            ));
+        }
+        input.parse::<Token![:]>()?;
+
+        Ok(DataContent::Show {
+            value,
+            initially: input.parse()?,
+        })
+    }
+
     fn parse_content(self, input: ParseStream) -> syn::Result<DataContent> {
         match self {
+            Self::Show => Self::parse_show(input),
             Self::Signals => Ok(DataContent::Signals(Punctuated::<
                 DataExprValue<Expr>,
                 Token![,],
@@ -1412,6 +1586,14 @@ impl Generate for Data {
                 g.push_literals(name_literals);
                 g.push_str("=\"");
                 g.push_js_value_node(attribute_value_node);
+                g.push_str("\"");
+            }
+            // `initially` is written by `Element`, which can see the `style` to append it to.
+            DataContent::Show { value, .. } => {
+                g.push_str(" data-");
+                g.push_literals(name_literals);
+                g.push_str("=\"");
+                g.push_js_value_node(value);
                 g.push_str("\"");
             }
             DataContent::Bind(expr) => {

@@ -25,8 +25,36 @@ jobs:
           nix develop --command cargo package --allow-dirty --no-verify
           -p cheers-ast -p cheers-macros -p cargo-cheers -p cheers
 
+      # `commitlint` is skipped here and run by its own job: it needs the head commit and full
+      # history, while this job keeps the default merge-commit checkout so it tests the result
+      # of merging rather than the branch in isolation.
       - name: Run flake-defined manual hook checks
-        run: nix develop --command prek run --config .pre-commit-config.yaml --all-files --stage manual --skip cargo-deny
+        run: >-
+          nix develop --command prek run --config .pre-commit-config.yaml
+          --all-files --stage manual --skip cargo-deny --skip commitlint
+
+  commitlint:
+    runs-on: ubuntu-latest
+    if: github.event.pull_request.draft == false
+    steps:
+      # Full history so `origin/main` resolves for `--from origin/main`, and the head commit
+      # rather than the synthetic merge commit, whose `Merge ... into ...` subject is not a
+      # conventional commit and would be rejected.
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event.pull_request.head.sha }}
+      - uses: cachix/install-nix-action@96951a368ba55167b55f1c916f7d416bac6505fe # v31.10.3
+        with:
+          github_access_token: ${{ secrets.GITHUB_TOKEN }}
+          extra_nix_config: |
+            trusted-public-keys = cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY= nix-community.cachix.org-1:mB9FSh9qf2dCimDSUo8Zy7bkq5CX+/rkCWyvRCYg3Fs=
+            substituters = https://cache.nixos.org https://nix-community.cachix.org
+
+      - name: Lint commit messages
+        run: >-
+          nix develop --command prek run --config .pre-commit-config.yaml
+          --all-files --stage manual commitlint
 
   cargo-deny:
     runs-on: ubuntu-latest

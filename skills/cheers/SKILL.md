@@ -117,7 +117,7 @@ scoped_signal!(signal_message: String);
 html! {
     input !bind(name_signal);
     span !text(name_signal) {}
-    div !show(open_signal) {}
+    div !show(open_signal, initially: false) {}
     button !indicator(fetching_signal) {}
     div !signals(count: 5) !computed(total: { (price) " + " (tax) }) {}
     button !on:click((SaveUserAction { id })) { "Save" }
@@ -139,6 +139,8 @@ html! {
 Use generated action structs in `!on:*`; do not hardcode generated URLs and signal paths. Register custom Datastar events with `cheers::define_events! { my_event }` before using `!on:my_event(...)`; use `event => Component { detail: Type }` or `event => Component` to also generate a component that emits a `CustomEvent` when rendered. Emitted detail fields are read from `evt.detail`; render event components with required detail props plus `[]` for default event options, or override options with `[target=(EventTarget::Document)]`, `[target=(EventTarget::Window)]`, `[target=(EventTarget::Id(&id))]`, `[target=(EventTarget::Selector("main".into()))]`, `[bubbles=false]`, `[cancelable=true]`, or `[composed=true]`. Datastar expressions are JavaScript fragments. Datastar modifiers go before value parentheses, e.g. `!on:click[prevent]("...")` or `!on_interval[duration("1s")]("...")`; unquoted modifier names are checked against known plugin modifiers, while quoted names like `["future"]` opt out for custom/new modifiers.
 
 Common attributes: `!bind` for two-way input binding, `!signals` for initial/local values, `!computed` for read-only derived values, `!text`/`!show`/`!attr`/`!class`/`!style` for reactive DOM state, `!indicator` for fetch state, `!init`/`!effect` for side effects, `!preserve_attr` and `!ignore_morph` for morphing edge cases, and `!on:event` for events. Use the cheers crate docs when additional Datastar attribute details are needed.
+
+`!show` additionally requires `initially:`, a Rust `bool` answering the same question for the server-rendered markup, since Datastar only applies `data-show` once it has loaded; both halves of a complementary pair state it, such as `initially: url.is_some()` against `initially: url.is_none()`. It renders `display:none` appended to any `style` the element already has, so that `style` must not set `display` itself.
 
 Use inline `{ ... }` fragments directly in Datastar attributes. Use `datastar_source!` only when the JavaScript fragment needs to be stored, reused, or passed around as a value:
 

@@ -33,7 +33,7 @@ zmij = { version = "1" }
 tokio-stream = { version = "0.1", features = ["sync"] }
 futures = { version = "0.3" }
 notify = { version = "8" }
-lightningcss = { version = "1.0.0-alpha.71" }
+lightningcss = { version = "1.0.0-alpha.71", default-features = false }
 base64.version = "0.22"
 tracing = "0.1"
 ignore = { version = "0.4" }
@@ -65,16 +65,16 @@ thirtyfour = { version = "0.37.1", features = ["rustls"] }
 dioxus-devtools = { version = "0.7.6", default-features = false }
 
 # Bundler
-swc_common = { version = "17.0.1", features = ["tty-emitter"] }
-swc_ecma_ast = { version = "18.0.0" }
-swc_ecma_parser = { version = "27.0.7" }
-swc_ecma_minifier = { version = "36.0.4" }
-swc_ecma_codegen = { version = "20.0.2" }
-swc_ecma_transforms_base = { version = "30.0.1" }
-swc_bundler = { version = "35.0.0" }
-swc_ecma_loader = { version = "17.0.0", features = ["node", "cache"] }
-swc_ecma_transforms_typescript = "33.0.0"
-swc_ecma_visit = "18.0.1"
+swc_common = { version = "26.0.0", features = ["tty-emitter"] }
+swc_ecma_ast = { version = "29.0.1" }
+swc_ecma_parser = { version = "45.1.3" }
+swc_ecma_minifier = { version = "61.0.7" }
+swc_ecma_codegen = { version = "32.0.2" }
+swc_ecma_transforms_base = { version = "49.0.1" }
+swc_bundler = { version = "56.0.1" }
+swc_ecma_loader = { version = "27.0.0", features = ["node", "cache"] }
+swc_ecma_transforms_typescript = "55.0.4"
+swc_ecma_visit = "29.0.0"
 anyhow = "1"
 walkdir = "2"
 
