@@ -305,7 +305,7 @@ pub fn js_script(tokens: proc_macro::TokenStream) -> proc_macro::TokenStream {
 ///
 ///         html! {
 ///             button !on:click("@get('/items')") !indicator(signal_fetching) { "Refresh" }
-///             div !show(signal_fetching) { "Loading..." }
+///             div !show(signal_fetching, initially: false) { "Loading..." }
 ///             p !signals(signal_busy: true) {}
 ///         }
 ///         .render_to(buffer);

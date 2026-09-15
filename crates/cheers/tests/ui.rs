@@ -41,6 +41,18 @@ fn unsupported_signal_path_segment_is_rejected() {
 }
 
 #[test]
+fn show_without_initially_is_rejected() {
+    let tests = trybuild::TestCases::new();
+    tests.compile_fail("tests/ui/show_without_initially.rs");
+}
+
+#[test]
+fn show_with_its_own_display_is_rejected() {
+    let tests = trybuild::TestCases::new();
+    tests.compile_fail("tests/ui/show_with_its_own_display.rs");
+}
+
+#[test]
 fn datastar_event_does_not_ambiguous_glob_import() {
     let tests = trybuild::TestCases::new();
     tests.pass("tests/ui/datastar_event_does_not_ambiguous_glob_import.rs");

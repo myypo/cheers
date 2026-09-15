@@ -2078,7 +2078,7 @@ fn data_indicator() {
     let fetching = Something::signal_fetching();
     let result = html! {
         button !indicator(fetching) !json_signals {}
-        div !show({ "!" (fetching) " || true" }) { "Loaded!" }
+        div !show({ "!" (fetching) " || true" }, initially: true) { "Loaded!" }
     }
     .render();
 
@@ -2220,13 +2220,67 @@ fn control_flow_inside_js_attributes_uses_js_context() {
     let cond = true;
 
     let result = html! {
-        div !show({ @if cond { (hiding) } @else { "false" } }) {}
+        div !show({ @if cond { (hiding) } @else { "false" } }, initially: true) {}
     }
     .render();
 
     assert_eq!(
         result.as_inner(),
         r#"<div data-show="$_options['hiding']"></div>"#
+    );
+}
+
+/// `initially` is what the reader sees on first paint, and both halves of a pair state it, which
+/// is what keeps them from drifting into showing each other.
+#[test]
+fn data_show_carries_the_initial_visibility_it_was_given() {
+    #[derive(Cheers)]
+    struct Upload {
+        #[signal]
+        preview: String,
+    }
+
+    let preview = Upload::signal_preview();
+    let has_image = false;
+
+    let result = html! {
+        picture !show(preview, initially: has_image) {}
+        span !show({ "!" (preview) }, initially: !has_image) {}
+    }
+    .render();
+
+    assert_eq!(
+        result.as_inner(),
+        r#"<picture data-show="$_upload['preview']" style="display:none"></picture><span data-show="!$_upload['preview']"></span>"#
+    );
+}
+
+/// `initially` is appended to the element's own `style` rather than competing for it.
+#[test]
+fn data_show_appends_its_initial_visibility_to_an_existing_style() {
+    #[derive(Cheers)]
+    struct Panel {
+        #[signal]
+        open: bool,
+    }
+
+    let open = Panel::signal_open();
+    let gap = "--gap:3";
+
+    let result = html! {
+        div style="overflow-y: visible" !show(open, initially: false) {}
+        div style="overflow-y: visible" !show(open, initially: true) {}
+        div style=(gap) !show(open, initially: false) {}
+        // Only a `display` *declaration* is rejected; naming one in a custom property is fine.
+        div style="--display-gap: 4px" !show(open, initially: false) {}
+        // And the rule is about `!show`: without it, an inline `display` is nobody's business.
+        div style="display:flex" {}
+    }
+    .render();
+
+    assert_eq!(
+        result.as_inner(),
+        r#"<div style="overflow-y: visible;display:none" data-show="$_panel['open']"></div><div style="overflow-y: visible" data-show="$_panel['open']"></div><div style="--gap:3;display:none" data-show="$_panel['open']"></div><div style="--display-gap: 4px;display:none" data-show="$_panel['open']"></div><div style="display:flex"></div>"#
     );
 }
 

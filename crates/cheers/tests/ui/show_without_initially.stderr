@@ -1,0 +1,8 @@
+error: `!show` needs a second argument saying whether the element is shown in the server-rendered HTML, because Datastar cannot apply `data-show` until it has loaded:
+           !show(signal_open, initially: false) — starts hidden
+           !show(signal_preview, initially: url.is_some()) — starts hidden when there is no url
+           !show({ "!" (signal_preview) }, initially: url.is_none()) — the other half of that pair
+  --> tests/ui/show_without_initially.rs:14:34
+   |
+14 |             div !show(signal_open) { "Details" }
+   |                                  ^

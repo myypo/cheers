@@ -190,7 +190,7 @@ pub mod data {
     /// Known Datastar modifiers by attribute plugin.
     ///
     /// In `html!`, modifiers are written in brackets before the value, such as
-    /// `!on:click[prevent, debounce("250ms", leading)]("$count++")`. This
+    /// `!on:click[prevent, debounce("250ms", leading)]({ (signal_count) "++" })`. This
     /// renders Datastar's `__modifier.tag` attribute suffixes. Unquoted modifier
     /// names are checked against this table; quoted names, such as `["future"]`,
     /// are emitted without known-name validation.
@@ -766,7 +766,7 @@ pub mod data {
     /// #         scoped_signal!(signal_fetching: bool);
     /// html! {
     ///     button !on:click("@get('/endpoint')") !indicator(signal_fetching) {}
-    ///     div !show(signal_fetching) { "Loading..." }
+    ///     div !show(signal_fetching, initially: false) { "Loading..." }
     /// }
     /// #         .render_to(buffer);
     /// #     }
@@ -866,6 +866,25 @@ pub mod data {
     /// For anything with custom requirements, use [`data-class`](#data-class)
     /// instead.
     ///
+    /// Datastar applies this only once it has loaded, so the required second
+    /// argument gives the same answer for the server-rendered markup:
+    ///
+    /// ```text
+    /// !show(signal_open, initially: false)
+    /// !show(signal_preview, initially: url.is_some())
+    /// !show({ "!" (signal_preview) }, initially: url.is_none())
+    /// ```
+    ///
+    /// `initially: false` renders `display:none` -- the state Datastar later
+    /// clears -- appended to the element's own `style` if it has one, so
+    /// `div style="overflow-y: visible" !show(sig, initially: false)` renders
+    /// `style="overflow-y: visible;display:none"`.
+    ///
+    /// Two `style` values are rejected: a `display` of your own, which the
+    /// reveal deletes rather than restores (put it in a class), and a `style`
+    /// that may render no attribute at all -- `style=[..]` or a toggled
+    /// `style` -- which leaves nothing to append to.
+    ///
     /// # Examples
     ///
     /// ```
@@ -880,7 +899,7 @@ pub mod data {
     /// #     fn render_to(&self, buffer: &mut Buffer<Element>) {
     /// #         let ExampleSignals { signal_foo } = self.signals();
     /// html! {
-    ///     div !show(signal_foo) {}
+    ///     div !show(signal_foo, initially: false) {}
     /// }
     /// #         .render_to(buffer);
     /// #     }

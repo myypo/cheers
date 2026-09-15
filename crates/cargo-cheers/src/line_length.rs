@@ -183,6 +183,12 @@ pub fn element_len(ident: &Ident, attrs: &[Attribute], body: &ElementBody) -> Op
                     DataContent::Computed(decls) => {
                         element_len += data_decl_len_attr_values(decls)?;
                     }
+                    DataContent::Show { value, initially } => {
+                        // `, initially: `
+                        element_len += 13;
+                        element_len += attribute_value_len(value)?;
+                        element_len += span_len(initially)?;
+                    }
                     DataContent::Empty | DataContent::Recovered => {}
                 }
 

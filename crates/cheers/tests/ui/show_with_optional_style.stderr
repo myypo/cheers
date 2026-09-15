@@ -1,0 +1,5 @@
+error: `!show` appends its `initially` to this element's `style`, so the `style` has to render on every pass — this form can omit the attribute entirely, leaving nothing to append to. Use a plain `style="..."` or `style=(expr)`.
+  --> tests/ui/show_with_optional_style.rs:15:31
+   |
+15 |             div style=[tint] !show(signal_open, initially: false) { "Panel" }
+   |                               ^^^^
