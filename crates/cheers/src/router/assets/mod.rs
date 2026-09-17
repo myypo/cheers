@@ -334,7 +334,12 @@ fn svg_sprite_path() -> &'static str {
     }
 }
 
-pub(crate) fn svg_sprite_url() -> String {
+/// The public URL of the global Cheers SVG sprite sheet, without a symbol fragment.
+///
+/// [`SvgSpritePreload`](crate::components::SvgSpritePreload) covers the common case of preloading
+/// the sheet from the `<head>`. Reach for this when the URL is needed outside of rendering, such as
+/// for a `Link: <url>; rel=preload; as=image` response header.
+pub fn svg_sprite_url() -> String {
     if cfg!(debug_assertions) {
         assert!(
             SVG_SPRITE_BUNDLER.has_registrations(),

@@ -19,7 +19,9 @@ use axum::{
 };
 use cheers::{
     ActionDef,
-    components::{CssBundle, Debugged, Displayed, Doctype, JsBundle, Scripts, SvgSymbol},
+    components::{
+        CssBundle, Debugged, Displayed, Doctype, JsBundle, Scripts, SvgSpritePreload, SvgSymbol,
+    },
     prelude::*,
 };
 use tokio::sync::{Barrier, Mutex};
@@ -270,6 +272,37 @@ async fn serves_registered_svg_sprite_sheet() {
     let body = String::from_utf8(body.into()).expect("response body should be valid UTF-8");
 
     assert!(body.contains(r#"<symbol id="icon-check""#));
+}
+
+#[test]
+fn preloads_the_sprite_sheet_the_symbols_reference() {
+    include_svg_sprite! {
+        svg viewBox="0 0 16 16" {
+            symbol id="icon-check" viewBox="0 0 16 16" {
+                path d="M6.5 11.2 3.3 8l-1.1 1.1 4.3 4.3L14 5.9l-1.1-1.1z";
+            }
+        }
+    }
+
+    let preload = html! { SvgSpritePreload; }.render().into_inner();
+    let symbol = html! {
+        svg {
+            use href=(SvgSymbol("icon-check"));
+        }
+    }
+    .render();
+
+    // The preload only earns its request if it names the very sheet the `<use>` elements go on to
+    // fetch, fragment aside.
+    let sheet = extract_href(symbol.as_inner())
+        .split_once('#')
+        .map(|(url, _)| url.to_owned())
+        .expect("sprite symbol href should contain a fragment");
+
+    assert_eq!(
+        preload,
+        format!(r#"<link rel="preload" as="image" type="image/svg+xml" href="{sheet}">"#)
+    );
 }
 
 #[tokio::test]

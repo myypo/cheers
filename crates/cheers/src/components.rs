@@ -527,6 +527,53 @@ where
     }
 }
 
+/// Renders a `<link rel="preload">` for the global Cheers SVG sprite sheet.
+///
+/// The browser's preload scanner finds `<link rel="stylesheet">` and `<script src>` anywhere in a
+/// document, but it does not follow the `href` of an SVG `<use>`. Without this, the sprite is only
+/// requested once an element referencing a [`SvgSymbol`] renders, so icons land a beat after the
+/// rest of the page. Put this in the `<head>` to have the sheet discovered alongside the CSS.
+///
+/// The preload names the sheet without a fragment, which is the same resource every
+/// [`SvgSymbol`] goes on to request.
+///
+/// # Example
+///
+/// ```
+/// use cheers::{components::SvgSpritePreload, prelude::*};
+///
+/// include_svg_sprite! {
+///     svg viewBox="0 0 16 16" {
+///         symbol id="icon-check" viewBox="0 0 16 16" {
+///             path d="M6.5 11.2 3.3 8l-1.1 1.1 4.3 4.3L14 5.9l-1.1-1.1z";
+///         }
+///     }
+/// }
+///
+/// let rendered = html! {
+///     head {
+///         SvgSpritePreload;
+///     }
+/// }
+/// .render()
+/// .into_inner();
+///
+/// assert!(rendered.contains(r#"<link rel="preload" as="image" type="image/svg+xml""#));
+/// ```
+#[derive(Cheers, Default)]
+pub struct SvgSpritePreload;
+
+impl Render for SvgSpritePreload {
+    fn render_to(&self, buffer: &mut Buffer<Element>) {
+        let link = format!(
+            r#"<link rel="preload" as="image" type="image/svg+xml" href="{}">"#,
+            svg_sprite_url()
+        );
+        // XSS SAFETY: sprite URL is computed by us
+        buffer.dangerously_get_string().push_str(&link);
+    }
+}
+
 /// A value rendered via its [`Display`] implementation.
 ///
 /// This will handle escaping special characters for you.

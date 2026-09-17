@@ -1,7 +1,8 @@
 mod assets;
+pub use assets::svg_sprite_url;
 #[doc(hidden)]
 pub use assets::{CSS_BUNDLER, SVG_SPRITE_BUNDLER};
-pub(crate) use assets::{css_bundle_url, js_bundle_url, js_url, svg_sprite_url};
+pub(crate) use assets::{css_bundle_url, js_bundle_url, js_url};
 mod compression;
 #[cfg(debug_assertions)]
 mod hot_reload;
