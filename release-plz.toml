@@ -15,6 +15,18 @@ changelog_update = false
 git_tag_enable = false
 git_release_enable = false
 
+[changelog]
+# Must match the CHANGELOG.md header verbatim, otherwise release-plz does not
+# recognize it and prepends a second header instead of inserting the new
+# release underneath it.
+header = """# Changelog
+
+All notable changes to Cheers will be documented in this file.
+
+The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
+and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+"""
+
 [[package]]
 name = "cheers"
 release = true
