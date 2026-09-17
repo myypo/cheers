@@ -190,7 +190,7 @@ Keep traits use-case-specific, not generic `Backend`. Handlers should extract st
 
 Full pages are better rendered through a shared layout/base component with `Doctype`, renderable `CssBundle` handles, and `Scripts`. Include `Scripts` on pages using actions, patches, signals, Datastar attributes, streams, or other Cheers client behavior; pure read-only pages do not need it.
 
-Use `const BASE_CSS: CssBundle = include_css!("./base.css")` for shared CSS and render it only in layouts/pages that need it. Use separate `CssBundle` handles for page-specific CSS so shared CSS stays browser-cacheable. Use `include_svg_sprite! { ... }` for global SVG, and `const PATH_JS_BUNDLE: JsBundle = include_js_bundle!("./path.js")` for scoped optimized JS.
+Use `const BASE_CSS: CssBundle = include_css!("./base.css")` for shared CSS and render it only in layouts/pages that need it. Use separate `CssBundle` handles for page-specific CSS so shared CSS stays browser-cacheable. Use `include_svg_sprite! { ... }` for global SVG, render `SvgSpritePreload` in the `<head>` of layouts whose pages use `SvgSymbol` if SVG sprite preload is needed, skip it where they do not, since an unused preload is a wasted request. Use `router::svg_sprite_url()` to preload outside of rendering, such as a `Link: <url>;, and `const PATH_JS_BUNDLE: JsBundle = include_js_bundle!("./path.js")` for scoped optimized JS.
 
 # Dynamic behavior
 

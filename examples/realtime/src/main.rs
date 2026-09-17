@@ -6,7 +6,7 @@ use axum::{
     routing::get,
 };
 use cheers::{
-    components::{CssBundle, Doctype, Scripts, SvgSymbol},
+    components::{CssBundle, Doctype, Scripts, SvgSpritePreload, SvgSymbol},
     prelude::*,
 };
 use rand::Rng;
@@ -30,6 +30,7 @@ impl<T: Render> Render for Base<T> {
             Doctype;
             html {
                 head {
+                    SvgSpritePreload;
                     (MAIN_CSS)
                 }
                 body {
