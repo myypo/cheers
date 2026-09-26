@@ -877,6 +877,20 @@ fn aria_multiple_attributes() {
 }
 
 #[test]
+fn button_command_attributes() {
+    let result = html! {
+        button command="show-modal" commandfor="dialog" { "Open" }
+        dialog id="dialog" {}
+    }
+    .render();
+
+    assert_eq!(
+        result.as_inner(),
+        r#"<button command="show-modal" commandfor="dialog">Open</button><dialog id="dialog"></dialog>"#
+    );
+}
+
+#[test]
 #[cfg(feature = "mathml")]
 fn mathml() {
     let result = html! {

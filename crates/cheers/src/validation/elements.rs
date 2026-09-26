@@ -550,6 +550,12 @@ define_validation_elements! {
 
     /// A button labeled by its contents.
     button {
+        /// Action to perform on the element targeted by `commandfor`
+        command
+
+        /// ID of the element controlled by the button
+        commandfor
+
         /// Whether the form control is disabled
         disabled
 
