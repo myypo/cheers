@@ -209,6 +209,9 @@ impl ToTokens for ValidationModule {
 struct BorrowState {
     captures: Vec<TokenStream>,
     counter: usize,
+    /// Names bound by template control flow (`@let`, `@for`, `@if let`, ...) that are in scope
+    /// at the current generation point. They do not exist where borrows are hoisted to.
+    local_bindings: Vec<Ident>,
 }
 
 impl BorrowState {
@@ -216,24 +219,35 @@ impl BorrowState {
         Self {
             captures: Vec::new(),
             counter: 0,
+            local_bindings: Vec::new(),
         }
     }
 
-    fn hoist_ref_expr(&mut self, paren_token: Paren, expr: impl ToTokens) -> Ident {
+    fn hoist_ref_expr(
+        &mut self,
+        paren_token: Paren,
+        expr: impl ToTokens,
+        root: Option<&Ident>,
+    ) -> TokenStream {
+        let mut ref_expr = TokenStream::new();
+        paren_token.surround(&mut ref_expr, |tokens| expr.to_tokens(tokens));
+
+        let reference = quote_spanned!(paren_token.span=> &);
+
+        if root.is_some_and(|root| self.local_bindings.contains(root)) {
+            return quote!(#reference #ref_expr);
+        }
+
         let ref_idx = self.counter;
         self.counter += 1;
 
         let ref_ident = format_ident!("__cheers_ref_{ref_idx}", span = Span::mixed_site());
 
-        let mut ref_expr = TokenStream::new();
-        paren_token.surround(&mut ref_expr, |tokens| expr.to_tokens(tokens));
-
-        let reference = quote_spanned!(paren_token.span=> &);
         self.captures.push(quote! {
             let #ref_ident = #reference #ref_expr;
         });
 
-        ref_ident
+        ref_ident.into_token_stream()
     }
 }
 
@@ -367,6 +381,7 @@ impl<'a> Generator<'a> {
         f: impl for<'b> FnOnce(&mut Generator<'b>),
         append_async: bool,
     ) -> AnyBlock {
+        let local_bindings_len = self.borrow_state.local_bindings.len();
         let (mut child_checks, mut block) = {
             let mut g = self.new_child_with_brace(brace_token, flavour);
 
@@ -377,6 +392,9 @@ impl<'a> Generator<'a> {
 
             (child_checks, block)
         };
+        self.borrow_state
+            .local_bindings
+            .truncate(local_bindings_len);
 
         self.checks.append(&mut child_checks);
         if append_async {
@@ -511,13 +529,31 @@ impl<'a> Generator<'a> {
         self.with_context_override(Context::DatastarSource, |g| g.push(node));
     }
 
-    pub fn hoist_ref_expr(&mut self, paren_token: Paren, expr: impl ToTokens) -> Ident {
-        self.borrow_state.hoist_ref_expr(paren_token, expr)
+    /// Borrows `expr` outside the render closure so the closure captures only the reference.
+    /// Expressions rooted at a template-local binding are borrowed in place instead, since the
+    /// binding does not exist outside the closure. `root` is the variable `expr` borrows from.
+    pub fn hoist_ref_expr(
+        &mut self,
+        paren_token: Paren,
+        expr: impl ToTokens,
+        root: Option<&Ident>,
+    ) -> TokenStream {
+        self.borrow_state.hoist_ref_expr(paren_token, expr, root)
     }
 
-    pub fn push_ref_expr(&mut self, paren_token: Paren, context: Context, expr: impl ToTokens) {
-        let ref_ident = self.hoist_ref_expr(paren_token, expr);
-        self.push_expr(Paren::default(), context, ref_ident);
+    pub fn push_ref_expr(
+        &mut self,
+        paren_token: Paren,
+        context: Context,
+        expr: impl ToTokens,
+        root: Option<&Ident>,
+    ) {
+        let ref_expr = self.hoist_ref_expr(paren_token, expr, root);
+        self.push_expr(Paren::default(), context, ref_expr);
+    }
+
+    pub fn declare_local_bindings(&mut self, bindings: impl IntoIterator<Item = Ident>) {
+        self.borrow_state.local_bindings.extend(bindings);
     }
 
     pub fn push_async_stmt(&mut self, async_stmt: impl ToTokens) {

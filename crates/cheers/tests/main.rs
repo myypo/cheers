@@ -657,6 +657,130 @@ fn ref_expr_keeps_outer_values_available_across_nested_blocks() {
 }
 
 #[test]
+fn ref_expr_can_borrow_template_local_bindings() {
+    enum Rank {
+        Named(String),
+        Unranked,
+    }
+
+    let title = "Hall".to_owned();
+    let names = vec!["Dwalin".to_owned(), "Balin".to_owned()];
+    let owner = Some("Thorin".to_owned());
+    let ranks = [Rank::Named("Elder".to_owned()), Rank::Unranked];
+    let result = html! {
+        @let heading = names.join(" & ");
+        h1 { (@&heading) }
+        ul {
+            @for name in &names {
+                li title=(@&name) { (@&name) " of " (@&title) }
+            }
+        }
+        @if let Some(owner) = &owner {
+            p { (@&owner) }
+        }
+        @for rank in &ranks {
+            @match rank {
+                Rank::Named(rank) => b { (@&rank) }
+                Rank::Unranked => i { "none" }
+            }
+        }
+        @let mut remaining = names.iter().rev();
+        @while let Some(next) = remaining.next() {
+            span { (@&next) }
+        }
+    };
+
+    assert_eq!(
+        result.render().into_inner(),
+        concat!(
+            "<h1>Dwalin &amp; Balin</h1>",
+            r#"<ul><li title="Dwalin">Dwalin of Hall</li><li title="Balin">Balin of Hall</li></ul>"#,
+            "<p>Thorin</p>",
+            "<b>Elder</b><i>none</i>",
+            "<span>Balin</span><span>Dwalin</span>",
+        )
+    );
+    assert_eq!(title, "Hall");
+}
+
+#[test]
+fn ref_expr_can_borrow_template_local_bindings_in_component_props() {
+    #[derive(Cheers)]
+    struct Badge<'a> {
+        label: &'a str,
+    }
+
+    impl<'a> Render for Badge<'a> {
+        fn render_to(&self, buffer: &mut Buffer<Element>) {
+            html! {
+                span { (self.label) }
+            }
+            .render_to(buffer);
+        }
+    }
+
+    let names = vec!["Dwalin".to_owned(), "Balin".to_owned()];
+    let result = html! {
+        @for name in names.iter().cloned() {
+            Badge label=(@&name);
+        }
+    };
+
+    assert_eq!(
+        result.render().into_inner(),
+        "<span>Dwalin</span><span>Balin</span>"
+    );
+}
+
+#[test]
+fn ref_expr_hoists_field_names_that_match_template_local_bindings() {
+    struct User {
+        name: String,
+    }
+
+    let user = User {
+        name: "Dwalin".to_owned(),
+    };
+    let result = html! {
+        @for name in ["a"] {
+            i { (@&user.name) " " (name) }
+        }
+    };
+
+    assert_eq!(result.render().into_inner(), "<i>Dwalin a</i>");
+    assert_eq!(user.name, "Dwalin");
+}
+
+#[test]
+fn ref_expr_can_borrow_bindings_of_at_subpatterns() {
+    let values = [Some(7), None];
+    let result = html! {
+        @for value in values {
+            @match value {
+                _whole @ Some(inner) => b { (@&inner) }
+                None => i { "none" }
+            }
+        }
+    };
+
+    assert_eq!(result.render().into_inner(), "<b>7</b><i>none</i>");
+}
+
+#[test]
+fn template_local_bindings_do_not_leak_out_of_their_block() {
+    let name = "outer".to_owned();
+    let result = html! {
+        @for name in ["inner"] {
+            i { (name) }
+        }
+        b { (@&name) }
+    };
+
+    assert_eq!(result.render().into_inner(), "<i>inner</i><b>outer</b>");
+    assert_eq!(name, "outer");
+}
+
+#[test]
 fn ref_expr_keeps_outer_value_available_in_component_prop_builders() {
     #[derive(Cheers)]
     struct Feedback<'a> {
@@ -1121,6 +1245,33 @@ async fn page_is_rendered() {
         result.contains(r#"<article><p>Data</p></article>"#),
         "{result}"
     );
+}
+
+#[tokio::test]
+async fn ref_expr_can_borrow_async_leading_let_bindings() {
+    async fn main_page() -> cheers::prelude::AsyncLazy<cheers::prelude::Lazy<impl Fn(&mut Buffer)>>
+    {
+        html! {
+            Base {
+                @async {
+                    @let data = async { "Here!".to_owned() }.await;
+                    div { (@&data) }
+                } @else {
+                    div { "Wait for it..." }
+                }
+            }
+        }
+    }
+
+    let mut result = main_page()
+        .await
+        .into_response()
+        .into_body()
+        .into_data_stream();
+    let got = next_axum_chunk(&mut result).await;
+    assert!(got.contains("Wait for it..."), "{got}");
+    let got = next_axum_chunk(&mut result).await;
+    assert!(got.contains("<div>Here!</div>"), "{got}");
 }
 
 #[tokio::test]

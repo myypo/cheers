@@ -156,6 +156,25 @@ pub enum ParenExprBody {
     Tuple(Punctuated<Expr, Token![,]>),
 }
 
+impl ParenExprBody {
+    pub(crate) fn ref_root(&self) -> Option<&Ident> {
+        match self {
+            Self::Expr(expr) => ref_expr_root(expr),
+            Self::Unit | Self::Tuple(_) => None,
+        }
+    }
+}
+
+/// The local variable a validated `(@&...)` path or field expression borrows from, if any.
+fn ref_expr_root(expr: &Expr) -> Option<&Ident> {
+    match expr {
+        Expr::Path(path) if path.qself.is_none() => path.path.get_ident(),
+        Expr::Field(field) => ref_expr_root(&field.base),
+        Expr::Paren(paren) => ref_expr_root(&paren.expr),
+        _ => None,
+    }
+}
+
 impl ToTokens for ParenExprBody {
     fn to_tokens(&self, tokens: &mut TokenStream) {
         match self {
@@ -342,7 +361,12 @@ impl<N: Node> Generate for ParenExpr<N> {
     fn generate(&mut self, g: &mut Generator<'_>) {
         match self.mode {
             ParenExprMode::Normal => g.push_expr(self.paren_token, Self::CONTEXT, &self.body),
-            ParenExprMode::Ref => g.push_ref_expr(self.paren_token, Self::CONTEXT, &self.body),
+            ParenExprMode::Ref => g.push_ref_expr(
+                self.paren_token,
+                Self::CONTEXT,
+                &self.body,
+                self.body.ref_root(),
+            ),
         }
     }
 }
@@ -398,10 +422,16 @@ impl<N: Node + SyntaxStatic> SyntaxStatic for Nodes<N> {
 }
 
 impl<N: Node> Nodes<N> {
-    fn block(&mut self, g: &mut Generator<'_>, brace_token: Brace) -> AnyBlock {
+    fn block(
+        &mut self,
+        g: &mut Generator<'_>,
+        brace_token: Brace,
+        bindings: Vec<Ident>,
+    ) -> AnyBlock {
         g.block_with(
             brace_token,
             |g| {
+                g.declare_local_bindings(bindings);
                 g.push_all(&mut self.0);
             },
             true,
@@ -1036,8 +1066,7 @@ impl BorrowExpr<Expr> {
                 quote!(&#expr)
             }
             ParenExprMode::Ref => {
-                let ref_ident = g.hoist_ref_expr(Paren::default(), &self.expr);
-                quote!(#ref_ident)
+                g.hoist_ref_expr(Paren::default(), &self.expr, ref_expr_root(&self.expr))
             }
         }
     }
