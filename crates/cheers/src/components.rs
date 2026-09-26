@@ -43,7 +43,8 @@ impl Render for Doctype {
 ///
 /// This includes the `datastar.js` runtime and the SSR streaming helper. When the router was
 /// built with a [`crate::track::TrackConfig`], the served runtime also includes the tracking
-/// plugin. In debug builds it also includes the WebSocket live-reload script. With the
+/// plugin. In debug builds it also includes the WebSocket live-reload script, unless a
+/// `cheers::test::App` has been created in this process. With the
 /// `subsecond` feature enabled, that script morphs rebuilt HTML after Subsecond patches instead of
 /// reloading the page.
 ///
@@ -73,7 +74,7 @@ impl Render for Scripts {
         );
         // XSS SAFETY: JS URL is computed by us
         buffer.dangerously_get_string().push_str(&script);
-        if cfg!(debug_assertions) {
+        if crate::router::live_reload_enabled() {
             if !crate::subsecond::enabled() {
                 buffer.dangerously_get_string().push_str(
                     r#"

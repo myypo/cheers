@@ -226,11 +226,14 @@ where
 {
     if crate::subsecond::enabled() {
         ensure_subsecond_bridge();
-    } else {
-        spawn_reload_watcher();
     }
 
+    // Started lazily so a process that never renders the live-reload script never walks the
+    // workspace.
     let handler = move |ws: WebSocketUpgrade| {
+        if !crate::subsecond::enabled() {
+            spawn_reload_watcher();
+        }
         let rx = hot_reload_tx().subscribe();
         async move { ws.on_upgrade(move |socket| handle_socket(socket, rx)) }
     };

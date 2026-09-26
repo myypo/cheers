@@ -8,7 +8,10 @@ mod compression;
 mod hot_reload;
 mod redirect_trailing_slash;
 
-use std::fmt::Display;
+use std::{
+    fmt::Display,
+    sync::atomic::{AtomicBool, Ordering},
+};
 
 use axum::Router;
 
@@ -42,6 +45,17 @@ impl Config {
         self.track = Some(track);
         self
     }
+}
+
+static LIVE_RELOAD_DISABLED: AtomicBool = AtomicBool::new(false);
+
+#[cfg_attr(not(feature = "test"), expect(dead_code))]
+pub(crate) fn disable_live_reload() {
+    LIVE_RELOAD_DISABLED.store(true, Ordering::Relaxed);
+}
+
+pub(crate) fn live_reload_enabled() -> bool {
+    cfg!(debug_assertions) && !LIVE_RELOAD_DISABLED.load(Ordering::Relaxed)
 }
 
 pub fn new<S: Clone + Send + Sync + 'static>(
