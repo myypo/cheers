@@ -284,7 +284,11 @@ fn preloads_the_sprite_sheet_the_symbols_reference() {
         }
     }
 
-    let preload = html! { SvgSpritePreload; }.render().into_inner();
+    let preload = html! {
+        SvgSpritePreload;
+    }
+    .render()
+    .into_inner();
     let symbol = html! {
         svg {
             use href=(SvgSymbol("icon-check"));
@@ -657,6 +661,7 @@ fn ref_expr_keeps_outer_values_available_across_nested_blocks() {
 }
 
 #[test]
+#[expect(clippy::while_let_on_iterator, reason = "covers `@while let`")]
 fn ref_expr_can_borrow_template_local_bindings() {
     enum Rank {
         Named(String),
@@ -704,6 +709,10 @@ fn ref_expr_can_borrow_template_local_bindings() {
 }
 
 #[test]
+#[expect(
+    clippy::unnecessary_to_owned,
+    reason = "`html!` renders through an `Fn` closure, so it cannot consume `names`"
+)]
 fn ref_expr_can_borrow_template_local_bindings_in_component_props() {
     #[derive(Cheers)]
     struct Badge<'a> {
@@ -719,7 +728,7 @@ fn ref_expr_can_borrow_template_local_bindings_in_component_props() {
         }
     }
 
-    let names = vec!["Dwalin".to_owned(), "Balin".to_owned()];
+    let names = ["Dwalin".to_owned(), "Balin".to_owned()];
     let result = html! {
         @for name in names.iter().cloned() {
             Badge label=(@&name);
@@ -742,12 +751,15 @@ fn ref_expr_hoists_field_names_that_match_template_local_bindings() {
         name: "Dwalin".to_owned(),
     };
     let result = html! {
-        @for name in ["a"] {
+        @for name in ["a", "b"] {
             i { (@&user.name) " " (name) }
         }
     };
 
-    assert_eq!(result.render().into_inner(), "<i>Dwalin a</i>");
+    assert_eq!(
+        result.render().into_inner(),
+        "<i>Dwalin a</i><i>Dwalin b</i>"
+    );
     assert_eq!(user.name, "Dwalin");
 }
 
@@ -770,13 +782,16 @@ fn ref_expr_can_borrow_bindings_of_at_subpatterns() {
 fn template_local_bindings_do_not_leak_out_of_their_block() {
     let name = "outer".to_owned();
     let result = html! {
-        @for name in ["inner"] {
+        @for name in ["first", "second"] {
             i { (name) }
         }
         b { (@&name) }
     };
 
-    assert_eq!(result.render().into_inner(), "<i>inner</i><b>outer</b>");
+    assert_eq!(
+        result.render().into_inner(),
+        "<i>first</i><i>second</i><b>outer</b>"
+    );
     assert_eq!(name, "outer");
 }
 
@@ -2433,6 +2448,7 @@ fn control_flow_inside_js_attributes_uses_js_context() {
 #[test]
 fn data_show_carries_the_initial_visibility_it_was_given() {
     #[derive(Cheers)]
+    #[expect(dead_code)]
     struct Upload {
         #[signal]
         preview: String,
@@ -2457,6 +2473,7 @@ fn data_show_carries_the_initial_visibility_it_was_given() {
 #[test]
 fn data_show_appends_its_initial_visibility_to_an_existing_style() {
     #[derive(Cheers)]
+    #[expect(dead_code)]
     struct Panel {
         #[signal]
         open: bool,
@@ -3397,6 +3414,7 @@ fn action_form_selector_targets_explicit_form() {
 #[test]
 fn action_form_id_targets_generated_form_id() {
     #[derive(Cheers)]
+    #[expect(dead_code)]
     struct HomeSearch {
         #[id]
         id: u64,
@@ -3418,6 +3436,7 @@ fn action_form_id_targets_generated_form_id() {
 #[test]
 fn action_form_id_css_escapes_generated_form_id() {
     #[derive(Cheers)]
+    #[expect(dead_code)]
     struct HomeSearch {
         #[id]
         id: String,
@@ -3442,7 +3461,12 @@ fn action_form_selector_renders_inside_html_macro() {
     async fn my_handler(_: Form<String>) {}
 
     let result = html! {
-        button !on:click((MyHandlerAction {}.options(ActionOptions::new().form_selector("#external-form")))) { "Search" }
+        button
+            !on:click((
+                MyHandlerAction {}
+                    .options(ActionOptions::new().form_selector("#external-form"))
+            ))
+        { "Search" }
     }
     .render();
 
