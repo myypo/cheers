@@ -8,7 +8,10 @@ use syn::{
     token::{Brace, Paren},
 };
 
-use super::{AttributeValueNode, DataModifierPart, DataModifiers, SyntaxStatic, UnquotedName};
+use super::{
+    AttributeValueNode, DataModifierPart, DataModifiers, ElementNode, Nodes, SyntaxStatic,
+    UnquotedName,
+};
 
 fn escape_script_source_literal(value: &str) -> std::borrow::Cow<'_, str> {
     let bytes = value.as_bytes();
@@ -41,10 +44,12 @@ fn escape_script_source_literal(value: &str) -> std::borrow::Cow<'_, str> {
     }
 }
 
-fn pinned_stream_tokens_expr(stream: &TokenStream) -> TokenStream {
-    quote! {
-        ::std::boxed::Box::pin(#stream) as ::std::pin::Pin<::std::boxed::Box<dyn ::cheers::__internal::futures::stream::Stream<Item = ::cheers::Rendered<::std::string::String>> + ::std::marker::Send>>
-    }
+pub fn async_key_ident() -> Ident {
+    Ident::new("__cheers_async_key", Span::mixed_site())
+}
+
+pub fn async_scope_ident() -> Ident {
+    Ident::new("__cheers_async_scope", Span::mixed_site())
 }
 
 pub fn lazy<T: Parse + Generate + SyntaxStatic>(tokens: TokenStream) -> Result<TokenStream, Error> {
@@ -55,75 +60,83 @@ pub fn lazy_with_flavour<T: Parse + Generate + SyntaxStatic>(
     tokens: TokenStream,
     flavour: NodeFlavour,
 ) -> Result<TokenStream, Error> {
-    let mut borrow_state = BorrowState::new();
-    let mut g = Generator::new_closure(T::CONTEXT, flavour, &mut borrow_state);
+    let mut state = GeneratorState::new();
+    let mut g = Generator::new_closure(T::CONTEXT, flavour, &mut state);
 
     let mut input = syn::parse2::<T>(tokens)?;
     let syntax_static = input.is_static();
     g.push(&mut input);
 
     let block = g.finish();
-    let borrow_captures = borrow_state.captures;
+    let borrow_captures = state.captures;
+    let has_async = state.has_async;
 
     let buffer_ident = Generator::buffer_ident();
 
     let marker_ident = T::CONTEXT.marker_type();
-    let lazy = if !syntax_static {
-        // Dynamic render bodies can contain arbitrary Rust expressions. Keep them as normal
-        // closures instead of guessing whether their paths capture caller locals.
-        quote! {
-            ::cheers::prelude::Lazy::<_, #marker_ident>::dangerously_create(
-                move |#buffer_ident: &mut ::cheers::prelude::Buffer<#marker_ident>| {
-                    ::cheers::__internal::subsecond::call(|| {
-                        #block
-                    })
-                }
-            )
-        }
-    } else {
-        // Syntactically static render bodies cannot reference caller locals. Coerce the generated
-        // closure into a real function pointer so Subsecond has a precise hot boundary.
+    let rendered = if has_async {
+        let async_scope_items = &block.async_scope_items;
+        let async_scope_ident = async_scope_ident();
+
         quote! {
             {
-                let __cheers_subsecond_hot_render: fn(&mut ::cheers::prelude::Buffer<#marker_ident>) = |#buffer_ident| {
-                    #block
-                };
+                use ::cheers::validation::attributes::*;
+                #(#borrow_captures)*
+                #(#async_scope_items)*
 
-                ::cheers::prelude::Lazy::<_, #marker_ident>::dangerously_create(
-                    move |#buffer_ident: &mut ::cheers::prelude::Buffer<#marker_ident>| {
-                        ::cheers::__internal::subsecond::hot_call(
-                            __cheers_subsecond_hot_render,
-                            (#buffer_ident,),
-                        );
+                ::cheers::prelude::AsyncLazy::__new(
+                    move |
+                        #buffer_ident: &mut ::cheers::prelude::Buffer<#marker_ident>,
+                        #async_scope_ident: &::cheers::__internal::async_streams::AsyncScope,
+                    | {
+                        ::cheers::__internal::subsecond::call(|| {
+                            #block
+                        })
                     }
                 )
             }
         }
-    };
+    } else {
+        let lazy = if !syntax_static {
+            // Dynamic render bodies can contain arbitrary Rust expressions. Keep them as normal
+            // closures instead of guessing whether their paths capture caller locals.
+            quote! {
+                ::cheers::prelude::Lazy::<_, #marker_ident>::dangerously_create(
+                    move |#buffer_ident: &mut ::cheers::prelude::Buffer<#marker_ident>| {
+                        ::cheers::__internal::subsecond::call(|| {
+                            #block
+                        })
+                    }
+                )
+            }
+        } else {
+            // Syntactically static render bodies cannot reference caller locals. Coerce the
+            // generated closure into a real function pointer so Subsecond has a precise hot
+            // boundary.
+            quote! {
+                {
+                    let __cheers_subsecond_hot_render: fn(&mut ::cheers::prelude::Buffer<#marker_ident>) = |#buffer_ident| {
+                        #block
+                    };
 
-    let rendered = if block.async_stmts.is_empty() {
+                    ::cheers::prelude::Lazy::<_, #marker_ident>::dangerously_create(
+                        move |#buffer_ident: &mut ::cheers::prelude::Buffer<#marker_ident>| {
+                            ::cheers::__internal::subsecond::hot_call(
+                                __cheers_subsecond_hot_render,
+                                (#buffer_ident,),
+                            );
+                        }
+                    )
+                }
+            }
+        };
+
         quote! {
             {
                 use ::cheers::validation::attributes::*;
                 #(#borrow_captures)*
 
                 #lazy
-            }
-        }
-    } else {
-        let streams = &block.async_stmts;
-        let streams = streams.iter().map(pinned_stream_tokens_expr);
-
-        quote! {
-            {
-                use ::cheers::validation::attributes::*;
-                #(#borrow_captures)*
-
-                let lazy = #lazy;
-                let stream = ::cheers::__internal::futures::stream::select_all([
-                    #(#streams),*
-                ]);
-                ::cheers::prelude::AsyncLazy::__select_all(lazy, stream)
             }
         }
     };
@@ -206,20 +219,24 @@ impl ToTokens for ValidationModule {
     }
 }
 
-struct BorrowState {
+struct GeneratorState {
     captures: Vec<TokenStream>,
     counter: usize,
     /// Names bound by template control flow (`@let`, `@for`, `@if let`, ...) that are in scope
     /// at the current generation point. They do not exist where borrows are hoisted to.
     local_bindings: Vec<Ident>,
+    async_item_counter: usize,
+    has_async: bool,
 }
 
-impl BorrowState {
+impl GeneratorState {
     fn new() -> Self {
         Self {
             captures: Vec::new(),
             counter: 0,
             local_bindings: Vec::new(),
+            async_item_counter: 0,
+            has_async: false,
         }
     }
 
@@ -257,10 +274,13 @@ pub struct Generator<'a> {
     brace_token: Brace,
     parts: Vec<Part>,
     checks: Checks,
-    async_stmts: Vec<TokenStream>,
-    collect_async_stmts_into_buffer: bool,
+    async_scope_items: Vec<TokenStream>,
+    in_loop: bool,
+    /// Whether the code generated here runs inside a closure that may be called more than once,
+    /// and so cannot move values it captures.
+    in_shared_closure: bool,
     context_override: Option<Context>,
-    borrow_state: &'a mut BorrowState,
+    state: &'a mut GeneratorState,
 }
 
 impl<'a> Generator<'a> {
@@ -268,19 +288,15 @@ impl<'a> Generator<'a> {
         Ident::new("__hypertext_buffer", Span::mixed_site())
     }
 
-    fn new_closure(
-        context: Context,
-        flavour: NodeFlavour,
-        borrow_state: &'a mut BorrowState,
-    ) -> Self {
-        Self::new_root_with_brace(context, Brace::default(), flavour, borrow_state)
+    fn new_closure(context: Context, flavour: NodeFlavour, state: &'a mut GeneratorState) -> Self {
+        Self::new_root_with_brace(context, Brace::default(), flavour, state)
     }
 
     fn new_root_with_brace(
         context: Context,
         brace_token: Brace,
         flavour: NodeFlavour,
-        borrow_state: &'a mut BorrowState,
+        state: &'a mut GeneratorState,
     ) -> Self {
         Self {
             context,
@@ -288,10 +304,11 @@ impl<'a> Generator<'a> {
             brace_token,
             parts: Vec::new(),
             checks: Checks::new(),
-            async_stmts: Vec::new(),
-            collect_async_stmts_into_buffer: false,
+            async_scope_items: Vec::new(),
+            in_loop: false,
+            in_shared_closure: true,
             context_override: None,
-            borrow_state,
+            state,
         }
     }
 
@@ -306,10 +323,11 @@ impl<'a> Generator<'a> {
             brace_token,
             parts: Vec::new(),
             checks: Checks::new(),
-            async_stmts: Vec::new(),
-            collect_async_stmts_into_buffer: self.collect_async_stmts_into_buffer,
+            async_scope_items: Vec::new(),
+            in_loop: self.in_loop,
+            in_shared_closure: self.in_shared_closure,
             context_override: self.context_override,
-            borrow_state: &mut *self.borrow_state,
+            state: &mut *self.state,
         }
     }
 
@@ -361,7 +379,7 @@ impl<'a> Generator<'a> {
                 #checks
                 #render
             },
-            async_stmts: self.async_stmts,
+            async_scope_items: self.async_scope_items,
         }
     }
 
@@ -381,7 +399,7 @@ impl<'a> Generator<'a> {
         f: impl for<'b> FnOnce(&mut Generator<'b>),
         append_async: bool,
     ) -> AnyBlock {
-        let local_bindings_len = self.borrow_state.local_bindings.len();
+        let local_bindings_len = self.state.local_bindings.len();
         let (mut child_checks, mut block) = {
             let mut g = self.new_child_with_brace(brace_token, flavour);
 
@@ -392,13 +410,11 @@ impl<'a> Generator<'a> {
 
             (child_checks, block)
         };
-        self.borrow_state
-            .local_bindings
-            .truncate(local_bindings_len);
+        self.state.local_bindings.truncate(local_bindings_len);
 
         self.checks.append(&mut child_checks);
         if append_async {
-            self.async_stmts.append(&mut block.async_stmts);
+            self.async_scope_items.append(&mut block.async_scope_items);
         }
 
         block
@@ -538,7 +554,7 @@ impl<'a> Generator<'a> {
         expr: impl ToTokens,
         root: Option<&Ident>,
     ) -> TokenStream {
-        self.borrow_state.hoist_ref_expr(paren_token, expr, root)
+        self.state.hoist_ref_expr(paren_token, expr, root)
     }
 
     pub fn push_ref_expr(
@@ -553,28 +569,73 @@ impl<'a> Generator<'a> {
     }
 
     pub fn declare_local_bindings(&mut self, bindings: impl IntoIterator<Item = Ident>) {
-        self.borrow_state.local_bindings.extend(bindings);
+        self.state.local_bindings.extend(bindings);
     }
 
-    pub fn push_async_stmt(&mut self, async_stmt: impl ToTokens) {
-        let async_stmt = async_stmt.to_token_stream();
-        if self.collect_async_stmts_into_buffer {
-            let buffer_ident = Self::buffer_ident();
-            let async_stmt = pinned_stream_tokens_expr(&async_stmt);
-            self.push_stmt(quote! {
-                ::cheers::__internal::async_streams::push(&mut *#buffer_ident, #async_stmt);
-            });
-        } else {
-            self.async_stmts.push(async_stmt);
-        }
+    pub fn nodes_use_local_bindings(&self, nodes: &Nodes<ElementNode>) -> bool {
+        let bindings = &self.state.local_bindings;
+        !bindings.is_empty() && crate::uses::nodes_use_any(nodes, bindings)
     }
 
-    pub fn with_async_stream_collection<R>(&mut self, f: impl FnOnce(&mut Self) -> R) -> R {
-        let prev = self.collect_async_stmts_into_buffer;
-        self.collect_async_stmts_into_buffer = true;
+    pub const fn in_loop(&self) -> bool {
+        self.in_loop
+    }
+
+    pub fn with_in_loop<R>(&mut self, in_loop: bool, f: impl FnOnce(&mut Self) -> R) -> R {
+        let prev = std::mem::replace(&mut self.in_loop, in_loop);
         let result = f(self);
-        self.collect_async_stmts_into_buffer = prev;
+        self.in_loop = prev;
         result
+    }
+
+    pub const fn in_shared_closure(&self) -> bool {
+        self.in_shared_closure
+    }
+
+    pub fn with_in_shared_closure<R>(
+        &mut self,
+        in_shared_closure: bool,
+        f: impl FnOnce(&mut Self) -> R,
+    ) -> R {
+        let prev = std::mem::replace(&mut self.in_shared_closure, in_shared_closure);
+        let result = f(self);
+        self.in_shared_closure = prev;
+        result
+    }
+
+    pub fn push_async_slot(&mut self, stream: impl ToTokens) -> Ident {
+        let slot_ident = self.next_async_item_ident("slot");
+        let key_ident = async_key_ident();
+
+        self.async_scope_items.push(quote! {
+            let #slot_ident = ::cheers::__internal::async_streams::AsyncSlot::new(
+                move |#key_ident: ::cheers::__internal::async_streams::AsyncKey| -> ::cheers::__internal::async_streams::AsyncStream {
+                    ::std::boxed::Box::pin(#stream)
+                }
+            );
+        });
+
+        slot_ident
+    }
+
+    pub fn push_async_instances(&mut self) -> Ident {
+        let instances_ident = self.next_async_item_ident("instances");
+
+        self.async_scope_items.push(quote! {
+            let #instances_ident = ::cheers::__internal::async_streams::AsyncInstances::new();
+        });
+
+        instances_ident
+    }
+
+    fn next_async_item_ident(&mut self, kind: &str) -> Ident {
+        let idx = self.state.async_item_counter;
+        self.state.async_item_counter += 1;
+        format_ident!("__cheers_async_{kind}_{idx}", span = Span::mixed_site())
+    }
+
+    pub fn mark_async(&mut self) {
+        self.state.has_async = true;
     }
 
     pub fn push_stmt(&mut self, stmt: impl ToTokens) {
@@ -903,7 +964,9 @@ pub enum AttributeNameCheckKind {
 pub struct AnyBlock {
     pub brace_token: Brace,
     pub stmts: TokenStream,
-    pub async_stmts: Vec<TokenStream>,
+    /// `@async` slots and instance counters that must be defined at the root of the enclosing
+    /// async scope.
+    pub async_scope_items: Vec<TokenStream>,
 }
 
 impl Parse for AnyBlock {
@@ -913,7 +976,7 @@ impl Parse for AnyBlock {
         Ok(Self {
             brace_token: braced!(content in input),
             stmts: content.parse()?,
-            async_stmts: Vec::new(),
+            async_scope_items: Vec::new(),
         })
     }
 }

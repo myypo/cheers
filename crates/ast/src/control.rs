@@ -14,7 +14,8 @@ use syn::{
 use super::{AnyBlock, Generate, Generator, Node, Nodes};
 use crate::{
     Attribute, AttributeKind, AttributeName, AttributeValueNode, Context, ElementNode,
-    SyntaxStatic, basics::Literal,
+    SyntaxStatic,
+    generate::{async_key_ident, async_scope_ident},
 };
 
 fn tokens_contain_ident(tokens: &TokenStream, needle: &str) -> bool {
@@ -33,7 +34,7 @@ fn tokens_contain_any_ident(tokens: &TokenStream, needles: &[Ident]) -> bool {
     })
 }
 
-fn for_each_pat_ident(pat: &Pat, f: &mut impl FnMut(&PatIdent)) {
+pub(crate) fn for_each_pat_ident(pat: &Pat, f: &mut impl FnMut(&PatIdent)) {
     match pat {
         Pat::Ident(pat) => {
             f(pat);
@@ -554,7 +555,9 @@ impl<N: Node> Generate for For<N> {
         let pat = &self.pat;
         let in_token = self.in_token;
         let expr = &self.expr;
-        let block = self.block.block_with_bindings(g, pat_binding_idents(pat));
+        let block = g.with_in_loop(true, |g| {
+            self.block.block_with_bindings(g, pat_binding_idents(pat))
+        });
 
         g.push_stmt(quote! {
             #for_token #pat #in_token #expr
@@ -585,7 +588,9 @@ impl<N: Node> Generate for While<N> {
     fn generate(&mut self, g: &mut Generator<'_>) {
         let while_token = self.while_token;
         let cond = &self.cond;
-        let block = self.block.block_with_bindings(g, cond_binding_idents(cond));
+        let block = g.with_in_loop(true, |g| {
+            self.block.block_with_bindings(g, cond_binding_idents(cond))
+        });
 
         g.push_stmt(quote! {
             #while_token #cond
@@ -750,27 +755,51 @@ impl Parse for Async {
     }
 }
 
+fn stream_template_start() -> TokenStream {
+    let key_ident = async_key_ident();
+    quote! {
+        // XSS SAFETY: the key is computed by us
+        #key_ident.write_template_start(buffer.dangerously_get_string());
+    }
+}
+
+fn stream_script() -> TokenStream {
+    let key_ident = async_key_ident();
+    quote! {
+        // XSS SAFETY: the key is computed by us
+        #key_ident.write_script(buffer.dangerously_get_string());
+    }
+}
+
+fn static_async_key_expr(key: &str) -> TokenStream {
+    let template_start = format!("<template data-ssr=\"{key}-t\">");
+    let script = format!("</template><script data-ssr=\"{key}-s\">__ssrStream('{key}')</script>");
+    let island_open = format!("<div data-cheers-async-root=\"{key}\" data-ssr=\"{key}\">");
+
+    quote! {
+        &::cheers::__internal::async_streams::StaticAsyncKey {
+            key: #key,
+            template_start: #template_start,
+            script: #script,
+            island_open: #island_open,
+        }
+    }
+}
+
 impl Async {
-    fn stream_tokens_expr(
-        async_token: Token![async],
-        content_code: &TokenStream,
-        key: &str,
-    ) -> TokenStream {
+    fn stream_tokens_expr(async_token: Token![async], content_code: &TokenStream) -> TokenStream {
         let marker_ident = ElementNode::CONTEXT.marker_type();
         let buffer_ident = Generator::buffer_ident();
-        let template_start = format!(r#"<template data-ssr="{key}-t">"#);
-        let stream_script =
-            format!(r#"</template><script data-ssr="{key}-s">__ssrStream('{key}')</script>"#);
+        let template_start = stream_template_start();
+        let stream_script = stream_script();
 
         quote! {
             ::cheers::__internal::futures::stream::once(#async_token move {
                 let mut buffer = ::cheers::prelude::Buffer::<#marker_ident>::new();
-                // XSS SAFETY: the key is computed by us
-                buffer.dangerously_get_string().push_str(#template_start);
+                #template_start
                 let #buffer_ident = &mut buffer;
                 #content_code
-                // XSS SAFETY: the key is computed by us
-                buffer.dangerously_get_string().push_str(#stream_script);
+                #stream_script
 
                 ::cheers::Raw::<_, #marker_ident>::dangerously_create(
                     buffer.rendered().into_inner()
@@ -784,13 +813,11 @@ impl Async {
         load_code: &TokenStream,
         render_code: &TokenStream,
         leading_bindings: &[(TokenStream, Ident)],
-        key: &str,
     ) -> TokenStream {
         let marker_ident = ElementNode::CONTEXT.marker_type();
         let buffer_ident = Generator::buffer_ident();
-        let template_start = format!(r#"<template data-ssr="{key}-t">"#);
-        let stream_script =
-            format!(r#"</template><script data-ssr="{key}-s">__ssrStream('{key}')</script>"#);
+        let template_start = stream_template_start();
+        let stream_script = stream_script();
         let binding_params = leading_bindings.iter().map(|(param, _)| param);
         let binding_args = leading_bindings.iter().map(|(_, arg)| arg);
 
@@ -799,8 +826,7 @@ impl Async {
                 #load_code
 
                 let mut buffer = ::cheers::prelude::Buffer::<#marker_ident>::new();
-                // XSS SAFETY: the key is computed by us
-                buffer.dangerously_get_string().push_str(#template_start);
+                #template_start
                 let #buffer_ident = &mut buffer;
                 ::cheers::__internal::subsecond::hot_call_with_arg(
                     |(#buffer_ident, #(#binding_params),*)| {
@@ -809,8 +835,7 @@ impl Async {
                     },
                     (#buffer_ident, #(#binding_args),*),
                 );
-                // XSS SAFETY: the key is computed by us
-                buffer.dangerously_get_string().push_str(#stream_script);
+                #stream_script
 
                 ::cheers::Raw::<_, #marker_ident>::dangerously_create(
                     buffer.rendered().into_inner()
@@ -821,37 +846,34 @@ impl Async {
 
     fn stream_with_nested_tokens_expr(
         async_token: Token![async],
+        scope_items: &[TokenStream],
         content_code: &TokenStream,
-        key: &str,
     ) -> TokenStream {
         let marker_ident = ElementNode::CONTEXT.marker_type();
         let buffer_ident = Generator::buffer_ident();
-        let template_start = format!(r#"<template data-ssr="{key}-t">"#);
-        let stream_script =
-            format!(r#"</template><script data-ssr="{key}-s">__ssrStream('{key}')</script>"#);
+        let key_ident = async_key_ident();
+        let scope_ident = async_scope_ident();
+        let template_start = stream_template_start();
+        let stream_script = stream_script();
 
         quote! {
             ::cheers::__internal::futures::StreamExt::flat_map(
                 ::cheers::__internal::futures::stream::once(#async_token move {
-                    let mut buffer = ::std::boxed::Box::new(
-                        ::cheers::prelude::Buffer::<#marker_ident>::new()
+                    let #scope_ident = ::cheers::__internal::async_streams::AsyncScope::nested(
+                        &#key_ident,
                     );
-                    let __cheers_async_stream_collection =
-                        ::cheers::__internal::async_streams::enter(&mut *buffer);
-                    // XSS SAFETY: the key is computed by us
-                    buffer.dangerously_get_string().push_str(#template_start);
-                    let #buffer_ident = &mut *buffer;
+                    #(#scope_items)*
+                    let mut buffer = ::cheers::prelude::Buffer::<#marker_ident>::new();
+                    #template_start
+                    let #buffer_ident = &mut buffer;
                     #content_code
-                    // XSS SAFETY: the key is computed by us
-                    buffer.dangerously_get_string().push_str(#stream_script);
+                    #stream_script
 
-                    let __cheers_nested_streams = __cheers_async_stream_collection.finish();
-                    let buffer = *buffer;
                     let __cheers_parent_rendered = ::cheers::Raw::<_, #marker_ident>::dangerously_create(
                         buffer.rendered().into_inner()
                     ).render();
 
-                    (__cheers_parent_rendered, __cheers_nested_streams)
+                    (__cheers_parent_rendered, #scope_ident.into_streams())
                 }),
                 |(__cheers_parent_rendered, __cheers_nested_streams)| {
                     ::cheers::__internal::futures::StreamExt::chain(
@@ -871,13 +893,12 @@ impl Async {
         async_token: Token![async],
         load_code: &TokenStream,
         render_code: &TokenStream,
-        key: &str,
     ) -> TokenStream {
         let marker_ident = ElementNode::CONTEXT.marker_type();
         let buffer_ident = Generator::buffer_ident();
-        let template_start = format!(r#"<template data-ssr="{key}-t">"#);
-        let stream_script =
-            format!(r#"</template><script data-ssr="{key}-s">__ssrStream('{key}')</script>"#);
+        let key_ident = async_key_ident();
+        let template_start = stream_template_start();
+        let stream_script = stream_script();
 
         quote! {
             ::cheers::__internal::futures::stream::once(#async_token move {
@@ -896,17 +917,15 @@ impl Async {
 
                 let __cheers_async_island_html = __cheers_async_island_render();
                 ::cheers::__internal::async_islands::register(
-                    #key,
+                    #key_ident.as_str(),
                     __cheers_async_island_render,
                 );
 
                 let mut buffer = ::cheers::prelude::Buffer::<#marker_ident>::new();
-                // XSS SAFETY: the key is computed by us
-                buffer.dangerously_get_string().push_str(#template_start);
+                #template_start
                 // XSS SAFETY: the async-island render body is generated by Cheers' renderer.
                 buffer.dangerously_get_string().push_str(&__cheers_async_island_html);
-                // XSS SAFETY: the key is computed by us
-                buffer.dangerously_get_string().push_str(#stream_script);
+                #stream_script
 
                 ::cheers::Raw::<_, #marker_ident>::dangerously_create(
                     buffer.rendered().into_inner()
@@ -949,10 +968,7 @@ impl Async {
             elem.attrs.push(Attribute::Regular {
                 name: AttributeName::Unchecked(LitStr::new("data-ssr", Span::mixed_site())),
                 kind: AttributeKind::Value {
-                    value: AttributeValueNode::Literal(Literal::Str(LitStr::new(
-                        &key,
-                        Span::mixed_site(),
-                    ))),
+                    value: AttributeValueNode::Ident(async_key_ident()),
                     toggle: None,
                 },
             });
@@ -968,7 +984,15 @@ impl Generate for Async {
     const CONTEXT: Context = ElementNode::CONTEXT;
 
     fn generate(&mut self, g: &mut Generator<'_>) {
-        let source_key = self.add_data_ssr_key();
+        g.mark_async();
+        // Code in a shared closure cannot move its captures, so a block there is built ahead of
+        // rendering unless it runs once per loop iteration or uses template bindings, which do not
+        // exist ahead of rendering.
+        let build_in_place = !g.in_shared_closure()
+            || g.in_loop()
+            || g.nodes_use_local_bindings(&self.async_block.nodes);
+
+        let static_key = self.add_data_ssr_key();
         let leading_let_count = self
             .async_block
             .nodes
@@ -993,12 +1017,12 @@ impl Generate for Async {
         let async_token = self.async_token;
         let else_block = self.else_block.block(g);
         let buffer_ident = Generator::buffer_ident();
-        let async_root_start =
-            format!(r#"<div data-cheers-async-root="{source_key}" data-ssr="{source_key}">"#);
+        let key_ident = async_key_ident();
+        let scope_ident = async_scope_ident();
         let else_block = quote! {
             if ::cheers::__internal::async_islands::enabled() {
                 // XSS SAFETY: the key is computed by us
-                #buffer_ident.dangerously_get_string().push_str(#async_root_start);
+                #key_ident.write_island_open(#buffer_ident.dangerously_get_string());
                 #else_block
                 // XSS SAFETY: static wrapper markup
                 #buffer_ident.dangerously_get_string().push_str("</div>");
@@ -1007,42 +1031,37 @@ impl Generate for Async {
             }
         };
 
-        let async_block = if has_nested_async {
-            g.with_async_stream_collection(|g| {
-                g.block_with(
-                    self.async_block.brace_token,
-                    |g| {
-                        g.push(&mut self.async_block.nodes);
-                    },
-                    false,
-                )
+        let async_block = g.with_in_loop(false, |g| {
+            g.with_in_shared_closure(false, |g| {
+                if can_split_leading_lets {
+                    g.block_with(
+                        self.async_block.brace_token,
+                        |g| {
+                            g.declare_local_bindings(
+                                leading_bindings.iter().map(|(_, ident)| ident.clone()),
+                            );
+                            for node in self.async_block.nodes.0.iter_mut().skip(leading_let_count)
+                            {
+                                g.push(node);
+                            }
+                        },
+                        false,
+                    )
+                } else {
+                    g.block_with(
+                        self.async_block.brace_token,
+                        |g| {
+                            g.push(&mut self.async_block.nodes);
+                        },
+                        false,
+                    )
+                }
             })
-        } else if can_split_leading_lets {
-            g.block_with(
-                self.async_block.brace_token,
-                |g| {
-                    g.declare_local_bindings(
-                        leading_bindings.iter().map(|(_, ident)| ident.clone()),
-                    );
-                    for node in self.async_block.nodes.0.iter_mut().skip(leading_let_count) {
-                        g.push(node);
-                    }
-                },
-                false,
-            )
-        } else {
-            g.block_with(
-                self.async_block.brace_token,
-                |g| {
-                    g.push(&mut self.async_block.nodes);
-                },
-                false,
-            )
-        };
+        });
         let content_code = &async_block.stmts;
         debug_assert!(
-            async_block.async_stmts.is_empty(),
-            "nested @async streams should be emitted through the buffer-scoped collector"
+            has_nested_async || async_block.async_scope_items.is_empty(),
+            "only bodies with nested @async blocks define async scope items"
         );
 
         let load_code = if can_split_leading_lets {
@@ -1081,48 +1100,57 @@ impl Generate for Async {
         let can_hot_call_dynamic_render =
             can_move_leading_lets_into_hot_args && !render_contains_await;
 
-        let async_stream = if !has_nested_async {
-            let stream = if can_register_hot_island {
-                Self::hot_island_stream_tokens_expr(
-                    async_token,
-                    &load_code,
-                    content_code,
-                    &source_key,
-                )
-            } else if can_hot_call_dynamic_render {
-                Self::stream_with_hot_render_call_tokens_expr(
-                    async_token,
-                    &load_code,
-                    content_code,
-                    &leading_bindings,
-                    &source_key,
-                )
-            } else if can_split_leading_lets {
-                let stream_content_code = quote! {
-                    #load_code
-                    #content_code
-                };
-                Self::stream_tokens_expr(async_token, &stream_content_code, &source_key)
-            } else {
-                Self::stream_tokens_expr(async_token, content_code, &source_key)
+        let async_stream = if has_nested_async {
+            Self::stream_with_nested_tokens_expr(
+                async_token,
+                &async_block.async_scope_items,
+                content_code,
+            )
+        } else if can_register_hot_island {
+            Self::hot_island_stream_tokens_expr(async_token, &load_code, content_code)
+        } else if can_hot_call_dynamic_render {
+            Self::stream_with_hot_render_call_tokens_expr(
+                async_token,
+                &load_code,
+                content_code,
+                &leading_bindings,
+            )
+        } else if can_split_leading_lets {
+            let stream_content_code = quote! {
+                #load_code
+                #content_code
             };
-            quote! {
-                {
-                    ::std::boxed::Box::pin(#stream) as ::std::pin::Pin<::std::boxed::Box<dyn ::cheers::__internal::futures::stream::Stream<Item = ::cheers::Rendered<::std::string::String>> + ::std::marker::Send>>
-                }
-            }
+            Self::stream_tokens_expr(async_token, &stream_content_code)
         } else {
-            let stream =
-                Self::stream_with_nested_tokens_expr(async_token, content_code, &source_key);
-            quote! {
-                {
-                    #stream
-                }
-            }
+            Self::stream_tokens_expr(async_token, content_code)
         };
 
-        g.push_async_stmt(async_stream);
-        g.push_stmt(else_block);
+        let static_key = static_async_key_expr(&static_key);
+        let (instance, start_stream) = if build_in_place {
+            let instances_ident = g.push_async_instances();
+            (
+                quote!(#instances_ident.next()),
+                quote! {
+                    #scope_ident.push(::std::boxed::Box::pin(#async_stream));
+                },
+            )
+        } else {
+            let slot_ident = g.push_async_slot(async_stream);
+            (
+                quote!(0),
+                quote! {
+                    #scope_ident.activate(&#slot_ident, #key_ident);
+                },
+            )
+        };
+
+        g.push_stmt(quote! {
+            {
+                let #key_ident = #scope_ident.key(#static_key, #instance);
+                #else_block
+                #start_stream
+            }
+        });
     }
 }
 
@@ -1200,5 +1228,86 @@ mod tests {
         .to_string();
 
         assert!(!expanded.contains("hot_call_with_arg"), "{expanded}");
+    }
+
+    fn expand(tokens: proc_macro2::TokenStream) -> String {
+        lazy::<Document>(tokens)
+            .expect("document should generate")
+            .to_string()
+    }
+
+    #[test]
+    fn binding_free_async_uses_a_slot() {
+        let expanded = expand(quote! {
+            @if show {
+                @async { p { (load().await) } } @else { p { "Loading" } }
+            }
+        });
+
+        assert!(expanded.contains("AsyncSlot"), "{expanded}");
+        assert!(!expanded.contains("AsyncInstances"), "{expanded}");
+    }
+
+    #[test]
+    fn single_instance_async_markers_are_literals() {
+        let expanded = expand(quote! {
+            @async { p { (load().await) } } @else { p { "Loading" } }
+        });
+
+        assert!(!expanded.contains("format"), "{expanded}");
+        assert!(
+            expanded.contains("template_start : \"<template data-ssr="),
+            "{expanded}"
+        );
+        assert!(expanded.contains("__ssrStream('"), "{expanded}");
+    }
+
+    #[test]
+    fn async_in_loop_or_using_bindings_is_built_in_place() {
+        for tokens in [
+            quote! {
+                @for _ in 0..3 {
+                    @async { p { (load().await) } } @else { p { "Loading" } }
+                }
+            },
+            quote! {
+                @let id = 1;
+                @async { p { (load(id).await) } } @else { p { "Loading" } }
+            },
+            quote! {
+                @if let Some(name) = name {
+                    @async { p { (format!("{name}")) } } @else { p { "Loading" } }
+                }
+            },
+        ] {
+            let expanded = expand(tokens);
+            assert!(!expanded.contains("AsyncSlot"), "{expanded}");
+            assert!(expanded.contains("AsyncInstances"), "{expanded}");
+        }
+    }
+
+    #[test]
+    fn names_that_are_not_binding_uses_do_not_force_in_place_async() {
+        for tokens in [
+            quote! {
+                @let id = 1;
+                @async { p { (user.id) } } @else { p { "Loading" } }
+            },
+            quote! {
+                @let id = 1;
+                @let p = 2;
+                @async { p id="x" { "Loaded" } } @else { p { "Loading" } }
+            },
+            quote! {
+                @let data = 1;
+                @async {
+                    @let data = load().await;
+                    p { (data) }
+                } @else { p { "Loading" } }
+            },
+        ] {
+            let expanded = expand(tokens);
+            assert!(expanded.contains("AsyncSlot"), "{expanded}");
+        }
     }
 }

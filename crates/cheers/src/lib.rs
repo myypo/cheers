@@ -59,7 +59,7 @@ pub mod prelude {
             Buffer, Lazy, LazyAttribute, LazyScript, RawDatastarSource, RawScript, Render,
             RenderExt as _,
         },
-        response::AsyncLazy,
+        response::{AsyncLazy, AsyncRender},
         router::{Action, ActionDef, ActionOptions, ActionRetry, ActionRouterExt as _},
         track::TrackAction,
     };

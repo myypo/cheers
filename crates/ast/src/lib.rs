@@ -3,6 +3,7 @@ pub mod component;
 pub mod control;
 pub mod generate;
 mod syntax;
+mod uses;
 
 use std::marker::PhantomData;
 
