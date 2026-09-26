@@ -192,6 +192,8 @@ pub enum ParenExprMode {
 }
 
 impl ParenExprMode {
+    const UNSUPPORTED_REF_EXPR: &str = "`(@&...)` only supports simple path and field expressions";
+
     pub const fn is_ref(self) -> bool {
         matches!(self, Self::Ref)
     }
@@ -213,7 +215,7 @@ impl ParenExprMode {
         if is_supported(expr) {
             Ok(())
         } else {
-            Err(Error::new_spanned(expr, "unsupported borrow expression"))
+            Err(Error::new_spanned(expr, Self::UNSUPPORTED_REF_EXPR))
         }
     }
 
@@ -264,19 +266,9 @@ impl ParenExprMode {
 
         if mode.is_ref() {
             match &body {
-                ParenExprBody::Expr(expr) => {
-                    Self::validate_ref_expr(expr).map_err(|err| {
-                        Error::new(
-                            err.span(),
-                            "`(@&...)` only supports simple path and field expressions",
-                        )
-                    })?;
-                }
+                ParenExprBody::Expr(expr) => Self::validate_ref_expr(expr)?,
                 ParenExprBody::Unit | ParenExprBody::Tuple(_) => {
-                    return Err(Error::new_spanned(
-                        &body,
-                        "`(@&...)` only supports simple path and field expressions",
-                    ));
+                    return Err(Error::new_spanned(&body, Self::UNSUPPORTED_REF_EXPR));
                 }
             }
         }
@@ -307,12 +299,7 @@ impl Parse for BorrowExpr<Expr> {
         };
 
         if mode.is_ref() {
-            ParenExprMode::validate_ref_expr(&expr).map_err(|err| {
-                Error::new(
-                    err.span(),
-                    "`(@&...)` only supports simple path and field expressions",
-                )
-            })?;
+            ParenExprMode::validate_ref_expr(&expr)?;
         }
 
         Ok(Self {
