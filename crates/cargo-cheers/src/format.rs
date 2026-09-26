@@ -42,8 +42,9 @@ pub fn format_source(
     source: &mut Rope,
     macros: Vec<MaudMacro<'_>>,
     options: &FormatOptions,
-) -> String {
+) -> (String, Vec<anyhow::Error>) {
     let mut edits = Vec::new();
+    let mut errors = Vec::new();
 
     for maud_mac in macros {
         let mac = maud_mac.macro_;
@@ -57,7 +58,7 @@ pub fn format_source(
                 range: start_byte..end_byte,
                 new_text,
             }),
-            Err(e) => eprintln!("{e}"),
+            Err(e) => errors.push(e.context(format!("line {}", start.line))),
         }
     }
 
@@ -74,7 +75,7 @@ pub fn format_source(
         last_offset += new_text.len() as isize - (end as isize - start as isize);
     }
 
-    source.to_string()
+    (source.to_string(), errors)
 }
 
 fn format_macro(mac: &MaudMacro, source: &Rope, options: &FormatOptions) -> Result<String> {

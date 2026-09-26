@@ -2,6 +2,14 @@ use std::sync::LazyLock;
 
 use crate::format::FormatOptions;
 
+pub fn fmt_valid(source: &str, options: &FormatOptions) -> String {
+    let formatted = crate::try_fmt_file(source, options).expect("should be valid Rust");
+    if let Some(error) = formatted.macro_errors.first() {
+        panic!("should be a valid macro: {error:#}");
+    }
+    formatted.source
+}
+
 pub static DEFAULT_OPTIONS: LazyLock<FormatOptions> = LazyLock::new(FormatOptions::default);
 pub static SMALL_LINE_OPTIONS: LazyLock<FormatOptions> = LazyLock::new(|| FormatOptions {
     line_length: 40,
@@ -14,12 +22,11 @@ macro_rules! test_default {
         fn $title() {
             // check formatter works as expected
             pretty_assertions::assert_eq!(
-                crate::try_fmt_file($content, &DEFAULT_OPTIONS).expect("should be able to parse"),
+                crate::testing::fmt_valid($content, &DEFAULT_OPTIONS),
                 String::from($expected)
             );
             // check that `$expected` is a valid maud macro
-            crate::try_fmt_file($expected, &DEFAULT_OPTIONS)
-                .expect("expected should be parsable and valid maud");
+            crate::testing::fmt_valid($expected, &DEFAULT_OPTIONS);
         }
     };
 }
@@ -30,13 +37,11 @@ macro_rules! test_small_line {
         fn $title() {
             // check formatter works as expected
             pretty_assertions::assert_eq!(
-                crate::try_fmt_file($content, &SMALL_LINE_OPTIONS)
-                    .expect("should be able to parse"),
+                crate::testing::fmt_valid($content, &SMALL_LINE_OPTIONS),
                 String::from($expected)
             );
             // check that `$expected` is a valid maud macro
-            crate::try_fmt_file($expected, &SMALL_LINE_OPTIONS)
-                .expect("expected should be parsable and valid maud");
+            crate::testing::fmt_valid($expected, &SMALL_LINE_OPTIONS);
         }
     };
 }
