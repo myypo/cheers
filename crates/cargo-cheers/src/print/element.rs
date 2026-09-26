@@ -190,7 +190,7 @@ impl<'a, 'b> Printer<'a, 'b> {
                         indent_level
                     };
 
-                    let has_parens = data.has_parens();
+                    let paren_span = data.paren_span();
 
                     if let Some(modifiers) = data.modifiers {
                         self.print_data_modifiers(modifiers);
@@ -281,9 +281,11 @@ impl<'a, 'b> Printer<'a, 'b> {
                         }
                         DataContent::Empty => {}
                         DataContent::Recovered => {
-                            if has_parens {
-                                self.write("(");
-                                self.write(")");
+                            if let Some(paren_span) = paren_span {
+                                let span = paren_span.join();
+                                let original_text = self.source_text(span);
+                                self.consume_comments_in_span(span);
+                                self.write(&original_text);
                             }
                         }
                     }
@@ -593,6 +595,22 @@ mod test {
         html! {
             div !show(signal_open, initially: false) { "Panel" }
             span !show({ "!" (signal_open) }, initially: true) {}
+        }
+        "#
+    );
+
+    test_default!(
+        data_attribute_with_invalid_payload_keeps_it,
+        r#"
+        html! {
+            div   !show(signal_open) { "Panel" }
+            button !on:click( ) {}
+        }
+        "#,
+        r#"
+        html! {
+            div !show(signal_open) { "Panel" }
+            button !on:click( ) {}
         }
         "#
     );

@@ -16,13 +16,22 @@ pub use format::FormatOptions;
 
 use crate::{fmt::FmtArgs, subsecond::SubsecondArgs};
 
-pub fn try_fmt_file(source: &str, options: &format::FormatOptions) -> Result<String> {
+pub struct FormattedFile {
+    pub source: String,
+    /// Macros that failed to parse and were left as written.
+    pub macro_errors: Vec<anyhow::Error>,
+}
+
+pub fn try_fmt_file(source: &str, options: &format::FormatOptions) -> Result<FormattedFile> {
     let ast = syn::parse_file(source).context("Failed to parse source")?;
     let rope = Rope::from(source);
     let (mut rope, macros) = collect::collect_macros_from_file(&ast, rope, &options.macro_names);
-    let formatted_processed = format::format_source(&mut rope, macros, options);
+    let (source, macro_errors) = format::format_source(&mut rope, macros, options);
 
-    Ok(formatted_processed)
+    Ok(FormattedFile {
+        source,
+        macro_errors,
+    })
 }
 
 #[derive(Parser)]

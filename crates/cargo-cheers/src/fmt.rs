@@ -117,7 +117,7 @@ pub fn run(
             buf
         };
 
-        let mut formatted_buf = try_fmt_file(&buf, &format_options).unwrap_or(buf);
+        let mut formatted_buf = format_reporting_errors(buf, "<stdin>", &format_options);
 
         if rustfmt {
             formatted_buf = run_rustfmt(&formatted_buf, &rustfmt_args).unwrap_or(formatted_buf);
@@ -132,19 +132,39 @@ pub fn run(
             Some(files) => {
                 for file in get_file_paths(files)? {
                     let source = std::fs::read_to_string(&file)?;
-                    let mut formatted_source =
-                        try_fmt_file(&source, &format_options).unwrap_or(source);
+                    let mut formatted_source = format_reporting_errors(
+                        source.clone(),
+                        &file.display().to_string(),
+                        &format_options,
+                    );
 
                     if rustfmt {
                         formatted_source = run_rustfmt(&formatted_source, &rustfmt_args)
                             .unwrap_or(formatted_source);
                     }
 
-                    fs::write(file, &formatted_source)?;
+                    if formatted_source != source {
+                        fs::write(file, &formatted_source)?;
+                    }
                 }
             }
         }
 
         Ok(())
+    }
+}
+
+fn format_reporting_errors(source: String, name: &str, options: &FormatOptions) -> String {
+    match try_fmt_file(&source, options) {
+        Ok(formatted) => {
+            for error in formatted.macro_errors {
+                eprintln!("{name}: {error:#}");
+            }
+            formatted.source
+        }
+        Err(error) => {
+            eprintln!("{name}: {error:#}");
+            source
+        }
     }
 }

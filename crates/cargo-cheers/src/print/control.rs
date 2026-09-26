@@ -93,21 +93,48 @@ impl<'a, 'b> Printer<'a, 'b> {
         &mut self,
         block: ControlBlock<N>,
         indent_level: usize,
+        brace_on_own_line: bool,
         child_preserve_blank_lines: bool,
         print_block: &mut impl FnMut(&mut Self, ControlBlock<N>, usize, bool),
     ) {
-        self.print_space_or_leading_comments(block.brace_token.span.open().start(), indent_level);
+        self.print_brace_after_header(
+            block.brace_token.span.open().start(),
+            indent_level,
+            brace_on_own_line,
+        );
         print_block(self, block, indent_level, child_preserve_blank_lines);
     }
 
-    fn print_let_condition(&mut self, expr_let: syn::ExprLet, indent_level: usize) {
+    fn print_brace_after_header(
+        &mut self,
+        brace_start: LineColumn,
+        indent_level: usize,
+        brace_on_own_line: bool,
+    ) {
+        if !self.print_leading_comments_after_line_break(brace_start, indent_level) {
+            if brace_on_own_line {
+                self.new_line(indent_level);
+            } else {
+                self.write(" ");
+            }
+        }
+    }
+
+    fn print_condition(&mut self, cond: Expr, indent_level: usize) -> bool {
+        match cond {
+            Expr::Let(expr_let) => self.print_let_condition(expr_let, indent_level),
+            cond => self.print_condition_expr(cond, indent_level),
+        }
+    }
+
+    fn print_let_condition(&mut self, expr_let: syn::ExprLet, indent_level: usize) -> bool {
         // prettyplease/syn cannot unparse `if let` / `while let` conditions as expressions.
         self.write("let");
         self.print_space_or_leading_comments(expr_let.pat.span().start(), indent_level);
         self.write(&unparse_pat(&expr_let.pat, self.base_indent + indent_level).join("\n"));
         self.write(" =");
         self.print_space_or_leading_comments(expr_let.expr.span().start(), indent_level);
-        self.print_expr(*expr_let.expr, indent_level);
+        self.print_condition_expr(*expr_let.expr, indent_level)
     }
 
     fn print_control_with<N: Node>(
@@ -150,6 +177,7 @@ impl<'a, 'b> Printer<'a, 'b> {
                 self.print_control_block_after_header(
                     for_.block,
                     indent_level,
+                    false,
                     child_preserve_blank_lines,
                     &mut print_block,
                 );
@@ -186,10 +214,11 @@ impl<'a, 'b> Printer<'a, 'b> {
             ControlKind::Match(match_) => {
                 self.write("@match");
                 self.print_space_or_leading_comments(match_.expr.span().start(), indent_level);
-                self.print_expr(match_.expr, indent_level);
-                self.print_space_or_leading_comments(
+                let brace_on_own_line = self.print_condition_expr(match_.expr, indent_level);
+                self.print_brace_after_header(
                     match_.brace_token.span.open().start(),
                     indent_level,
+                    brace_on_own_line,
                 );
                 self.write("{");
                 self.print_trailing_comment(match_.brace_token.span.open().end());
@@ -252,16 +281,11 @@ impl<'a, 'b> Printer<'a, 'b> {
             ControlKind::While(while_expr) => {
                 self.write("@while");
                 self.print_space_or_leading_comments(while_expr.cond.span().start(), indent_level);
-                match while_expr.cond {
-                    Expr::Let(expr_let) => self.print_let_condition(expr_let, indent_level),
-                    _ => {
-                        // usual case
-                        self.print_expr(while_expr.cond, indent_level);
-                    }
-                }
+                let brace_on_own_line = self.print_condition(while_expr.cond, indent_level);
                 self.print_control_block_after_header(
                     while_expr.block,
                     indent_level,
+                    brace_on_own_line,
                     child_preserve_blank_lines,
                     &mut print_block,
                 );
@@ -302,17 +326,11 @@ impl<'a, 'b> Printer<'a, 'b> {
     ) {
         self.write("if");
         self.print_space_or_leading_comments(if_.cond.span().start(), indent_level);
-        match if_.cond {
-            Expr::Let(expr_let) => self.print_let_condition(expr_let, indent_level),
-            _ => {
-                // usual case
-                self.print_expr(if_.cond, indent_level);
-            }
-        }
-
+        let brace_on_own_line = self.print_condition(if_.cond, indent_level);
         self.print_control_block_after_header(
             if_.then_block,
             indent_level,
+            brace_on_own_line,
             child_preserve_blank_lines,
             print_block,
         );
@@ -338,6 +356,7 @@ impl<'a, 'b> Printer<'a, 'b> {
                     self.print_control_block_after_header(
                         block,
                         indent_level,
+                        false,
                         child_preserve_blank_lines,
                         print_block,
                     );
@@ -670,5 +689,213 @@ mod test {
             }
         }
         "##
+    );
+
+    test_default!(
+        control_if_multiline_condition_is_not_braced,
+        r#"
+        html! {
+            @if self.succeeded_interaction_with_a_long_name.is_some() || self.refresh_with_a_long_name.is_some() || self.other.is_some() { p { "ok" } }
+        }
+        "#,
+        r#"
+        html! {
+            @if self.succeeded_interaction_with_a_long_name.is_some()
+                || self.refresh_with_a_long_name.is_some() || self.other.is_some()
+            {
+                p { "ok" }
+            }
+        }
+        "#
+    );
+
+    test_default!(
+        control_if_multiline_method_chain_condition_puts_brace_on_own_line,
+        r#"
+        html! {
+            @if items.iter().any(|item| { let name = item.name(); name.starts_with("a") && name.ends_with("z") }) { p { "ok" } }
+        }
+        "#,
+        r#"
+        html! {
+            @if items
+                .iter()
+                .any(|item| {
+                    let name = item.name();
+                    name.starts_with("a") && name.ends_with("z")
+                })
+            {
+                p { "ok" }
+            }
+        }
+        "#
+    );
+
+    test_default!(
+        control_if_multiline_closure_condition_keeps_brace_on_line,
+        r#"
+        html! {
+            @if check(|item| { let name = item.name(); name.starts_with("a") && name.ends_with("z") }) { p { "ok" } }
+        }
+        "#,
+        r#"
+        html! {
+            @if check(|item| {
+                let name = item.name();
+                name.starts_with("a") && name.ends_with("z")
+            }) {
+                p { "ok" }
+            }
+        }
+        "#
+    );
+
+    test_default!(
+        control_if_block_condition_keeps_braces,
+        r#"
+        html! {
+            @if { let long_name = compute(); long_name > 3 } { p { "ok" } }
+        }
+        "#,
+        r#"
+        html! {
+            @if {
+                let long_name = compute();
+                long_name > 3
+            } {
+                p { "ok" }
+            }
+        }
+        "#
+    );
+
+    test_default!(
+        control_while_block_condition_keeps_braces,
+        r#"
+        html! {
+            @while { let long_name = compute(); long_name > 3 } { p { "ok" } }
+        }
+        "#,
+        r#"
+        html! {
+            @while {
+                let long_name = compute();
+                long_name > 3
+            } {
+                p { "ok" }
+            }
+        }
+        "#
+    );
+
+    test_default!(
+        control_if_let_multiline_scrutinee_is_not_braced,
+        r#"
+        html! {
+            @if let Some(value) = self.first_really_long_field_name.as_ref().or(self.second_really_long_field_name.as_ref()) { p { (value) } }
+        }
+        "#,
+        r#"
+        html! {
+            @if let Some(value) = self.first_really_long_field_name
+                .as_ref()
+                .or(self.second_really_long_field_name.as_ref())
+            {
+                p { (value) }
+            }
+        }
+        "#
+    );
+
+    test_default!(
+        control_while_multiline_condition_is_not_braced,
+        r#"
+        html! {
+            @while self.succeeded_interaction_with_a_long_name.is_some() || self.refresh_with_a_long_name.is_some() || self.other.is_some() { p { "ok" } }
+        }
+        "#,
+        r#"
+        html! {
+            @while self.succeeded_interaction_with_a_long_name.is_some()
+                || self.refresh_with_a_long_name.is_some() || self.other.is_some()
+            {
+                p { "ok" }
+            }
+        }
+        "#
+    );
+
+    test_default!(
+        control_match_multiline_scrutinee_is_not_braced,
+        r#"
+        html! {
+            @match self.first_really_long_field_name.as_ref().or(self.second_really_long_field_name.as_ref()) { Some(value) => p { (value) }, None => {} }
+        }
+        "#,
+        r#"
+        html! {
+            @match self.first_really_long_field_name
+                .as_ref()
+                .or(self.second_really_long_field_name.as_ref())
+            {
+                Some(value) => p { (value) }
+                None => {}
+            }
+        }
+        "#
+    );
+
+    test_default!(
+        control_else_if_multiline_condition_is_not_braced,
+        r#"
+        html! {
+            @if a { p { "a" } } @else if self.succeeded_interaction_with_a_long_name.is_some() || self.refresh_with_a_long_name.is_some() || self.other.is_some() { p { "ok" } }
+        }
+        "#,
+        r#"
+        html! {
+            @if a {
+                p { "a" }
+            } @else if self.succeeded_interaction_with_a_long_name.is_some()
+                || self.refresh_with_a_long_name.is_some() || self.other.is_some()
+            {
+                p { "ok" }
+            }
+        }
+        "#
+    );
+
+    test_default!(
+        control_nested_if_multiline_conditions_align_with_header,
+        r#"
+        fn render() -> Markup {
+            html! {
+                div { @if items.iter().any(|item| { let name = item.name(); name.starts_with("a") && name.ends_with("z") }) { p { "ok" } }
+                @if self.succeeded_interaction_with_a_long_name.is_some() || self.refresh_with_a_long_name.is_some() { p { "ok" } } }
+            }
+        }
+        "#,
+        r#"
+        fn render() -> Markup {
+            html! {
+                div {
+                    @if items
+                        .iter()
+                        .any(|item| {
+                            let name = item.name();
+                            name.starts_with("a") && name.ends_with("z")
+                        })
+                    {
+                        p { "ok" }
+                    }
+                    @if self.succeeded_interaction_with_a_long_name.is_some()
+                        || self.refresh_with_a_long_name.is_some()
+                    {
+                        p { "ok" }
+                    }
+                }
+            }
+        }
+        "#
     );
 }
