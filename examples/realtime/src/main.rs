@@ -336,4 +336,66 @@ mod tests {
         .await
         .expect("increment stock in browser");
     }
+
+    /// Datastar binds the page from an undelayed `setTimeout`; holding it past the load event makes
+    /// a navigation that does not wait for Datastar observably early.
+    const HOLD_DATASTAR_SCRIPT: &str = r#"<script>
+const nativeSetTimeout = window.setTimeout;
+window.setTimeout = (callback, delay, ...args) =>
+  nativeSetTimeout(callback, delay === undefined ? 500 : delay, ...args);
+</script>"#;
+
+    #[tokio::test]
+    async fn goto_waits_for_datastar_without_live_reload() {
+        let ctx = Ctx {
+            stocks: Box::leak(Box::new(Mutex::new(BTreeMap::new()))),
+            stocks_tx: tokio::sync::broadcast::channel(1).0,
+        };
+
+        let app = cheers::router::new(
+            Router::new().route(
+                "/",
+                get(|| async {
+                    // XSS SAFETY: static test script
+                    let hold_datastar = cheers::Raw::dangerously_create(HOLD_DATASTAR_SCRIPT);
+                    html! {
+                        Doctype;
+                        html {
+                            body {
+                                (hold_datastar)
+                                Scripts;
+                            }
+                        }
+                    }
+                }),
+            ),
+            cheers::router::Config::default(),
+        )
+        .expect("create app")
+        .with_state(ctx);
+
+        let app = cheers::test::App::new(app).await.unwrap();
+
+        app.run(|app| async move {
+            app.goto(app.url("/")).await?;
+
+            let ready = app
+                .execute("return window.__cheersTestDatastarReady === true;", vec![])
+                .await?
+                .convert::<bool>()?;
+            assert!(
+                ready,
+                "goto should return after Datastar has bound the page"
+            );
+
+            let live_reload_scripts = app
+                .find_all(By::Css("script[data-cheers-runtime='live-reload']"))
+                .await?;
+            assert!(live_reload_scripts.is_empty());
+
+            Ok(())
+        })
+        .await
+        .expect("wait for datastar in browser");
+    }
 }

@@ -1,18 +1,28 @@
 //! Helpers for end-to-end tests.
 
-use std::{future::Future, io, net::SocketAddr, ops::Deref, panic};
+use std::{future::Future, io, net::SocketAddr, ops::Deref, panic, time::Duration};
 
 use axum::Router;
 use futures::FutureExt;
-use thirtyfour::error::{WebDriverError, WebDriverResult};
+use thirtyfour::{
+    IntoArcStr,
+    error::{WebDriverError, WebDriverResult},
+};
 use tokio::{net::TcpListener, sync::oneshot, task::JoinHandle};
 
 /// A running test server and browser session.
 ///
+/// Creating an `App` turns off debug-build live reload for the whole process, so pages under test
+/// are never reloaded by source edits and no file watcher is started.
+///
+/// Drive the browser through [`App::run`], whose [`Session`] builds URLs for the server and
+/// waits for Datastar after navigating.
+///
 /// ```ignore
-/// let app = cheers::test::App::new(router).await?;
-/// app.goto(app.url("/")).await?;
-/// app.shutdown().await?;
+/// cheers::test::App::new(router).await?.run(|app| async move {
+///     app.goto(app.url("/")).await?;
+///     Ok(())
+/// }).await?;
 /// ```
 pub struct App {
     addr: SocketAddr,
@@ -56,13 +66,29 @@ async fn chrome() -> WebDriverResult<thirtyfour::WebDriver> {
     caps.set_disable_gpu()?;
     caps.set_disable_dev_shm_usage()?;
 
-    WebDriver::new(url, caps).await
+    let driver = WebDriver::new(url, caps).await?;
+    // Datastar announces readiness only through a one-shot event, so the listener has to exist
+    // before any page script runs for `Session::goto` to tell a bound page from an unbound one.
+    driver
+        .cdp()
+        .page()
+        .add_script_to_evaluate_on_new_document(RECORD_DATASTAR_READY_SCRIPT)
+        .await?;
+    Ok(driver)
 }
+
+const RECORD_DATASTAR_READY_SCRIPT: &str = r#"
+document.addEventListener("datastar-ready", () => {
+  window.__cheersTestDatastarReady = true;
+}, { once: true });
+"#;
 
 impl App {
     /// Start serving `app` on `127.0.0.1` and a random available port,
     /// then open a headless Chrome WebDriver session.
     pub async fn new(app: Router) -> WebDriverResult<Self> {
+        crate::router::disable_live_reload();
+
         let listener = TcpListener::bind(("127.0.0.1", 0)).await?;
         let addr = listener.local_addr()?;
         let (shutdown_tx, shutdown_rx) = oneshot::channel::<()>();
@@ -201,7 +227,56 @@ impl Session {
         let separator = if path.starts_with('/') { "" } else { "/" };
         format!("http://{}{}{}", self.addr, separator, path)
     }
+
+    /// Navigate to `url` and, when the page loads the Cheers runtime, wait until Datastar has
+    /// bound its attributes.
+    ///
+    /// WebDriver returns once the document has loaded, but Datastar applies attributes in a
+    /// later task, so input sent right after a plain navigation can reach the page before its
+    /// handlers exist. This shadows [`thirtyfour::WebDriver::goto`].
+    pub async fn goto(&self, url: impl IntoArcStr) -> WebDriverResult<()> {
+        self.driver.goto(url).await?;
+        self.wait_for_datastar().await
+    }
+
+    /// Wait until Datastar has bound the current page, if the page loads the Cheers runtime.
+    ///
+    /// Call this after navigating by other means, such as following a link or going back.
+    /// Only the session's initial window records readiness, so this times out in windows
+    /// opened later.
+    pub async fn wait_for_datastar(&self) -> WebDriverResult<()> {
+        let ready = self
+            .driver
+            .execute(
+                WAIT_FOR_DATASTAR_SCRIPT,
+                vec![serde_json::json!(DATASTAR_READY_TIMEOUT.as_millis() as u64)],
+            )
+            .await?
+            .convert::<bool>()?;
+
+        if ready {
+            Ok(())
+        } else {
+            Err(WebDriverError::Timeout(format!(
+                "Datastar did not become ready within {DATASTAR_READY_TIMEOUT:?}"
+            )))
+        }
+    }
 }
+
+const DATASTAR_READY_TIMEOUT: Duration = Duration::from_secs(20);
+
+const WAIT_FOR_DATASTAR_SCRIPT: &str = r#"
+const timeoutMs = arguments[0];
+if (window.__cheersTestDatastarReady === true
+    || !document.querySelector('script[data-cheers-runtime="datastar"]')) {
+  return true;
+}
+return new Promise((resolve) => {
+  document.addEventListener("datastar-ready", () => resolve(true), { once: true });
+  setTimeout(() => resolve(window.__cheersTestDatastarReady === true), timeoutMs);
+});
+"#;
 
 impl Deref for App {
     type Target = thirtyfour::WebDriver;
