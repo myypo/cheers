@@ -234,9 +234,9 @@ impl ComponentAttribute {
 
                     tokens
                 }
-                ParenExprMode::Ref => g
-                    .hoist_ref_expr(expr.paren_token, &expr.body)
-                    .to_token_stream(),
+                ParenExprMode::Ref => {
+                    g.hoist_ref_expr(expr.paren_token, &expr.body, expr.body.ref_root())
+                }
             },
             Some(ComponentAttributeValue::Ident(ident)) => ident.to_token_stream(),
             None => self.name.to_token_stream(),

@@ -5,7 +5,7 @@ use proc_macro2::{Ident, Span, TokenStream, TokenTree};
 use quote::{ToTokens, quote};
 use rustc_hash::FxHasher;
 use syn::{
-    Expr, LitStr, Local, Pat, Stmt, Token, braced,
+    Expr, LitStr, Local, Pat, PatIdent, Stmt, Token, braced,
     parse::{Parse, ParseStream},
     spanned::Spanned as _,
     token::Brace,
@@ -33,47 +33,42 @@ fn tokens_contain_any_ident(tokens: &TokenStream, needles: &[Ident]) -> bool {
     })
 }
 
-fn collect_pat_bindings(pat: &Pat, bindings: &mut Vec<(TokenStream, Ident)>) {
+fn for_each_pat_ident(pat: &Pat, f: &mut impl FnMut(&PatIdent)) {
     match pat {
         Pat::Ident(pat) => {
-            let mut binding = TokenStream::new();
-            pat.mutability.to_tokens(&mut binding);
-            pat.ident.to_tokens(&mut binding);
-
-            if let Some(existing) = bindings.iter_mut().find(|(_, ident)| ident == &pat.ident) {
-                *existing = (binding, pat.ident.clone());
-            } else {
-                bindings.push((binding, pat.ident.clone()));
+            f(pat);
+            if let Some((_, subpat)) = &pat.subpat {
+                for_each_pat_ident(subpat, f);
             }
         }
         Pat::Or(pat) => {
             for case in &pat.cases {
-                collect_pat_bindings(case, bindings);
+                for_each_pat_ident(case, f);
             }
         }
-        Pat::Paren(pat) => collect_pat_bindings(&pat.pat, bindings),
-        Pat::Reference(pat) => collect_pat_bindings(&pat.pat, bindings),
+        Pat::Paren(pat) => for_each_pat_ident(&pat.pat, f),
+        Pat::Reference(pat) => for_each_pat_ident(&pat.pat, f),
         Pat::Slice(pat) => {
             for elem in &pat.elems {
-                collect_pat_bindings(elem, bindings);
+                for_each_pat_ident(elem, f);
             }
         }
         Pat::Struct(pat) => {
             for field in &pat.fields {
-                collect_pat_bindings(&field.pat, bindings);
+                for_each_pat_ident(&field.pat, f);
             }
         }
         Pat::Tuple(pat) => {
             for elem in &pat.elems {
-                collect_pat_bindings(elem, bindings);
+                for_each_pat_ident(elem, f);
             }
         }
         Pat::TupleStruct(pat) => {
             for elem in &pat.elems {
-                collect_pat_bindings(elem, bindings);
+                for_each_pat_ident(elem, f);
             }
         }
-        Pat::Type(pat) => collect_pat_bindings(&pat.pat, bindings),
+        Pat::Type(pat) => for_each_pat_ident(&pat.pat, f),
         Pat::Const(_)
         | Pat::Lit(_)
         | Pat::Macro(_)
@@ -84,6 +79,43 @@ fn collect_pat_bindings(pat: &Pat, bindings: &mut Vec<(TokenStream, Ident)>) {
         | Pat::Wild(_) => {}
         _ => {}
     }
+}
+
+fn collect_pat_bindings(pat: &Pat, bindings: &mut Vec<(TokenStream, Ident)>) {
+    for_each_pat_ident(pat, &mut |pat| {
+        let mut binding = TokenStream::new();
+        pat.mutability.to_tokens(&mut binding);
+        pat.ident.to_tokens(&mut binding);
+
+        if let Some(existing) = bindings.iter_mut().find(|(_, ident)| ident == &pat.ident) {
+            *existing = (binding, pat.ident.clone());
+        } else {
+            bindings.push((binding, pat.ident.clone()));
+        }
+    });
+}
+
+fn pat_binding_idents(pat: &Pat) -> Vec<Ident> {
+    let mut idents = Vec::new();
+    for_each_pat_ident(pat, &mut |pat| idents.push(pat.ident.clone()));
+    idents
+}
+
+fn cond_binding_idents(cond: &Expr) -> Vec<Ident> {
+    fn collect(cond: &Expr, idents: &mut Vec<Ident>) {
+        match cond {
+            Expr::Let(let_) => idents.append(&mut pat_binding_idents(&let_.pat)),
+            Expr::Binary(binary) if matches!(binary.op, syn::BinOp::And(_)) => {
+                collect(&binary.left, idents);
+                collect(&binary.right, idents);
+            }
+            _ => {}
+        }
+    }
+
+    let mut idents = Vec::new();
+    collect(cond, &mut idents);
+    idents
 }
 
 fn leading_let_bindings(
@@ -379,6 +411,7 @@ impl Generate for Let {
 
     fn generate(&mut self, g: &mut Generator<'_>) {
         g.push_stmt(&self.0);
+        g.declare_local_bindings(pat_binding_idents(&self.0.pat));
     }
 }
 
@@ -389,7 +422,11 @@ pub struct ControlBlock<N: Node> {
 
 impl<N: Node> ControlBlock<N> {
     fn block(&mut self, g: &mut Generator<'_>) -> AnyBlock {
-        self.nodes.block(g, self.brace_token)
+        self.block_with_bindings(g, Vec::new())
+    }
+
+    fn block_with_bindings(&mut self, g: &mut Generator<'_>, bindings: Vec<Ident>) -> AnyBlock {
+        self.nodes.block(g, self.brace_token, bindings)
     }
 }
 
@@ -439,7 +476,9 @@ impl<N: Node> Generate for If<N> {
         fn to_expr<N: Node>(if_: &mut If<N>, g: &mut Generator<'_>) -> TokenStream {
             let if_token = if_.if_token;
             let cond = &if_.cond;
-            let then_block = if_.then_block.block(g);
+            let then_block = if_
+                .then_block
+                .block_with_bindings(g, cond_binding_idents(cond));
             let else_branch = if_
                 .else_branch
                 .as_mut()
@@ -515,7 +554,7 @@ impl<N: Node> Generate for For<N> {
         let pat = &self.pat;
         let in_token = self.in_token;
         let expr = &self.expr;
-        let block = self.block.block(g);
+        let block = self.block.block_with_bindings(g, pat_binding_idents(pat));
 
         g.push_stmt(quote! {
             #for_token #pat #in_token #expr
@@ -546,7 +585,7 @@ impl<N: Node> Generate for While<N> {
     fn generate(&mut self, g: &mut Generator<'_>) {
         let while_token = self.while_token;
         let cond = &self.cond;
-        let block = self.block.block(g);
+        let block = self.block.block_with_bindings(g, cond_binding_idents(cond));
 
         g.push_stmt(quote! {
             #while_token #cond
@@ -597,11 +636,17 @@ impl<N: Node> Generate for Match<N> {
                     .as_ref()
                     .map(|(if_token, guard)| quote!(#if_token #guard));
                 let fat_arrow_token = arm.fat_arrow_token;
+                let bindings = pat_binding_idents(&pat);
                 let block = match &mut arm.body {
-                    MatchNodeArmBody::Block(block) => block.block(g),
-                    MatchNodeArmBody::Node(node) => {
-                        g.block_with(Brace::default(), |g| g.push(node), true)
-                    }
+                    MatchNodeArmBody::Block(block) => block.block_with_bindings(g, bindings),
+                    MatchNodeArmBody::Node(node) => g.block_with(
+                        Brace::default(),
+                        |g| {
+                            g.declare_local_bindings(bindings);
+                            g.push(node);
+                        },
+                        true,
+                    ),
                 };
                 let comma = arm.comma_token;
 
@@ -976,6 +1021,9 @@ impl Generate for Async {
             g.block_with(
                 self.async_block.brace_token,
                 |g| {
+                    g.declare_local_bindings(
+                        leading_bindings.iter().map(|(_, ident)| ident.clone()),
+                    );
                     for node in self.async_block.nodes.0.iter_mut().skip(leading_let_count) {
                         g.push(node);
                     }
