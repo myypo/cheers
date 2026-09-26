@@ -179,12 +179,19 @@ impl<'a, 'b> Printer<'a, 'b> {
         lines
     }
 
+    /// Writes `span` verbatim when it holds comments, since reformatting would lose them.
+    fn write_original_if_commented(&mut self, span: Span) -> bool {
+        if !self.span_contains_comments(span) {
+            return false;
+        }
+        let original_text = self.source_text(span);
+        self.consume_comments_in_span(span);
+        self.write(original_text.trim());
+        true
+    }
+
     pub fn print_expr(&mut self, expr: Expr, indent_level: usize) {
-        let span = expr.span();
-        if self.span_contains_comments(span) {
-            let original_text = self.source_text(span);
-            self.consume_comments_in_span(span);
-            self.write(original_text.trim());
+        if self.write_original_if_commented(expr.span()) {
             return;
         }
 
@@ -202,12 +209,46 @@ impl<'a, 'b> Printer<'a, 'b> {
         }
     }
 
+    /// Prints a control-flow condition or scrutinee without wrapping it in a block, since a
+    /// braced condition trips clippy's `blocks_in_conditions` in the generated code.
+    /// Returns whether the following `{` belongs on its own line, as rustfmt places it.
+    pub fn print_condition_expr(&mut self, expr: Expr, indent_level: usize) -> bool {
+        if self.write_original_if_commented(expr.span()) {
+            return false;
+        }
+        // `lines_from_expr` yields only a block's statements, and its braces are part of the
+        // condition itself.
+        if matches!(expr, Expr::Block(_)) {
+            self.print_expr(expr, indent_level);
+            return false;
+        }
+
+        let lines = self.lines_from_expr(expr, indent_level);
+        let Some((first, rest)) = lines.split_first() else {
+            return false;
+        };
+        self.write(first.trim());
+        let Some(last) = rest.last() else {
+            return false;
+        };
+
+        // Unparsed lines sit one level deeper than the header, as if inside a block.
+        for line in rest {
+            self.new_line(0);
+            self.buf = line
+                .strip_prefix(self.indent_str)
+                .unwrap_or(line)
+                .to_string();
+        }
+
+        let header_indent = self.indent_str.len() * (self.base_indent + indent_level);
+        let last_indent =
+            (last.len() - last.trim_start().len()).saturating_sub(self.indent_str.len());
+        last_indent > header_indent
+    }
+
     pub fn print_toggle_expr(&mut self, expr: Expr, indent_level: usize) {
-        let span = expr.span();
-        if self.span_contains_comments(span) {
-            let original_text = self.source_text(span);
-            self.consume_comments_in_span(span);
-            self.write(original_text.trim());
+        if self.write_original_if_commented(expr.span()) {
             return;
         }
 
