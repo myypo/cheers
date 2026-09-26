@@ -1249,8 +1249,7 @@ async fn page_is_rendered() {
 
 #[tokio::test]
 async fn ref_expr_can_borrow_async_leading_let_bindings() {
-    async fn main_page() -> cheers::prelude::AsyncLazy<cheers::prelude::Lazy<impl Fn(&mut Buffer)>>
-    {
+    async fn main_page() -> cheers::prelude::AsyncLazy<impl AsyncRender> {
         html! {
             Base {
                 @async {
@@ -1276,8 +1275,7 @@ async fn ref_expr_can_borrow_async_leading_let_bindings() {
 
 #[tokio::test]
 async fn page_async_block_is_streamed() {
-    async fn main_page() -> cheers::prelude::AsyncLazy<cheers::prelude::Lazy<impl Fn(&mut Buffer)>>
-    {
+    async fn main_page() -> cheers::prelude::AsyncLazy<impl AsyncRender> {
         html! {
             Base {
                 article {
@@ -1316,8 +1314,7 @@ async fn page_async_block_is_streamed() {
 
 #[tokio::test]
 async fn whitespace_separated_async_blocks_get_distinct_ssr_keys() {
-    async fn main_page() -> cheers::prelude::AsyncLazy<cheers::prelude::Lazy<impl Fn(&mut Buffer)>>
-    {
+    async fn main_page() -> cheers::prelude::AsyncLazy<impl AsyncRender> {
         html! {
             @async {
                 div { "First" }
@@ -1349,8 +1346,7 @@ async fn whitespace_separated_async_blocks_get_distinct_ssr_keys() {
 
 #[tokio::test]
 async fn nested_async_can_use_outer_async_let_binding() {
-    async fn main_page() -> cheers::prelude::AsyncLazy<cheers::prelude::Lazy<impl Fn(&mut Buffer)>>
-    {
+    async fn main_page() -> cheers::prelude::AsyncLazy<impl AsyncRender> {
         html! {
             @async {
                 @let data = async { "outer data" }.await;
@@ -1383,8 +1379,7 @@ async fn nested_async_can_use_outer_async_let_binding() {
 
 #[tokio::test]
 async fn nested_async_inside_component_body_can_use_outer_binding() {
-    async fn main_page() -> cheers::prelude::AsyncLazy<cheers::prelude::Lazy<impl Fn(&mut Buffer)>>
-    {
+    async fn main_page() -> cheers::prelude::AsyncLazy<impl AsyncRender> {
         html! {
             @async {
                 @let data = async { "component data" }.await;
@@ -1419,8 +1414,7 @@ async fn nested_async_inside_component_body_can_use_outer_binding() {
 
 #[tokio::test]
 async fn nested_async_can_use_enclosing_for_binding() {
-    async fn main_page() -> cheers::prelude::AsyncLazy<cheers::prelude::Lazy<impl Fn(&mut Buffer)>>
-    {
+    async fn main_page() -> cheers::prelude::AsyncLazy<impl AsyncRender> {
         html! {
             @async {
                 @for data in ::std::iter::once("loop data") {
@@ -1454,8 +1448,7 @@ async fn nested_async_can_use_enclosing_for_binding() {
 
 #[tokio::test]
 async fn nested_async_collector_is_scoped_before_later_awaits() {
-    async fn main_page() -> cheers::prelude::AsyncLazy<cheers::prelude::Lazy<impl Fn(&mut Buffer)>>
-    {
+    async fn main_page() -> cheers::prelude::AsyncLazy<impl AsyncRender> {
         html! {
             @async {
                 @async {
@@ -1499,8 +1492,7 @@ async fn nested_async_collector_is_scoped_before_later_awaits() {
 
 #[tokio::test]
 async fn async_leading_let_borrow_dependency_renders() {
-    async fn main_page() -> cheers::prelude::AsyncLazy<cheers::prelude::Lazy<impl Fn(&mut Buffer)>>
-    {
+    async fn main_page() -> cheers::prelude::AsyncLazy<impl AsyncRender> {
         html! {
             @async {
                 @let owner = String::from("borrowed data");
@@ -1525,11 +1517,296 @@ async fn async_leading_let_borrow_dependency_renders() {
     assert!(got.contains("<div>borrowed data</div>"), "{got}");
 }
 
+async fn all_axum_chunks(response: impl IntoResponse) -> Vec<String> {
+    use futures::StreamExt;
+
+    let mut body = response.into_response().into_body().into_data_stream();
+    let mut chunks = Vec::new();
+    while let Some(chunk) = body.next().await {
+        let chunk = chunk.expect("body chunk should be readable");
+        chunks.push(String::from_utf8(chunk.to_vec()).expect("body chunk should be valid UTF-8"));
+    }
+    chunks
+}
+
+/// Keys of rendered `@async` fallbacks, in document order. With async islands enabled, the island
+/// wrapper repeats its fallback's key.
+fn fallback_ssr_keys(html: &str) -> Vec<&str> {
+    let mut keys = Vec::new();
+    for key in html
+        .split("data-ssr=\"")
+        .skip(1)
+        .filter_map(|rest| rest.split('"').next())
+        .filter(|key| !key.ends_with("-t") && !key.ends_with("-s"))
+    {
+        if keys.last() != Some(&key) {
+            keys.push(key);
+        }
+    }
+    keys
+}
+
+#[tokio::test]
+async fn async_inside_for_streams_once_per_iteration() {
+    let chunks = all_axum_chunks(html! {
+        @for id in 0..3_u32 {
+            @async {
+                div { "item " (id) }
+            } @else {
+                p { "Loading " (id) }
+            }
+        }
+    })
+    .await;
+
+    let keys = fallback_ssr_keys(&chunks[0]);
+    assert_eq!(
+        keys.iter().collect::<std::collections::BTreeSet<_>>().len(),
+        3,
+        "{chunks:?}"
+    );
+
+    assert_eq!(chunks.len(), 4, "{chunks:?}");
+    for (id, key) in keys.iter().enumerate() {
+        let chunk = chunks[1..]
+            .iter()
+            .find(|chunk| chunk.contains(&format!("<div>item {id}</div>")))
+            .unwrap_or_else(|| panic!("missing stream for item {id}: {chunks:?}"));
+        assert!(chunk.contains(&format!(r#"data-ssr="{key}-t""#)), "{chunk}");
+        assert!(chunk.contains(&format!("__ssrStream('{key}')")), "{chunk}");
+    }
+}
+
+#[tokio::test]
+async fn async_in_unrendered_branch_is_not_started() {
+    let started = Arc::new(AtomicBool::new(false));
+    let flag = Arc::clone(&started);
+    let show = false;
+
+    let chunks = all_axum_chunks(html! {
+        @if show {
+            @async {
+                @let () = flag.store(true, Ordering::SeqCst);
+                div { "Loaded" }
+            } @else {
+                p { "Loading" }
+            }
+        }
+    })
+    .await;
+
+    assert_eq!(chunks.len(), 1, "{chunks:?}");
+    assert!(!chunks[0].contains("Loading"), "{chunks:?}");
+    assert!(!started.load(Ordering::SeqCst));
+}
+
+#[tokio::test]
+async fn async_in_rendered_branch_can_move_outer_future() {
+    let data = async { String::from("moved data") };
+    let show = true;
+
+    let chunks = all_axum_chunks(html! {
+        Base {
+            @if show {
+                @async {
+                    @let data = data.await;
+                    div { (data) }
+                } @else {
+                    p { "Loading" }
+                }
+            }
+        }
+    })
+    .await;
+
+    assert!(chunks[0].contains("Loading"), "{chunks:?}");
+    assert_eq!(chunks.len(), 2, "{chunks:?}");
+    assert!(chunks[1].contains("<div>moved data</div>"), "{chunks:?}");
+}
+
+#[tokio::test]
+async fn async_moving_outer_future_ignores_names_that_are_not_binding_uses() {
+    let loaded = async { String::from("moved data") };
+
+    let chunks = all_axum_chunks(html! {
+        @let id = "page";
+        @let data = "template data";
+        Base {
+            p id=(id) { (data) }
+            @async {
+                @let data = loaded.await;
+                div id="loaded" { (data) }
+            } @else {
+                p { "Loading" }
+            }
+        }
+    })
+    .await;
+
+    assert!(chunks[0].contains("template data"), "{chunks:?}");
+    assert_eq!(chunks.len(), 2, "{chunks:?}");
+    assert!(
+        chunks[1].contains("<div id=\"loaded\">moved data</div>"),
+        "{chunks:?}"
+    );
+}
+
+#[tokio::test]
+async fn nested_async_can_move_a_value_its_parent_body_uses() {
+    let text = String::from("abc");
+
+    let chunks = all_axum_chunks(html! {
+        @async {
+            p { (text.len()) }
+            @async {
+                div { (text) }
+            } @else {
+                p { "Loading inner" }
+            }
+        } @else {
+            p { "Loading outer" }
+        }
+    })
+    .await;
+
+    assert_eq!(chunks.len(), 3, "{chunks:?}");
+    assert!(chunks[1].contains("<p>3</p>"), "{chunks:?}");
+    assert!(chunks[2].contains("<div>abc</div>"), "{chunks:?}");
+}
+
+#[tokio::test]
+async fn async_detects_bindings_used_through_macro_ranges_and_width_captures() {
+    let chunks = all_axum_chunks(html! {
+        @let n = 3_u32;
+        @let w = 4_usize;
+        @async {
+            div { (format!("{:?}", (0..n).collect::<Vec<_>>())) }
+            span { (format!("[{:>w$}]", "a")) }
+        } @else {
+            p { "Loading" }
+        }
+    })
+    .await;
+
+    assert_eq!(chunks.len(), 2, "{chunks:?}");
+    assert!(chunks[1].contains("[0, 1, 2]"), "{chunks:?}");
+    assert!(chunks[1].contains("[   a]"), "{chunks:?}");
+}
+
+#[derive(Cheers)]
+struct RendersChildrenSeparately<T> {
+    children: T,
+}
+
+impl<T: Render> Render for RendersChildrenSeparately<T> {
+    fn render_to(&self, buffer: &mut Buffer<Element>) {
+        let mut children = Buffer::new();
+        self.children.render_to(&mut children);
+        // XSS SAFETY: `children` holds markup rendered by `Render`
+        buffer
+            .dangerously_get_string()
+            .push_str(&children.rendered().into_inner());
+    }
+}
+
+#[tokio::test]
+async fn async_in_children_rendered_into_another_buffer_streams() {
+    let chunks = all_axum_chunks(html! {
+        RendersChildrenSeparately {
+            @async {
+                div { (async { "streamed" }.await) }
+            } @else {
+                p { "Loading" }
+            }
+        }
+    })
+    .await;
+
+    assert!(chunks[0].contains("Loading"), "{chunks:?}");
+    assert_eq!(chunks.len(), 2, "{chunks:?}");
+    assert!(chunks[1].contains("<div>streamed</div>"), "{chunks:?}");
+}
+
+#[tokio::test]
+async fn async_can_use_if_let_and_match_bindings() {
+    let name = Some("if-let data");
+    let count = 2_u32;
+
+    let chunks = all_axum_chunks(html! {
+        @if let Some(name) = name {
+            @async {
+                div { (name) }
+            } @else {
+                p { "Loading name" }
+            }
+        }
+        @match count {
+            n @ 1.. => @async {
+                div { "count " (n) }
+            } @else {
+                p { "Loading count" }
+            },
+            _ => {}
+        }
+    })
+    .await;
+
+    let streamed = chunks[1..].concat();
+    assert_eq!(chunks.len(), 3, "{chunks:?}");
+    assert!(streamed.contains("<div>if-let data</div>"), "{chunks:?}");
+    assert!(streamed.contains("<div>count 2</div>"), "{chunks:?}");
+}
+
+#[tokio::test]
+async fn async_detects_bindings_used_through_format_captures() {
+    let chunks = all_axum_chunks(html! {
+        @for item in ["a", "b"] {
+            @async {
+                div { (format!("item {item}")) }
+            } @else {
+                p { "Loading" }
+            }
+        }
+    })
+    .await;
+
+    let streamed = chunks[1..].concat();
+    assert!(streamed.contains("<div>item a</div>"), "{chunks:?}");
+    assert!(streamed.contains("<div>item b</div>"), "{chunks:?}");
+}
+
+#[tokio::test]
+async fn nested_async_in_repeated_parent_gets_distinct_keys() {
+    let chunks = all_axum_chunks(html! {
+        @for id in 0..2_u32 {
+            @async {
+                @async {
+                    div { "inner " (id) }
+                } @else {
+                    p { "Inner loading" }
+                }
+            } @else {
+                p { "Outer loading" }
+            }
+        }
+    })
+    .await;
+
+    let all = chunks.concat();
+    let keys = fallback_ssr_keys(&all);
+    assert_eq!(
+        keys.iter().collect::<std::collections::BTreeSet<_>>().len(),
+        4,
+        "{chunks:?}"
+    );
+    assert!(all.contains("<div>inner 0</div>"), "{chunks:?}");
+    assert!(all.contains("<div>inner 1</div>"), "{chunks:?}");
+}
+
 #[cfg(all(debug_assertions, feature = "subsecond"))]
 #[tokio::test]
 async fn async_block_gets_hot_root_without_cached_syntax() {
-    async fn main_page() -> cheers::prelude::AsyncLazy<cheers::prelude::Lazy<impl Fn(&mut Buffer)>>
-    {
+    async fn main_page() -> cheers::prelude::AsyncLazy<impl AsyncRender> {
         html! {
             Base {
                 article {
@@ -1588,8 +1865,7 @@ async fn async_block_gets_hot_root_without_cached_syntax() {
 #[cfg(all(debug_assertions, feature = "subsecond"))]
 #[tokio::test]
 async fn async_block_registers_static_hot_render_continuation() {
-    async fn main_page() -> cheers::prelude::AsyncLazy<cheers::prelude::Lazy<impl Fn(&mut Buffer)>>
-    {
+    async fn main_page() -> cheers::prelude::AsyncLazy<impl AsyncRender> {
         html! {
             Base {
                 article {
@@ -1630,8 +1906,7 @@ async fn async_block_registers_static_hot_render_continuation() {
 #[cfg(all(debug_assertions, feature = "subsecond"))]
 #[tokio::test]
 async fn async_block_with_dynamic_control_flow_does_not_register_hot_render_continuation() {
-    async fn main_page() -> cheers::prelude::AsyncLazy<cheers::prelude::Lazy<impl Fn(&mut Buffer)>>
-    {
+    async fn main_page() -> cheers::prelude::AsyncLazy<impl AsyncRender> {
         html! {
             Base {
                 article {
@@ -1676,8 +1951,7 @@ async fn async_block_with_dynamic_control_flow_does_not_register_hot_render_cont
 #[cfg(all(debug_assertions, feature = "subsecond"))]
 #[tokio::test]
 async fn async_block_with_outer_capture_does_not_register_hot_render_continuation() {
-    async fn main_page() -> cheers::prelude::AsyncLazy<cheers::prelude::Lazy<impl Fn(&mut Buffer)>>
-    {
+    async fn main_page() -> cheers::prelude::AsyncLazy<impl AsyncRender> {
         let title = String::from("Title: ");
 
         html! {
@@ -1846,7 +2120,7 @@ async fn async_can_render_concurrently_in_order() {
         content: String,
         outages_today: i32,
         sync: SyncPrimitives,
-    ) -> AsyncLazy<Lazy<impl Fn(&mut Buffer)>> {
+    ) -> AsyncLazy<impl AsyncRender> {
         let post_html = {
             let barrier = sync.barrier.clone();
             let mutex_a = sync.mutex_a.clone();

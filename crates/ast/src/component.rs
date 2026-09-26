@@ -31,13 +31,15 @@ impl Component {
             ElementBody::Normal { children, .. } => {
                 let buffer_ident = Generator::buffer_ident();
 
-                let block = g.block_with(
-                    Brace::default(),
-                    |g| {
-                        g.push(children);
-                    },
-                    true,
-                );
+                let block = g.with_in_shared_closure(true, |g| {
+                    g.block_with(
+                        Brace::default(),
+                        |g| {
+                            g.push(children);
+                        },
+                        true,
+                    )
+                });
 
                 Some(quote! {
                     ::cheers::prelude::Lazy::dangerously_create(

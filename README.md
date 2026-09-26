@@ -106,7 +106,7 @@ impl Render for DwarfList {
     }
 }
 
-async fn hall_of_ancestors(_: State<Ctx>) -> AsyncLazy<impl Render> {
+async fn hall_of_ancestors(_: State<Ctx>) -> AsyncLazy<impl AsyncRender> {
     let thorin = async {
         tokio::time::sleep(Duration::from_millis(300)).await;
         Dwarf {

@@ -82,7 +82,7 @@ impl<'a> Render for Stock<'a> {
     }
 }
 
-async fn home_page(ctx: State<Ctx>) -> AsyncLazy<impl Render> {
+async fn home_page(ctx: State<Ctx>) -> AsyncLazy<impl AsyncRender> {
     let get_stocks = async move || {
         tokio::time::sleep(Duration::from_millis(500)).await;
         ctx.stocks

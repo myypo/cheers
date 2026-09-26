@@ -27,7 +27,9 @@ pub use custom_event::{__render_custom_event_component, __render_custom_event_to
 pub use signal_path::{__push_signal_path_dynamic_segment, __push_signal_path_segment};
 
 pub mod async_streams {
-    pub use crate::async_stream::{AsyncStream, AsyncStreamCollectionGuard, enter, push};
+    pub use crate::async_stream::{
+        AsyncInstances, AsyncKey, AsyncScope, AsyncSlot, AsyncStream, StaticAsyncKey,
+    };
 }
 
 pub mod subsecond {
