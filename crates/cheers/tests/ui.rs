@@ -53,6 +53,12 @@ fn show_with_its_own_display_is_rejected() {
 }
 
 #[test]
+fn known_element_with_wrong_kind_is_rejected() {
+    let tests = trybuild::TestCases::new();
+    tests.compile_fail("tests/ui/known_element_with_wrong_kind.rs");
+}
+
+#[test]
 fn datastar_event_does_not_ambiguous_glob_import() {
     let tests = trybuild::TestCases::new();
     tests.pass("tests/ui/datastar_event_does_not_ambiguous_glob_import.rs");

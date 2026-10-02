@@ -176,6 +176,13 @@ pub fn html(tokens: proc_macro::TokenStream) -> proc_macro::TokenStream {
     expand_document_lazy(tokens, NodeFlavour::Html)
 }
 
+#[doc(hidden)]
+#[proc_macro]
+/// Emits the check `html!` would for every name it skips checking. Used by Cheers' tests.
+pub fn __validation_table_checks(_tokens: proc_macro::TokenStream) -> proc_macro::TokenStream {
+    ast::validation_table_checks().into()
+}
+
 #[proc_macro]
 /// Builds a lazily rendered SVG fragment or document.
 ///

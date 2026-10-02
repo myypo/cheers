@@ -16,8 +16,12 @@ impl PartialEq<&str> for UnquotedName {
 }
 
 impl UnquotedName {
+    pub fn name(&self) -> String {
+        self.0.unraw().to_string()
+    }
+
     pub fn lit(&self) -> LitStr {
-        LitStr::new(&self.0.unraw().to_string(), self.0.span())
+        LitStr::new(&self.name(), self.0.span())
     }
 
     pub fn span(&self) -> Span {
