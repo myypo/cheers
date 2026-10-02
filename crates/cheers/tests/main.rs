@@ -3135,6 +3135,82 @@ fn signal_deserialized_with_id_scope() {
 }
 
 #[test]
+fn signals_at_the_forwarded_field_limit_round_trip() {
+    #[derive(Cheers)]
+    #[signal(global, s01: u8)]
+    #[signal(global, s02: u8)]
+    #[signal(global, s03: u8)]
+    #[signal(global, s04: u8)]
+    #[signal(global, s05: u8)]
+    #[signal(global, s06: u8)]
+    #[signal(global, s07: u8)]
+    #[signal(global, s08: u8)]
+    #[signal(global, s09: u8)]
+    #[signal(global, s10: u8)]
+    #[signal(global, s11: u8)]
+    #[signal(global, s12: Option<u8>)]
+    #[expect(dead_code)]
+    struct Twelve;
+
+    let json = r#"{ "twelve": { "s01": 1, "s02": 2, "s03": 3, "s04": 4, "s05": 5, "s06": 6, "s07": 7, "s08": 8, "s09": 9, "s10": 10, "s11": 11 } }"#;
+    let got: TwelveSignalsJson =
+        serde_json::from_str(json).expect("signals JSON should deserialize");
+
+    assert_eq!(got.twelve.s11, 11);
+    assert_eq!(got.twelve.s12, None);
+    assert_eq!(
+        serde_json::to_value(&got).expect("signals JSON should serialize")["twelve"]["s01"],
+        1
+    );
+}
+
+#[test]
+fn signal_named_like_a_constant_in_scope_deserializes() {
+    #[expect(non_upper_case_globals, dead_code)]
+    const open: bool = true;
+
+    #[derive(Cheers)]
+    #[signal(global, open: bool)]
+    #[expect(dead_code)]
+    struct Dialog;
+
+    let got: DialogSignalsJson = serde_json::from_str(r#"{ "dialog": { "open": false } }"#)
+        .expect("signals JSON should deserialize");
+
+    assert!(!got.dialog.open);
+}
+
+#[test]
+fn signals_beyond_the_forwarded_field_limit_round_trip() {
+    #[derive(Cheers)]
+    #[signal(global, s01: u8)]
+    #[signal(global, s02: u8)]
+    #[signal(global, s03: u8)]
+    #[signal(global, s04: u8)]
+    #[signal(global, s05: u8)]
+    #[signal(global, s06: u8)]
+    #[signal(global, s07: u8)]
+    #[signal(global, s08: u8)]
+    #[signal(global, s09: u8)]
+    #[signal(global, s10: u8)]
+    #[signal(global, s11: u8)]
+    #[signal(global, s12: u8)]
+    #[signal(global, s13: Option<u8>)]
+    #[expect(dead_code)]
+    struct Wide;
+
+    let json = r#"{ "wide": { "s01": 1, "s02": 2, "s03": 3, "s04": 4, "s05": 5, "s06": 6, "s07": 7, "s08": 8, "s09": 9, "s10": 10, "s11": 11, "s12": 12 } }"#;
+    let got: WideSignalsJson = serde_json::from_str(json).expect("signals JSON should deserialize");
+
+    assert_eq!(got.wide.s12, 12);
+    assert_eq!(got.wide.s13, None);
+    assert_eq!(
+        serde_json::to_value(&got).expect("signals JSON should serialize")["wide"]["s01"],
+        1
+    );
+}
+
+#[test]
 fn signal_deserialized_nested_scope() {
     #[expect(dead_code)]
     #[derive(Cheers)]

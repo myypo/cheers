@@ -1,9 +1,10 @@
 use std::collections::BTreeSet;
 
-use proc_macro2::TokenStream;
-use quote::{ToTokens, quote};
+use proc_macro2::{Span, TokenStream};
+use quote::{ToTokens, format_ident, quote};
 use syn::{
     Attribute, Error, GenericParam, Ident, ItemStruct, LitStr, Meta, Token, Type,
+    ext::IdentExt,
     parse::{Parse, ParseStream},
     parse_quote, parse2,
     punctuated::Punctuated,
@@ -242,7 +243,6 @@ pub(crate) fn generate_signal_impl(
     let signal_nested_scope_ident = signals_json_nested_ident(&item.ident);
     let signal_json_scope_ident = signals_json_payload_ident(&item.ident);
     let signal_json_component_field_ident = Ident::new_raw(&struct_snake_case, item.ident.span());
-    let signal_json_component_name = LitStr::new(&struct_snake_case, item.ident.span());
 
     let mut specs = Vec::new();
     process_outer_signal_attrs(signal_outer_attrs, &mut specs)?;
@@ -287,9 +287,7 @@ pub(crate) fn generate_signal_impl(
     let mut signals_method_fields = Vec::new();
     let mut signals_decl_tys = Vec::new();
     let mut signal_nested_scope_fields = Vec::new();
-    let mut signal_nested_scope_decl_tys = Vec::new();
     let mut signal_json_scope_fields = Vec::new();
-    let mut signal_json_scope_decl_tys = Vec::new();
 
     for spec in &specs {
         let signal_name = spec.name.to_string();
@@ -346,14 +344,14 @@ pub(crate) fn generate_signal_impl(
         signals_struct_fields.push(quote! { #vis #method_ident: #signal_ty });
         signals_decl_tys.push(signal_ty);
 
-        let field_ident = &spec.name;
-        signal_nested_scope_fields.push(quote! { #vis #field_ident: #leaf_ty });
-        signal_nested_scope_decl_tys.push(leaf_ty.clone());
-
+        let field = SerdeField {
+            ident: spec.name.clone(),
+            ty: leaf_ty,
+        };
         if spec.scope == SignalScope::Global {
-            signal_json_scope_fields.push(quote! { #vis #field_ident: #leaf_ty });
-            signal_json_scope_decl_tys.push(leaf_ty);
+            signal_json_scope_fields.push(field.clone());
         }
+        signal_nested_scope_fields.push(field);
     }
 
     let signals_generics = filter_generics(item.generics.clone(), signals_decl_tys.iter(), false);
@@ -390,46 +388,31 @@ pub(crate) fn generate_signal_impl(
 
     let signal_nested_scope_generics = filter_generics(
         item.generics.clone(),
-        signal_nested_scope_decl_tys.iter(),
+        signal_nested_scope_fields.iter().map(|field| &field.ty),
         false,
     );
-    let signal_nested_scope_struct = {
-        let (scope_generics, _, scope_where_clause) = signal_nested_scope_generics.split_for_impl();
-        quote! {
-            #[derive(
-                ::cheers::__internal::serde::Serialize,
-                ::cheers::__internal::serde::Deserialize,
-            )]
-            #[serde(crate = "::cheers::__internal::serde")]
-            #vis struct #signal_nested_scope_ident #scope_generics #scope_where_clause {
-                #(#signal_nested_scope_fields,)*
-            }
-        }
-    };
+    let signal_nested_scope_struct = serde_struct(
+        vis,
+        &signal_nested_scope_ident,
+        &signal_nested_scope_generics,
+        &signal_nested_scope_fields,
+    );
 
     let signal_json_impl = if signal_json_scope_fields.is_empty() {
         TokenStream::new()
     } else {
         let signal_json_scope_generics = filter_generics(
             item.generics.clone(),
-            signal_json_scope_decl_tys.iter(),
+            signal_json_scope_fields.iter().map(|field| &field.ty),
             false,
         );
         let signal_json_scope_ty_generics = generic_args_from(&signal_json_scope_generics);
-        let signal_json_scope_struct = {
-            let (scope_generics, _, scope_where_clause) =
-                signal_json_scope_generics.split_for_impl();
-            quote! {
-                #[derive(
-                    ::cheers::__internal::serde::Serialize,
-                    ::cheers::__internal::serde::Deserialize,
-                )]
-                #[serde(crate = "::cheers::__internal::serde")]
-                #vis struct #signal_json_scope_ident #scope_generics #scope_where_clause {
-                    #(#signal_json_scope_fields,)*
-                }
-            }
-        };
+        let signal_json_scope_struct = serde_struct(
+            vis,
+            &signal_json_scope_ident,
+            &signal_json_scope_generics,
+            &signal_json_scope_fields,
+        );
 
         let signal_json_component_scope_ty: Type = parse_quote! {
             #signal_json_scope_ident #signal_json_scope_ty_generics
@@ -443,26 +426,20 @@ pub(crate) fn generate_signal_impl(
             signal_json_component_scope_ty
         };
 
-        let signal_json_struct = {
-            let signal_json_generics = filter_generics(
-                item.generics.clone(),
-                std::iter::once(&signal_json_component_ty),
-                false,
-            );
-            let (json_generics, _, json_where_clause) = signal_json_generics.split_for_impl();
-
-            quote! {
-                #[derive(
-                    ::cheers::__internal::serde::Serialize,
-                    ::cheers::__internal::serde::Deserialize,
-                )]
-                #[serde(crate = "::cheers::__internal::serde")]
-                #vis struct #signal_json_ident #json_generics #json_where_clause {
-                    #[serde(rename = #signal_json_component_name)]
-                    #vis #signal_json_component_field_ident: #signal_json_component_ty
-                }
-            }
-        };
+        let signal_json_generics = filter_generics(
+            item.generics.clone(),
+            std::iter::once(&signal_json_component_ty),
+            false,
+        );
+        let signal_json_struct = serde_struct(
+            vis,
+            &signal_json_ident,
+            &signal_json_generics,
+            &[SerdeField {
+                ident: signal_json_component_field_ident,
+                ty: signal_json_component_ty,
+            }],
+        );
 
         quote! {
             #signal_json_scope_struct
@@ -487,4 +464,116 @@ pub(crate) fn generate_signal_impl(
         #signal_json_impl
         #methods_impl
     })
+}
+
+/// Must match the largest tuple `cheers::__internal::serde_struct` implements its traits for.
+const SERDE_STRUCT_MAX_FIELDS: usize = 12;
+
+#[derive(Clone)]
+struct SerdeField {
+    ident: Ident,
+    ty: Type,
+}
+
+/// A struct with named `fields` and serde impls forwarding to `cheers::__internal::serde_struct`.
+///
+/// Falls back to serde's derive for shapes the helpers do not cover.
+fn serde_struct(
+    vis: &syn::Visibility,
+    ident: &Ident,
+    generics: &syn::Generics,
+    fields: &[SerdeField],
+) -> TokenStream {
+    let names = fields.iter().map(|field| &field.ident).collect::<Vec<_>>();
+    let tys = fields.iter().map(|field| &field.ty).collect::<Vec<_>>();
+    let (impl_generics, ty_generics, where_clause) = generics.split_for_impl();
+    let struct_def = quote! {
+        #vis struct #ident #impl_generics #where_clause {
+            #(#vis #names: #tys,)*
+        }
+    };
+
+    if fields.is_empty()
+        || fields.len() > SERDE_STRUCT_MAX_FIELDS
+        || generics.lifetimes().next().is_some()
+    {
+        return quote! {
+            #[derive(
+                ::cheers::__internal::serde::Serialize,
+                ::cheers::__internal::serde::Deserialize,
+            )]
+            #[serde(crate = "::cheers::__internal::serde")]
+            #struct_def
+        };
+    }
+
+    let name = LitStr::new(&ident.to_string(), ident.span());
+    let wire_names = names
+        .iter()
+        .map(|name| LitStr::new(&name.unraw().to_string(), name.span()))
+        .collect::<Vec<_>>();
+    // Bound to fresh names: a field name can match a constant or unit struct in scope, which
+    // would turn a binding of that name into a pattern.
+    let locals = (0..fields.len())
+        .map(|idx| format_ident!("__cheers_field_{idx}", span = Span::mixed_site()))
+        .collect::<Vec<_>>();
+
+    let ser_where_clause = {
+        let mut generics = generics.clone();
+        let where_clause = generics.make_where_clause();
+        for ty in &tys {
+            where_clause
+                .predicates
+                .push(parse_quote!(#ty: ::cheers::__internal::serde::Serialize));
+        }
+        generics.where_clause
+    };
+    let mut de_generics = generics.clone();
+    de_generics.params.insert(0, parse_quote!('de));
+    let de_where_clause = {
+        let where_clause = de_generics.make_where_clause();
+        for ty in &tys {
+            where_clause
+                .predicates
+                .push(parse_quote!(#ty: ::cheers::__internal::serde::Deserialize<'de>));
+        }
+        de_generics.where_clause.clone()
+    };
+    let (de_impl_generics, _, _) = de_generics.split_for_impl();
+
+    quote! {
+        #struct_def
+
+        #[automatically_derived]
+        impl #impl_generics ::cheers::__internal::serde::Serialize for #ident #ty_generics
+        #ser_where_clause
+        {
+            fn serialize<__S: ::cheers::__internal::serde::Serializer>(
+                &self,
+                serializer: __S,
+            ) -> ::core::result::Result<__S::Ok, __S::Error> {
+                ::cheers::__internal::serde_struct::serialize(
+                    serializer,
+                    #name,
+                    &[#(#wire_names),*],
+                    (#(&self.#names,)*),
+                )
+            }
+        }
+
+        #[automatically_derived]
+        impl #de_impl_generics ::cheers::__internal::serde::Deserialize<'de> for #ident #ty_generics
+        #de_where_clause
+        {
+            fn deserialize<__D: ::cheers::__internal::serde::Deserializer<'de>>(
+                deserializer: __D,
+            ) -> ::core::result::Result<Self, __D::Error> {
+                let (#(#locals,)*) = ::cheers::__internal::serde_struct::deserialize::<
+                    __D,
+                    (#(#tys,)*),
+                >(deserializer, #name, &[#(#wire_names),*])?;
+                ::core::result::Result::Ok(Self { #(#names: #locals),* })
+            }
+        }
+    }
 }

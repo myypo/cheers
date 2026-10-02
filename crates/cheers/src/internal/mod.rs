@@ -17,6 +17,7 @@ pub mod action_security;
 pub mod assets;
 pub mod async_islands;
 pub mod custom_event;
+pub mod serde_struct;
 pub mod signal_path;
 
 pub use action_rendering::{
