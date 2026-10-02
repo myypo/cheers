@@ -4,6 +4,7 @@ pub mod control;
 pub mod generate;
 mod syntax;
 mod uses;
+mod validation;
 
 use std::marker::PhantomData;
 
@@ -18,6 +19,7 @@ use syn::{
     punctuated::Punctuated,
     token::{Brace, Bracket, Paren},
 };
+pub use validation::table_checks as validation_table_checks;
 
 use self::{
     basics::Literal,
@@ -871,6 +873,12 @@ impl Parse for AttributeName {
             }
         } else if lookahead.peek(LitStr) {
             let s = input.parse::<LitStr>()?;
+            if !s.suffix().is_empty() {
+                return Err(Error::new_spanned(
+                    &s,
+                    "Attribute names cannot have literal suffixes",
+                ));
+            }
             let value = s.value();
 
             for c in value.chars() {
@@ -1648,6 +1656,15 @@ mod tests {
         Attribute, AttributeValueNode, DataContent, DataName, Document, ParenExpr, ParenExprBody,
         SyntaxStatic,
     };
+
+    #[test]
+    fn quoted_attribute_names_reject_suffixes() {
+        let error = parse_str::<Document>(r#"div "data-x"suf="1" {}"#)
+            .err()
+            .expect("suffixed attribute name should not parse");
+
+        assert!(error.to_string().contains("literal suffixes"), "{error}");
+    }
 
     #[test]
     fn syntax_static_accepts_literal_markup() {

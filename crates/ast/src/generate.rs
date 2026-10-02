@@ -1,4 +1,4 @@
-use std::{collections::BTreeMap, iter};
+use std::collections::BTreeMap;
 
 use proc_macro2::{Ident, Span, TokenStream};
 use quote::{ToTokens, format_ident, quote, quote_spanned};
@@ -12,6 +12,7 @@ use super::{
     AttributeValueNode, DataModifierPart, DataModifiers, ElementNode, Nodes, SyntaxStatic,
     UnquotedName,
 };
+use crate::validation;
 
 fn escape_script_source_literal(value: &str) -> std::borrow::Cow<'_, str> {
     let bytes = value.as_bytes();
@@ -341,21 +342,22 @@ impl<'a> Generator<'a> {
             match part {
                 Part::Static(lit) => {
                     let mut dynamic_stmt = None;
-                    let static_parts = iter::once(lit)
-                        .chain(parts.by_ref().map_while(|part| match part {
-                            Part::Static(lit) => Some(lit),
+                    let mut static_str = lit.value();
+                    for part in parts.by_ref() {
+                        match part {
+                            Part::Static(lit) => static_str.push_str(&lit.value()),
                             Part::Dynamic(stmt) => {
                                 dynamic_stmt = Some(stmt);
-                                None
+                                break;
                             }
-                        }))
-                        .inspect(|static_part| {
-                            size_estimate += static_part.value().len();
-                        });
+                        }
+                    }
+                    size_estimate += static_str.len();
+                    let static_lit = LitStr::new(&static_str, lit.span());
 
                     // XSS SAFETY: static parts are literal strings pushed by us
                     stmts.extend(quote! {
-                        #buffer_ident.dangerously_get_string().push_str(::core::concat!(#(#static_parts),*));
+                        #buffer_ident.dangerously_get_string().push_str(#static_lit);
                     });
                     stmts.extend(dynamic_stmt);
                 }
@@ -733,10 +735,6 @@ impl Checks {
         self.recovered_errors.append(&mut other.recovered_errors);
     }
 
-    fn is_empty(&self) -> bool {
-        self.elements.is_empty() && self.recovered_errors.is_empty()
-    }
-
     fn push_element(&mut self, element: ElementCheck) {
         self.elements.push(element);
     }
@@ -744,41 +742,79 @@ impl Checks {
     fn push_diagnostic(&mut self, diagnostic: TokenStream) {
         self.recovered_errors.push(diagnostic);
     }
+
+    fn block(module: ValidationModule, checks: &TokenStream) -> TokenStream {
+        quote! {
+            const _: fn() = || {
+                #[allow(unused_imports)]
+                use #module::*;
+
+                #[doc(hidden)]
+                /// Used by the `html!`, `svg!`, and `attribute!` macros to
+                /// trigger compile-time element
+                /// validation.
+                fn check_element<
+                    K: ::cheers::validation::ElementKind
+                >(_: impl ::cheers::validation::Element<Kind = K>) {}
+
+                #checks
+            };
+        }
+    }
 }
 
+fn by_module(elements: &[ElementCheck]) -> BTreeMap<ValidationModule, Vec<&ElementCheck>> {
+    let mut by_module: BTreeMap<ValidationModule, Vec<&ElementCheck>> = BTreeMap::new();
+    for check in elements {
+        by_module.entry(check.module).or_default().push(check);
+    }
+    by_module
+}
+
+/// Emits every check in `elements`, including those [`validation`] knows would pass.
+pub(crate) fn all_checks(elements: &[ElementCheck]) -> TokenStream {
+    by_module(elements)
+        .into_iter()
+        .map(|(module, checks)| {
+            let checks: TokenStream = checks.iter().map(|check| check.checks()).collect();
+            Checks::block(module, &checks)
+        })
+        .collect()
+}
+
+/// Emits the checks rustc needs, skipping those [`validation`] knows would pass. The names of
+/// skipped checks are still referenced for rust-analyzer, which needs them for hover and
+/// go-to-definition on element and attribute names.
 impl ToTokens for Checks {
     fn to_tokens(&self, tokens: &mut TokenStream) {
-        if self.is_empty() {
-            return;
-        }
-
         for diagnostic in &self.recovered_errors {
             diagnostic.to_tokens(tokens);
         }
 
-        let mut by_module: BTreeMap<ValidationModule, Vec<&ElementCheck>> = BTreeMap::new();
-        for check in &self.elements {
-            by_module.entry(check.module).or_default().push(check);
-        }
-
-        for (module, checks) in by_module {
-            quote! {
-                const _: fn() = || {
-                    #[allow(unused_imports)]
-                    use #module::*;
-
-                    #[doc(hidden)]
-                    /// Used by the `html!`, `svg!`, and `attribute!` macros to
-                    /// trigger compile-time element
-                    /// validation.
-                    fn check_element<
-                        K: ::cheers::validation::ElementKind
-                    >(_: impl ::cheers::validation::Element<Kind = K>) {}
-
-                    #(#checks)*
-                };
+        for (module, checks) in by_module(&self.elements) {
+            let mut needed = TokenStream::new();
+            let mut references = TokenStream::new();
+            for check in checks {
+                check.split_checks(&mut needed, &mut references);
             }
-            .to_tokens(tokens);
+
+            if !needed.is_empty() {
+                Self::block(module, &needed).to_tokens(tokens);
+            }
+            if !references.is_empty() {
+                quote! {
+                    #[allow(unexpected_cfgs)]
+                    {
+                        #[cfg(rust_analyzer)]
+                        {
+                            #[allow(unused_imports)]
+                            use #module::*;
+                            #references
+                        }
+                    }
+                }
+                .to_tokens(tokens);
+            }
         }
     }
 }
@@ -807,33 +843,51 @@ impl ElementCheck {
     pub fn push_attribute(&mut self, attr: AttributeNameCheck) {
         self.attributes.push(attr);
     }
-}
 
-impl ToTokens for ElementCheck {
-    fn to_tokens(&self, tokens: &mut TokenStream) {
+    fn element_check(&self) -> TokenStream {
         let el = &self.ident;
         let kind = self.kind;
+        quote! {
+            check_element::<#kind>(#el);
+        }
+    }
 
-        let el_check = {
-            quote! {
-                check_element::<#kind>(#el);
-            }
-        };
-
+    fn checks(&self) -> TokenStream {
+        let el_check = self.element_check();
         let attr_checks = self
             .attributes
             .iter()
-            .map(|attr| attr.to_token_stream_with_el(el));
+            .map(|attr| attr.to_token_stream_with_el(&self.ident));
 
         quote! {
             #el_check
             #(#attr_checks)*
         }
-        .to_tokens(tokens);
+    }
+
+    /// Splits the checks into those [`validation`] does not know to pass, and plain references to
+    /// the names of the others.
+    fn split_checks(&self, needed: &mut TokenStream, references: &mut TokenStream) {
+        let element = validation::element(self.module, &self.ident.name());
+
+        if element.is_some_and(|element| element.kind() == self.kind) {
+            let el = &self.ident;
+            references.extend(quote!(#el;));
+        } else {
+            needed.extend(self.element_check());
+        }
+
+        for attr in &self.attributes {
+            if attr.is_known(element) {
+                references.extend(attr.reference_with_el(&self.ident));
+            } else {
+                needed.extend(attr.to_token_stream_with_el(&self.ident));
+            }
+        }
     }
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ElementKind {
     Normal,
     Void,
@@ -860,15 +914,21 @@ pub struct AttributeNameCheck {
 
 struct DataModifierNameCheck<'a>(&'a UnquotedName);
 
+impl DataModifierNameCheck<'_> {
+    /// `self` cannot be used as an item name, so the validation table stores it as `self_`
+    /// while rendering still emits the Datastar modifier name `self`.
+    fn item_name(&self) -> String {
+        if self.0 == &"self" {
+            "self_".to_owned()
+        } else {
+            self.0.name()
+        }
+    }
+}
+
 impl ToTokens for DataModifierNameCheck<'_> {
     fn to_tokens(&self, tokens: &mut TokenStream) {
-        if self.0 == &"self" {
-            // `self` cannot be used as an item name, so the validation table stores it as
-            // `self_` while rendering still emits the Datastar modifier name `self`.
-            format_ident!("self_", span = self.0.span()).to_tokens(tokens);
-        } else {
-            self.0.to_tokens(tokens);
-        }
+        UnquotedName(Ident::new(&self.item_name(), self.0.span())).to_tokens(tokens);
     }
 }
 
@@ -880,6 +940,10 @@ impl AttributeNameCheck {
             data,
             data_modifiers: Vec::new(),
         }
+    }
+
+    pub fn push_data_modifier(&mut self, modifier: UnquotedName) {
+        self.data_modifiers.push(modifier);
     }
 
     pub fn push_data_modifiers(&mut self, modifiers: Option<&DataModifiers>) {
@@ -897,21 +961,91 @@ impl AttributeNameCheck {
         }
     }
 
+    fn data_plugin(&self) -> &UnquotedName {
+        match &self.kind {
+            AttributeNameCheckKind::Normal => &self.ident,
+            AttributeNameCheckKind::Namespace(namespace) => namespace,
+        }
+    }
+
     fn data_modifier_checks(&self) -> TokenStream {
         if !self.data || self.data_modifiers.is_empty() {
             return TokenStream::new();
         }
 
-        let plugin = match &self.kind {
-            AttributeNameCheckKind::Normal => &self.ident,
-            AttributeNameCheckKind::Namespace(namespace) => namespace,
-        };
+        let plugin = self.data_plugin();
         let modifiers = self.data_modifiers.iter().map(DataModifierNameCheck);
 
         quote! {
             #(
                 let _: ::cheers::validation::data::Modifier = ::cheers::validation::data::modifiers::#plugin::#modifiers;
             )*
+        }
+    }
+
+    /// Whether this check passes for `element`, as far as [`validation`] knows.
+    fn is_known(&self, element: Option<&validation::Element>) -> bool {
+        let name = self.ident.name();
+        let known = match (&self.kind, self.data) {
+            (AttributeNameCheckKind::Normal, false) => {
+                element.is_some_and(|element| element.has_attribute(&name))
+            }
+            (AttributeNameCheckKind::Namespace(namespace), false) => {
+                let namespace = namespace.name();
+                element.is_some_and(|element| element.has_namespace(&namespace))
+                    && validation::module(&namespace)
+                        .is_some_and(|module| module.has_namespace() && module.has_attribute(&name))
+            }
+            (AttributeNameCheckKind::Normal, true) => {
+                validation::module("data").is_some_and(|module| module.has_attribute(&name))
+            }
+            (AttributeNameCheckKind::Namespace(namespace), true) => {
+                validation::module(&format!("data::{}", namespace.name()))
+                    .is_some_and(|module| module.has_namespace() && module.has_attribute(&name))
+            }
+        };
+
+        known && self.data_modifiers_known()
+    }
+
+    fn data_modifiers_known(&self) -> bool {
+        if !self.data || self.data_modifiers.is_empty() {
+            return true;
+        }
+
+        let plugin = self.data_plugin().name();
+        let Some(module) = validation::module(&format!("data::modifiers::{plugin}")) else {
+            return false;
+        };
+
+        self.data_modifiers
+            .iter()
+            .all(|modifier| module.has_modifier(&DataModifierNameCheck(modifier).item_name()))
+    }
+
+    fn reference_with_el(&self, el: &UnquotedName) -> TokenStream {
+        let ident = &self.ident;
+        let name = match &self.kind {
+            AttributeNameCheckKind::Namespace(namespace) if self.data => {
+                quote!(::cheers::validation::data::#namespace::#ident;)
+            }
+            AttributeNameCheckKind::Namespace(namespace) => {
+                quote!(<#el>::#namespace; ::cheers::validation::#namespace::#ident;)
+            }
+            AttributeNameCheckKind::Normal if self.data => {
+                quote!(::cheers::validation::data::#ident;)
+            }
+            AttributeNameCheckKind::Normal => quote!(<#el>::#ident;),
+        };
+        if !self.data {
+            return name;
+        }
+        let plugin = self.data_plugin();
+        let modifiers = self.data_modifiers.iter().map(DataModifierNameCheck);
+
+        quote! {
+            #name
+            #(::cheers::validation::data::modifiers::#plugin::#modifiers;)*
         }
     }
 
