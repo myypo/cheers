@@ -21,6 +21,7 @@ type PageViewItem = {
   context: TrackContext;
   referrer?: string;
   navigation_type?: NavigationTimingType;
+  status?: number;
 };
 
 type AnalyticsItem = {
@@ -136,6 +137,15 @@ function getNav(): PerformanceNavigationTiming | null {
   return entry instanceof PerformanceNavigationTiming ? entry : null;
 }
 
+function pageStatus(): number | undefined {
+  const content = document.querySelector<HTMLMetaElement>(
+    'meta[name="cheers-status"]',
+  )?.content;
+  if (content === undefined) return undefined;
+  const status = Number(content);
+  return Number.isInteger(status) ? status : undefined;
+}
+
 function trackPageView(): void {
   if (pageViewSent) {
     return;
@@ -143,6 +153,7 @@ function trackPageView(): void {
   pageViewSent = true;
 
   const nav = getNav();
+  const status = pageStatus();
 
   enqueue({
     kind: "page_view",
@@ -150,6 +161,7 @@ function trackPageView(): void {
     context: context(),
     referrer: document.referrer,
     ...(nav?.type ? { navigation_type: nav.type } : {}),
+    ...(status !== undefined ? { status } : {}),
   });
 }
 

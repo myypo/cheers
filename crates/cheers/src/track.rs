@@ -1,6 +1,7 @@
 use axum::{
     Json,
     extract::{FromRequest, Request},
+    http::StatusCode,
     response::{IntoResponse, Response},
 };
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
@@ -170,6 +171,9 @@ pub struct PageView {
     pub referrer: Option<String>,
     #[serde(default)]
     pub navigation_type: Option<NavigationType>,
+    /// The HTTP status the page declared with [`PageStatus`].
+    #[serde(default)]
+    pub status: Option<u16>,
 }
 
 /// An analytics event emitted manually from the page.
@@ -188,6 +192,37 @@ pub struct ExceptionEvent {
     #[serde(default)]
     pub stack: Option<String>,
     pub context: Context,
+}
+
+/// Declares the HTTP status the page was served with, which the page view then carries.
+///
+/// Safari does not expose `PerformanceNavigationTiming.responseStatus`, so a page that wants its
+/// status in [`PageView::status`] renders this into its `<head>`.
+///
+/// # Example
+///
+/// ```
+/// use axum::http::StatusCode;
+/// use cheers::{prelude::*, track::PageStatus};
+///
+/// let rendered = html! {
+///     head { (PageStatus(StatusCode::NOT_FOUND)) }
+/// }
+/// .render()
+/// .into_inner();
+///
+/// assert!(rendered.contains(r#"<meta name="cheers-status" content="404">"#));
+/// ```
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct PageStatus(pub StatusCode);
+
+impl Render for PageStatus {
+    fn render_to(&self, buffer: &mut Buffer<crate::context::Element>) {
+        html! {
+            meta name="cheers-status" content=(self.0.as_u16());
+        }
+        .render_to(buffer);
+    }
 }
 
 pub struct TrackAction<P: Serialize>(pub P);
@@ -257,6 +292,7 @@ mod tests {
                     },
                     referrer: None,
                     navigation_type: Some(NavigationType::Prerender),
+                    status: Some(404),
                 })]
             );
             axum::http::StatusCode::ACCEPTED
@@ -268,7 +304,7 @@ mod tests {
             .uri("/_track")
             .header("content-type", "application/json")
             .body(Body::from(
-                r#"{"service":"svc","release":"1.0.0","sent_at_ms":1,"items":[{"kind":"page_view","timestamp_ms":2,"context":{"view_id":"p1","pathname":"/a"},"referrer":null,"navigation_type":"prerender"}]}"#,
+                r#"{"service":"svc","release":"1.0.0","sent_at_ms":1,"items":[{"kind":"page_view","timestamp_ms":2,"context":{"view_id":"p1","pathname":"/a"},"referrer":null,"navigation_type":"prerender","status":404}]}"#,
             ))
             .expect("request should build");
 
