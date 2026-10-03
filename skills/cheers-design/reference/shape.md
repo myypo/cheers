@@ -1,60 +1,74 @@
 # Shape
 
-Shape the UX/UI for a Cheers feature before code. Output a task-specific design brief that makes purpose, visual direction, states, and interaction contract explicit.
+Discover what should be made and how it should work in a Cheers app, then return a confirmed design brief without code. The brief makes purpose, direction, states, and the interaction contract explicit.
 
-## Discovery
+## Phase 1: discovery interview
 
-Ask only what is missing from the request, existing product docs, design docs, or code. With a sparse prompt, ask 2-3 questions and wait instead of inventing the whole brief.
+Do not write code or choose visual direction yet.
 
-Cover:
+### Cadence
 
-- **Purpose**: what problem this surface solves and the primary user action.
-- **User context**: who uses it, where, under what pressure, and how often.
-- **Success**: what the user should understand, complete, or trust afterward.
-- **Content/data**: what is shown or collected, including min, typical, max, empty, and error cases.
-- **Scope**: sketch, mid-fi, high-fi, or production-ready; one component, screen, or flow; static or interactive.
-- **Register**: product or brand. Infer when obvious and ask for confirmation when consequential.
-- **Visual direction**: color strategy, scene sentence, typography tone, density, imagery/media needs, references, anti-references.
-- **Constraints**: existing design system, accessibility, localization, browser support, performance budget, and implementation boundaries.
+- Use the structured question tool when available; otherwise ask and stop.
+- Ask two or three related questions per round, then wait. One round is the default; add a second only when the answers expose a material gap.
+- Do not dump a questionnaire, repeat settled facts from PRODUCT.md, DESIGN.md, or code, or turn obvious facts into menus. Assert the likely reading and invite correction.
+- A sparse prompt requires at least one answer round. A precise prompt may need only a compact confirmation.
 
-## Interaction contract
+### Round 1: purpose, people, and outcome
 
-Every brief must name how the interface changes over time, but keep it at design level:
+Choose the two or three questions that most change the result:
 
-1. **Backend-confirmed state**: durable data, derived view models, and success/error outcomes.
-2. **User input**: what the user submits or edits, and how it survives validation errors.
-3. **Local affordances**: open/closed, focus, selection, pending, reveal, and other client-only UI feelings.
-4. **Refresh boundaries**: which conceptual regions update after actions or streams.
-5. **Long-lived updates**: whether live progress or collaboration changes need a stream.
-6. **JS-worthy behavior**: whether any behavior truly needs a static client helper rather than CSS/native/Cheers interaction.
+- What is this surface or feature for, and what problem must it solve?
+- Who specifically reaches it, in what situation and state of mind, and how often?
+- What is the primary thing they must understand or do? What would success look like?
+- What is uniquely true here that a neighboring product or generic template could not claim?
+
+### Round 2: material, behavior, and boundaries
+
+Run only for material unresolved decisions:
+
+- What real content, evidence, data, and assets must the experience carry? What are realistic minimum, typical, and maximum ranges?
+- Which states and transitions matter: first-run, empty, loading, pending, error, success, permissions, overflow, or expert use?
+- What is the intended fidelity, breadth, and interactivity: exploration, production-ready screen, full flow, or broader surface?
+- What must remain untouched? What would make the result feel wrong even if it looked polished?
+- Which accessibility, localization, browser, performance, or delivery constraints are binding?
+
+Never ask for CSS values or canned aesthetic lanes. New-work owns visual-world and concept choices.
+
+## Phase 2: resolve the design direction
+
+For new surfaces, brand expansion, or replacement, follow [new-work.md](new-work.md) through visual authority, any direction round, and the concept choice. Reuse discovery, then return here before its direction contract, persistence, or implementation. Inside an established world, use its structure round only when composition or interaction remains materially open.
+
+## Phase 3: name the interaction contract
+
+Every brief names how the interface changes over time, at design level:
+
+1. **Backend-confirmed state:** durable data, derived view models, and success or error outcomes.
+2. **User input:** what the user submits or edits, and how it survives validation errors.
+3. **Local affordances:** open/closed, focus, selection, pending, reveal, and other client-only UI feelings.
+4. **Refresh boundaries:** which conceptual regions update after actions or streams.
+5. **Long-lived updates:** whether live progress or collaboration needs a stream.
+6. **JS-worthy behavior:** whether anything truly needs a static client helper rather than CSS, native browser behavior, or Cheers interaction.
 
 Reject briefs that require optimistic success, broad backend state mirrored into client affordances, or custom browser history for normal navigation.
 
-## Brief structure
+## Phase 4: write the brief
 
-Present the brief in this shape and ask for explicit confirmation:
+Write the smallest useful brief:
 
-1. **Feature summary**: 2-3 sentences.
-2. **Primary user action**: the one thing to make obvious.
-3. **Register and visual direction**: product/brand, scene sentence, color strategy, typography/density, imagery, references or anti-references.
-4. **Scope**: fidelity, breadth, interactivity, time intent.
-5. **Layout strategy**: hierarchy, rhythm, grouping, responsive approach.
-6. **Component and pattern plan**: likely UI patterns and reusable pieces, in design terms.
-7. **Interaction contract**: backend-confirmed outcomes, inputs, local affordances, refresh boundaries, streams, JS need.
-8. **Key states**: default, empty, loading, pending, error, success, disabled, permissions, overflow, long text, mobile.
-9. **Content requirements**: headings, labels, microcopy, error copy, alt text, dynamic ranges.
-10. **Build references**: which cheers-design reference files should guide implementation.
-11. **Open questions**: unresolved choices that affect code or design.
+1. **Job and audience:** who arrives, their context, need, and visitor mode.
+2. **Outcome and proof:** primary task or action, success, real evidence, and product-specific truth.
+3. **Selected direction:** visual authority, structural or interaction thesis, sequence, focal moment, and implementation consequence.
+4. **Scope and boundaries:** fidelity, breadth, interactivity, named target, what remains untouched, and explicit anti-goals.
+5. **States, ranges, and content:** realistic content and data ranges, required headings, labels, microcopy, error copy, and alt text, and the material states: default, empty, loading, pending, error, success, disabled, permissions, overflow, long text, mobile.
+6. **Interaction and layout:** the interaction contract above, plus hierarchy, topology, responsiveness, affordances, feedback, and transitions. Intent, not CSS.
+7. **Constraints and open decisions:** accessibility, localization, reusable components, relevant cheers-design references for the build, and choices a builder must not invent.
 
-Stop after asking for confirmation unless the user already supplied a confirmed brief or explicitly asks you to continue without confirmation.
+Use three to five bullets when the task is settled; use the full structure only for ambiguous, multi-screen, or standalone planning. Do not restate the conversation.
 
-## Quality checks
+Before presenting, check that the primary action is clear, the direction is specific enough to avoid category reflex, state coverage is complete enough for the requested fidelity, loading and errors are honest and accessible, responsive behavior is structural, and the contract can be built without optimistic UI.
 
-Before presenting it, verify:
+## Confirm and stop
 
-- The primary action is clear.
-- The visual direction is specific enough to avoid category reflex.
-- State coverage is complete enough for the requested fidelity.
-- Loading and errors are honest and accessible.
-- Responsive behavior is structural.
-- The interaction contract can be implemented without optimistic UI.
+Present the brief for explicit confirmation or one correction round, then stop: shape never writes code or a direction contract.
+
+When no human or structured answer mechanism exists, mark assumptions plainly, return the brief, and stop.

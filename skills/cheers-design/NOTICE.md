@@ -6,9 +6,10 @@ This skill adapts material from Impeccable.
 - Copyright: 2025-2026 Paul Bakaus
 - License: Apache License 2.0
 - License text: [`LICENSES/impeccable-Apache-2.0.txt`](LICENSES/impeccable-Apache-2.0.txt)
-- Changes: adapted the design-skill guidance for Cheers/Rust/Datastar, added a clear boundary with the main `cheers` implementation skill, kept only design-level interaction guardrails such as backend-confirmed state and no optimistic UI, migrated setup language to `init`, added critique snapshot persistence under `.cheers-design/critique/`, and adopted Google Stitch-style `DESIGN.md` frontmatter guidance.
+- Upstream sync/base: `508d7e8955de3b3caf2d8676e85206723d41a887`
+- Changes: adapted the design-skill guidance for Cheers/Rust/Datastar, added a clear boundary with the main `cheers` implementation skill, kept only design-level interaction guardrails such as backend-confirmed state and no optimistic UI, migrated setup language to `init`, added critique snapshot persistence under `.cheers-design/critique/`, and adopted Google Stitch-style `DESIGN.md` frontmatter guidance. The new-work flow, visitor modes, craft floor, and finish review are reworked to run without the upstream `impeccable` binary: direction rounds are run by hand instead of the concept-seed roll and decision page, surface briefs live under `.cheers-design/surfaces/`, the finish reviewer is a generic subagent prompt, and the `impeccable detect` scan is optional. Live mode, variant generation, image comps, hooks, doctor, and native iOS/Android guidance are not included.
 
-Upstream Impeccable `NOTICE.md` attribution is reproduced below:
+Upstream Impeccable `NOTICE.md` attribution, as published at upstream commit `f636bd065a11234bfc7f1b0e0cd9d1ba7a0eb209` (the previous sync base), is reproduced below. The current upstream `NOTICE.md` only attributes the iOS and Android platform references, which this skill does not include.
 
 ```text
 # Notice

@@ -39,7 +39,7 @@ export function slugFromTarget(resolved, { cwd = process.cwd() } = {}) {
     } catch {
       return null;
     }
-    return kebab(`${url.hostname}${url.pathname}`);
+    return kebab(`${url.host}${url.pathname}`);
   }
 
   const abs = path.isAbsolute(trimmed) ? trimmed : path.resolve(cwd, trimmed);
@@ -65,10 +65,7 @@ function kebab(value) {
 }
 
 export function nowFilenameStamp(date = new Date()) {
-  return date
-    .toISOString()
-    .replace(/[:.]/g, "-")
-    .replace(/-\d+Z$/, "Z");
+  return date.toISOString().replace(/[:.]/g, "-");
 }
 
 export function writeSnapshot({
@@ -174,8 +171,11 @@ function main(argv) {
       if (process.env.CHEERS_DESIGN_CRITIQUE_META) {
         try {
           meta = JSON.parse(process.env.CHEERS_DESIGN_CRITIQUE_META);
-        } catch {
+        } catch (error) {
           // Metadata is helpful but never blocks writing the human report.
+          process.stderr.write(
+            `ignoring invalid CHEERS_DESIGN_CRITIQUE_META: ${error.message}\n`,
+          );
         }
       }
       const body = fs.readFileSync(bodyFile, "utf-8");

@@ -1,60 +1,81 @@
 # Delight
 
-Add memorable, appropriate moments to a Cheers UI. Delight should amplify successful use, not distract from it.
+Make a Cheers UI memorable at moments that earn it. Delight is not a layer of generic whimsy; it is product character revealed through a useful interaction, a humane response, or an unexpectedly considered detail.
 
-## Register
+Know the product's emotional range. Ask only when it, or the stakes, cannot be inferred from PRODUCT.md, DESIGN.md, and the surface.
 
-- **Product**: delight belongs at earned moments: first success, completion, recovery, milestone, useful shortcut discovery.
-- **Brand**: delight can be broader: copy voice, section transitions, imagery, interaction details, seasonal or narrative touches.
+## Visitor mode
 
-## Find earned moments
+- **Persuade + Experience:** personality may run through voice, composition, motion, and discovery, provided the artifact stays the focus.
+- **Operate + Read:** concentrate delight at meaningful moments such as first use, completion, recovery, or mastery. Reliability carries everything else.
 
-Look for:
+Delight works inside the established world and voice. It never introduces a new identity.
 
-- empty states that could welcome and guide
-- backend-confirmed success states
-- long waits that need reassuring progress
-- error recovery moments
-- milestones or first-time actions
-- hover/focus micro-interactions that make controls feel finished
+## Two isolated assessments
 
-Ask what tone is appropriate if unclear: playful, professional, quirky, elegant, calm.
+Run these in order, and do not let scan findings anchor the design assessment. With subagents available, run them independently.
 
-## Principles
+1. **Design assessment:** inspect the target, DESIGN.md, product voice, repeat frequency, and emotional context. Look for:
+   - effort worth acknowledging;
+   - waiting that can become informative;
+   - an empty or first-use state that can orient;
+   - an error or recovery moment that needs empathy;
+   - an interaction whose physical or verbal response could express the brand;
+   - a useful capability people might enjoy discovering.
 
-- Delight must never delay or block the task.
-- Delight must not imply success before backend confirmation.
-- Delight should be brief, optional where possible, and respectful after repetition.
-- The more serious the user state, the quieter the delight.
-- Reduced-motion users still get a polished static version.
+   Do not manufacture a celebration for an ordinary click.
+2. **Mechanical scan:** run the [mechanical scan](../SKILL.md#mechanical-scan-optional) over the target page.
 
-## Patterns
+Synthesize both before editing.
 
-### Backend-confirmed celebration
+## State the delight thesis
 
-Celebrate only after the confirmed success state is rendered. Motion can emphasize that new state, but it should not fire on click before success.
+In one sentence, state what the user should feel and why that feeling belongs to this product. Then name the moment, its trigger in the interaction contract, and the smallest system that delivers it:
 
-### Helpful empty states
+- a distinctive response to a meaningful action;
+- product-specific language that clarifies while carrying voice;
+- an interaction or transition with a recognizable material behavior;
+- an illustration, sound (opt-in), or environmental detail grounded in the product world;
+- a discovery reward that reveals real utility.
 
-Use the empty state to explain what will appear, why it matters, and the first useful action. Make the tone specific to the product.
+Derive the treatment from the product mechanism and visual world, not a stock catalog.
 
-### Local micro-interactions
+## Apply
 
-Use hover, focus, active, reveal, and small local toggles to make controls feel considered. Keep them independent of durable state.
+Read [craft-floor.md](craft-floor.md) first; for authored motion, also load [animate.md](animate.md).
 
-### Waiting states
+- **Success:** fires only once the backend-confirmed state is rendered, never on click. Match the response to effort and consequence: milestones can expand; routine saves should simply feel certain.
+- **Waiting:** truthful progress, useful context, or product-specific activity ("Importing 24 of 120 rows"). Never fake work, imply completion, or delay the result to stage a flourish.
+- **Empty and first use:** make the next action clear before adding personality.
+- **Error and recovery:** lead with the problem and the recovery. Warmth may lower stress; jokes must not trivialize loss, money, privacy, or blocked work.
+- **Repeated interaction:** still satisfying on the hundredth use. Vary only when it stays coherent and predictable enough to trust.
+- **Discovery:** reward curiosity without hiding required functionality.
+- **Local micro-interactions:** hover, focus, active, and reveal details may use signals as local affordances; keep them independent of durable state.
 
-Use reassuring, specific copy. "Importing 24 rows..." is better than generic jokes. For long jobs, show truthful progress when available.
+Copy uses the product's language. Generic whimsy is worse than neutral clarity.
 
-## Avoid
+## Protect the experience
 
-- Confetti for routine saves.
-- Humor in severe errors.
-- Repeated animations that become annoying.
-- Large JS bundles for tiny effects.
-- Sound without explicit opt-in.
-- Delight that hides poor UX.
+Delight must not:
+
+- delay, block, or obscure the primary task;
+- override native conventions or accessibility;
+- add unrequested factual claims;
+- play sound without opt-in or ignore mute settings;
+- become mandatory, unskippable, or exhausting on repeat;
+- cost a dependency, JS helper, or asset weight out of proportion to the moment.
+
+Respect screen readers, keyboard, touch, localization, and cultural context. Nonessential loops stop when hidden. Reduced-motion users get a finished static version. Use `cheers` for implementation; format changed templates with `cargo cheers fmt --rustfmt <files>`.
 
 ## Verify
 
-Does the moment feel earned? Is it still pleasant after repeated use? Does it work with keyboard, screen readers, reduced motion, slow network, and failed backend actions?
+Inspect in one batched round, fix everything in one batch, confirm with at most one more round. Answer each with rendered or source evidence:
+
+- The moment is specific enough that a neighboring product could not use it unchanged.
+- It improves comprehension, confidence, motivation, or emotional recovery.
+- It appears only after backend confirmation, and a failed action shows no celebration.
+- The interface stays fast and obvious without the flourish, on a slow network too.
+- Repetition does not turn charm into friction; muted, keyboard, touch, reduced-motion, and localized paths work.
+- It feels like the established world, and the rerun scan has no unexplained findings.
+
+When the personality feels earned, hand off to `cheers-design polish`.
