@@ -61,7 +61,11 @@ async-compression = { version = "0.4", features = [
   "brotli",
 ] }
 tokio-util = { version = "0.7", features = ["io"] }
-thirtyfour = { version = "0.37.1", features = ["rustls"] }
+thirtyfour = { version = "0.37.1", default-features = false, features = [
+  "rustls",
+  "component",
+  "cdp",
+] }
 dioxus-devtools = { version = "0.7.6", default-features = false }
 
 # Bundler
