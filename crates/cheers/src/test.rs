@@ -1,9 +1,17 @@
 //! Helpers for end-to-end tests.
 
-use std::{future::Future, io, net::SocketAddr, ops::Deref, panic, time::Duration};
+use std::{
+    future::{self, Future},
+    io,
+    net::SocketAddr,
+    ops::Deref,
+    panic,
+    pin::{Pin, pin},
+    task::{Context, Poll},
+    time::Duration,
+};
 
 use axum::Router;
-use futures::FutureExt;
 use thirtyfour::{
     IntoArcStr,
     error::{WebDriverError, WebDriverResult},
@@ -139,28 +147,25 @@ impl App {
             driver: self.driver.as_ref().expect("browser to be present").clone(),
         };
 
-        let future = match panic::catch_unwind(panic::AssertUnwindSafe(|| f(session))) {
-            Ok(future) => future,
-            Err(payload) => {
-                if let Err(err) = self.shutdown().await {
-                    eprintln!("failed to shut down test app after panic: {err}");
-                }
-                panic::resume_unwind(payload);
-            }
+        let mut output = None;
+        let caught = {
+            let mut body = pin!(async { output = Some(f(session).await) });
+            future::poll_fn(|cx| poll_catching_panics(body.as_mut(), cx)).await
         };
 
-        let result = panic::AssertUnwindSafe(future).catch_unwind().await;
-
-        match result {
-            Ok(result) => match (result, self.shutdown().await) {
-                (Ok(value), Ok(())) => Ok(value),
-                (Err(err), Ok(())) => Err(err),
-                (Ok(_), Err(err)) => Err(err),
-                (Err(err), Err(shutdown_err)) => {
-                    eprintln!("failed to shut down test app after test error: {shutdown_err}");
-                    Err(err)
+        match caught {
+            Ok(()) => {
+                let result = output.expect("a body that completed stored its result");
+                match (result, self.shutdown().await) {
+                    (Ok(value), Ok(())) => Ok(value),
+                    (Err(err), Ok(())) => Err(err),
+                    (Ok(_), Err(err)) => Err(err),
+                    (Err(err), Err(shutdown_err)) => {
+                        eprintln!("failed to shut down test app after test error: {shutdown_err}");
+                        Err(err)
+                    }
                 }
-            },
+            }
             Err(payload) => {
                 if let Err(err) = self.shutdown().await {
                     eprintln!("failed to shut down test app after panic: {err}");
@@ -261,6 +266,24 @@ impl Session {
                 "Datastar did not become ready within {DATASTAR_READY_TIMEOUT:?}"
             )))
         }
+    }
+}
+
+/// Poll `body` once, catching a panic it raises.
+///
+/// This must stay non-generic and out of line. A `catch_unwind` instantiated in the caller's crate
+/// is compiled by the caller's codegen backend, and Cranelift ships without unwinding support, so
+/// in a test crate built with it a generic catch would never fire and a failing test would leave
+/// its browser running. Compiled here, the catch frame belongs to this crate.
+#[inline(never)]
+fn poll_catching_panics(
+    body: Pin<&mut (dyn Future<Output = ()> + '_)>,
+    cx: &mut Context<'_>,
+) -> Poll<std::thread::Result<()>> {
+    match panic::catch_unwind(panic::AssertUnwindSafe(|| body.poll(cx))) {
+        Ok(Poll::Pending) => Poll::Pending,
+        Ok(Poll::Ready(())) => Poll::Ready(Ok(())),
+        Err(payload) => Poll::Ready(Err(payload)),
     }
 }
 
