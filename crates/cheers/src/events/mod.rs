@@ -133,6 +133,16 @@ impl EventSender {
         let ev = ev.try_into().map_err(Error::from)?;
         self.tx.send(ev.0).map_err(|_| Error::ReceiverHang)
     }
+
+    /// Resolves once the paired receiver is dropped, as it is when the client disconnects.
+    ///
+    /// A task that only sends when something changes can select on this to stop as soon as its
+    /// client is gone, instead of learning it from the next failed [`EventSender::send`]. A
+    /// disconnect is noticed when the response next writes to the connection, which the SSE
+    /// keep-alive does periodically even while no events are sent.
+    pub async fn closed(&self) {
+        self.tx.closed().await;
+    }
 }
 
 /// Axum SSE panics if it encounters carriage return
@@ -175,4 +185,31 @@ where
     );
 
     read_axum_body(response).await
+}
+
+#[cfg(test)]
+mod tests {
+    use std::time::Duration;
+
+    use axum::response::IntoResponse as _;
+
+    use super::events;
+
+    #[tokio::test]
+    async fn closed_waits_for_the_response_to_be_dropped() {
+        let (tx, rx) = events();
+        let response = rx.into_response();
+
+        assert!(
+            tokio::time::timeout(Duration::from_millis(50), tx.closed())
+                .await
+                .is_err(),
+            "closed resolved while the response was alive"
+        );
+
+        drop(response);
+        tokio::time::timeout(Duration::from_secs(5), tx.closed())
+            .await
+            .expect("closed should resolve once the response is dropped");
+    }
 }
