@@ -373,6 +373,11 @@ impl Debug for Buffer {
 /// a `<script>` body. The implementation must ensure the result is valid JavaScript
 /// and cannot terminate the surrounding script element.
 ///
+/// [`Option`] renders nothing for `None` as HTML or an attribute value, but implements neither
+/// JavaScript context, since no single expression suits both a value and an optional fragment.
+/// Convert it first: give a value a default or sentinel, as in `opt.unwrap_or_default()`, and
+/// render an optional fragment as `opt.ok_or(())`, which renders nothing for `None`.
+///
 /// # Example
 ///
 /// ```
@@ -1127,9 +1132,20 @@ impl<T: Render<ScriptSource>> Render<ScriptSource> for Vec<T> {
     }
 }
 
-impl<T: Render<C>, C: Context> Render<C> for Option<T> {
+// Deliberately no JavaScript impls: rendering nothing breaks values (`{sig:}`), and rendering
+// `null` breaks optional fragments (`null@post(...)`) and deletes Datastar signals.
+impl<T: Render> Render for Option<T> {
     #[inline]
-    fn render_to(&self, buffer: &mut Buffer<C>) {
+    fn render_to(&self, buffer: &mut Buffer) {
+        if let Some(value) = self {
+            value.render_to(buffer);
+        }
+    }
+}
+
+impl<T: Render<AttributeValue>> Render<AttributeValue> for Option<T> {
+    #[inline]
+    fn render_to(&self, buffer: &mut Buffer<AttributeValue>) {
         if let Some(value) = self {
             value.render_to(buffer);
         }

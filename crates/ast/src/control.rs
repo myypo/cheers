@@ -722,7 +722,7 @@ pub struct Async {
     pub else_at_token: Token![@],
     pub else_token: Token![else],
     pub else_block: ControlBlock<ElementNode>,
-    else_block_first_elem_idx: usize,
+    else_block_elem_idx: usize,
 }
 
 impl Parse for Async {
@@ -731,18 +731,8 @@ impl Parse for Async {
         let async_block = input.parse()?;
         let else_at_token = input.parse::<Token![@]>()?;
         let else_token = input.parse::<Token![else]>()?;
-        let mut else_block: ControlBlock<ElementNode> = input.parse()?;
-        let else_block_first_elem_idx = else_block
-            .nodes
-            .0
-            .iter_mut()
-            .position(|n| matches!(n, ElementNode::Element(_)))
-            .ok_or_else(|| {
-                syn::Error::new_spanned(
-                    else_token,
-                    "expected at least a single element in the `else` block of `async`",
-                )
-            })?;
+        let else_block: ControlBlock<ElementNode> = input.parse()?;
+        let else_block_elem_idx = async_fallback_element_idx(&else_block)?;
 
         Ok(Self {
             async_token,
@@ -750,9 +740,56 @@ impl Parse for Async {
             else_at_token,
             else_token,
             else_block,
-            else_block_first_elem_idx,
+            else_block_elem_idx,
         })
     }
+}
+
+fn is_let(node: &ElementNode) -> bool {
+    matches!(
+        node,
+        ElementNode::Control(Control {
+            kind: ControlKind::Let(_),
+            ..
+        })
+    )
+}
+
+fn element_node_span(node: &ElementNode) -> Span {
+    match node {
+        ElementNode::Element(element) => element.name.span(),
+        ElementNode::Component(component) => component.name.span(),
+        ElementNode::Literal(literal) => literal.span(),
+        ElementNode::Control(control) => control.at_token.span,
+        ElementNode::Expr(expr) => expr.paren_token.span.join(),
+        ElementNode::Group(group) => group.brace_token.span.join(),
+    }
+}
+
+/// Finds the one element of an `@async` fallback, which the streamed content replaces.
+///
+/// Anything else rendered beside that element would stay on the page after the content arrives,
+/// so `@let` is the only other node allowed.
+fn async_fallback_element_idx(else_block: &ControlBlock<ElementNode>) -> syn::Result<usize> {
+    let mut rendered = else_block
+        .nodes
+        .0
+        .iter()
+        .enumerate()
+        .filter(|(_, node)| !is_let(node));
+    let offending_span = match (rendered.next(), rendered.next()) {
+        (Some((idx, ElementNode::Element(_))), None) => return Ok(idx),
+        (Some((_, ElementNode::Element(_))), Some((_, node))) | (Some((_, node)), _) => {
+            element_node_span(node)
+        }
+        (None, _) => else_block.brace_token.span.join(),
+    };
+    Err(syn::Error::new(
+        offending_span,
+        "the `@else` block of `@async` must render exactly one HTML element, which the streamed \
+         content replaces; wrap other content in it, as in \
+         `@else { div class=\"slot\" { Spinner; } }`",
+    ))
 }
 
 fn stream_template_start() -> TokenStream {
@@ -962,8 +999,8 @@ impl Async {
             .else_block
             .nodes
             .0
-            .get_mut(self.else_block_first_elem_idx)
-            .expect("the else block to have at least a single element node");
+            .get_mut(self.else_block_elem_idx)
+            .expect("the parser to have found the else block's element");
         if let ElementNode::Element(elem) = elem {
             elem.attrs.push(Attribute::Regular {
                 name: AttributeName::Unchecked(LitStr::new("data-ssr", Span::mixed_site())),
@@ -973,7 +1010,7 @@ impl Async {
                 },
             });
         } else {
-            panic!("the first element node is not an element")
+            panic!("the else block's element node is not an element")
         }
 
         key
@@ -998,15 +1035,7 @@ impl Generate for Async {
             .nodes
             .0
             .iter()
-            .take_while(|node| {
-                matches!(
-                    node,
-                    ElementNode::Control(Control {
-                        kind: ControlKind::Let(_),
-                        ..
-                    })
-                )
-            })
+            .take_while(|node| is_let(node))
             .count();
         let render_nodes = &self.async_block.nodes.0[leading_let_count..];
         let has_nested_async = element_nodes_contain_async(render_nodes);
@@ -1173,6 +1202,40 @@ mod tests {
         );
 
         assert_eq!(async_marker_count(source), 5);
+    }
+
+    #[test]
+    fn async_fallback_must_be_exactly_one_element() {
+        for else_block in [
+            quote!({
+                Spinner;
+            }),
+            quote!({ "Loading" }),
+            quote!({ p { "Loading" } p { "Still loading" } }),
+            quote!({ "Loading" p {} }),
+            quote!({ p {} @if slow { "Hang on" } }),
+        ] {
+            let Err(err) = lazy::<Document>(quote! {
+                @async { p { (load().await) } } @else #else_block
+            }) else {
+                panic!("fallback {else_block} should be rejected");
+            };
+            assert!(
+                err.to_string()
+                    .contains("must render exactly one HTML element"),
+                "{err}"
+            );
+        }
+
+        for else_block in [
+            quote!({ p { "Loading" } }),
+            quote!({ @let label = "Loading"; div class="slot" { Spinner; (label) } }),
+        ] {
+            lazy::<Document>(quote! {
+                @async { p { (load().await) } } @else #else_block
+            })
+            .unwrap_or_else(|err| panic!("fallback {else_block} should be accepted: {err}"));
+        }
     }
 
     #[test]

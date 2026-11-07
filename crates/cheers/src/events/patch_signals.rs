@@ -76,6 +76,9 @@ impl PatchSignals {
     }
 
     /// Sets a signal to a new value.
+    ///
+    /// A value that serializes to `null`, such as `None`, removes the signal just like
+    /// [`remove`](Self::remove), with the same caveat.
     pub fn set<T: Serialize>(mut self, signal: Signal<T>, value: T) -> Self {
         if self.error.is_some() {
             return self;
@@ -93,6 +96,10 @@ impl PatchSignals {
     }
 
     /// Removes a signal by patching `null` at the signal path.
+    ///
+    /// Datastar deletes the signal without notifying what reads it, so elements bound to it keep
+    /// showing the old value, and the next read recreates it as `''`. To clear a value the page
+    /// still displays, [`set`](Self::set) it to a non-null empty or sentinel value instead.
     pub fn remove<T>(mut self, signal: Signal<T>) -> Self {
         if self.error.is_some() {
             return self;

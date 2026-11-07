@@ -11,6 +11,18 @@ fn big_int_in_js_context_is_rejected() {
 }
 
 #[test]
+fn async_fallback_extra_node_is_rejected() {
+    let tests = trybuild::TestCases::new();
+    tests.compile_fail("tests/ui/async_fallback_extra_node.rs");
+}
+
+#[test]
+fn option_in_js_context_is_rejected() {
+    let tests = trybuild::TestCases::new();
+    tests.compile_fail("tests/ui/option_in_js_context.rs");
+}
+
+#[test]
 fn unsupported_ref_expr_is_rejected() {
     let tests = trybuild::TestCases::new();
     tests.compile_fail("tests/ui/unsupported_ref_expr.rs");

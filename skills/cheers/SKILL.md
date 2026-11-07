@@ -37,6 +37,7 @@ impl Render for TodoRow {
 
 - Destructure generated names inside `render_to`: `let TodoRowIds { ... } = self.ids();`, `let TodoRowSignals { ... } = self.signals();`, `let TodoRowFormNames { ... } = self.form_names();` instead of using field access like `ids.whatever`. If some of them end up being unused, remove the generating attribute instead of ignoring the unused values.
 - Use associated helpers outside the component: `TodoRow::id(7)`, `TodoRow::id_input(7)`, `TodoRow::signal_editing(7)`.
+- Build selectors in tests and scripts from those helpers too, e.g. `By::Id(TodoRow::id(7).to_string())`, rather than spelling out generated ids, which change when the struct is renamed.
 - `#[signal]` is client-only by default and is not submitted with Datastar action payloads. Use `#[signal(global)]` only when a handler needs to receive that signal value.
 - Use generated ids for stable patch targets; use `scoped_signal!` for ad-hoc client-only UI state inside a component method.
 - Use `#[prop(default(...))]` with grouped invocation: `Card title="Welcome" [] { ... }` or `[author="myypo"]`.
@@ -141,6 +142,10 @@ Use generated action structs in `!on:*`; do not hardcode generated URLs and sign
 Common attributes: `!bind` for two-way input binding, `!signals` for initial/local values, `!computed` for read-only derived values, `!text`/`!show`/`!attr`/`!class`/`!style` for reactive DOM state, `!indicator` for fetch state, `!init`/`!effect` for side effects, `!preserve_attr` and `!ignore_morph` for morphing edge cases, and `!on:event` for events. Use the cheers crate docs when additional Datastar attribute details are needed.
 
 `!show` additionally requires `initially:`, a Rust `bool` answering the same question for the server-rendered markup, since Datastar only applies `data-show` once it has loaded; both halves of a complementary pair state it, such as `initially: url.is_some()` against `initially: url.is_none()`. It renders `display:none` appended to any `style` the element already has, so that `style` must not set `display` itself.
+
+Datastar signals cannot hold `null`: assigning `null` or `undefined` to a signal, or patching it to `null` with `PatchSignals::remove` or `.set(sig, None)`, deletes it without notifying anything, so bindings keep showing the old value and the next read recreates it as `''`. Use a sentinel such as `false` for "no value" and map it back where the value is sent to the server, as in `$sig === false ? null : $sig`. `Option` does not render in Datastar expressions or `js_script!`: give a value a default or sentinel first, and render an optional fragment as `(fragment.ok_or(()))`.
+
+`!indicator(sig)` is true while any fetch started from its element runs, not only the one meant. When a form carries an indicator (for example to disable its submit button while pending), keep other actions off the form element and put them on the element that triggers them, such as `!on:input` on the input; a form-content-type action there still serializes the closest form.
 
 Use inline `{ ... }` fragments directly in Datastar attributes. Use `datastar_source!` only when the JavaScript fragment needs to be stored, reused, or passed around as a value:
 

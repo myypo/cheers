@@ -1,0 +1,5 @@
+error: the `@else` block of `@async` must render exactly one HTML element, which the streamed content replaces; wrap other content in it, as in `@else { div class="slot" { Spinner; } }`
+ --> tests/ui/async_fallback_extra_node.rs:9:13
+  |
+9 |             "Still loading"
+  |             ^^^^^^^^^^^^^^^
