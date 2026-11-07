@@ -231,7 +231,7 @@ html! {
 - `PatchElements`: when the rendered element has the target id, the default outer morph is enough. Add `.id(generated_id)` / `.selector(...)` only when targeting something other than the rendered element's own id or when one response must target multiple elements. Set `.mode(...)` only for non-default operations such as `Inner`, `Replace`, `Append`, `Prepend`, `Before`, `After`, or `Remove`.
 - `PatchSignals`: `.set(signal, value)`, `.remove(signal)`, `.only_if_missing()` for small values already read by the page.
 - `EventBatch`: return `EventBatch::new().with(...)` for several `PatchElements`, `PatchSignals`, or `ExecuteScript` in one response; `push`/`extend` for conditional or looped events.
-- `EventStream`: create `(tx, stream) = EventStream::channel()`, send events from a spawned task or another source after the handler returns, return `stream`. Do not use it to batch events a handler computes before returning; use `EventBatch`.
+- `EventStream`: long-lived server push; the response ends when its source ends. `EventStream::from_stream(stream)` forwards an existing `Stream` of events. `EventStream::spawn(|tx| async move { tx.send(..)?; Ok::<_, SendError>(()) })` runs a task that is cancelled when the client disconnects; prefer it over `tokio::spawn` + `select!` on `tx.closed()`. `EventStream::channel()` only when several tasks or a server-wide hub hold senders. Do not use it to batch events a handler computes before returning; use `EventBatch`.
 
 # Testing
 
