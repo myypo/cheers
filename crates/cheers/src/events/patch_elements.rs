@@ -2,7 +2,9 @@ use std::fmt::Display;
 
 use axum::response::{IntoResponse, sse};
 
-use super::{DATASTAR_PATCH_ELEMENTS, Event, sanitize_axum_sse_data};
+use super::{
+    DATASTAR_PATCH_ELEMENTS, EncodeError, Event, IntoEvent, sanitize_axum_sse_data, sealed,
+};
 use crate::{
     prelude::{Buffer, ElementId},
     render::Render,
@@ -218,15 +220,17 @@ impl Display for PatchElementsMode {
     }
 }
 
-impl From<PatchElements> for Event {
-    fn from(
-        PatchElements {
+impl sealed::Sealed for PatchElements {}
+
+impl IntoEvent for PatchElements {
+    fn into_event(self) -> Result<Event, EncodeError> {
+        let PatchElements {
             mode,
             selector,
             view_transition,
             components,
-        }: PatchElements,
-    ) -> Self {
+        } = self;
+
         fn add_sse_line(data: &mut String, line: String) {
             if !data.is_empty() {
                 data.push('\n');
@@ -289,7 +293,7 @@ impl From<PatchElements> for Event {
             .event(DATASTAR_PATCH_ELEMENTS)
             .data(sanitize_axum_sse_data(data));
 
-        Self(ev)
+        Ok(Event(ev))
     }
 }
 

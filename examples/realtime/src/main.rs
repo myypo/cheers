@@ -141,9 +141,9 @@ async fn increment_stock(Path(stock_id): Path<String>, ctx: State<Ctx>) -> Patch
 }
 
 #[action(POST)]
-async fn create_subscription(ctx: State<Ctx>) -> EventReceiver {
+async fn create_subscription(ctx: State<Ctx>) -> EventStream {
     println!("creating new subscription");
-    let (tx, rx) = events();
+    let (tx, stream) = EventStream::channel();
     tokio::spawn(async move {
         let mut stocks_rx = ctx.stocks_tx.subscribe();
         while let Ok((id, name, price_cents)) = stocks_rx.recv().await {
@@ -161,7 +161,7 @@ async fn create_subscription(ctx: State<Ctx>) -> EventReceiver {
         }
     });
 
-    rx
+    stream
 }
 
 const MAIN_CSS: CssBundle = include_css!("./main.css");
@@ -335,6 +335,88 @@ mod tests {
         })
         .await
         .expect("increment stock in browser");
+    }
+
+    #[derive(Cheers)]
+    struct Note<'a> {
+        #[id]
+        id: u32,
+        text: &'a str,
+    }
+
+    impl Render for Note<'_> {
+        fn render_to(&self, buffer: &mut Buffer<Element>) {
+            let NoteIds { id } = self.ids();
+            html! {
+                p id=id { (self.text) }
+            }
+            .render_to(buffer);
+        }
+    }
+
+    #[action(POST)]
+    async fn update_notes() -> EventBatch {
+        EventBatch::new()
+            .with(PatchElements::new().element(Note {
+                id: 1,
+                text: "first updated",
+            }))
+            .with(PatchElements::new().element(Note {
+                id: 2,
+                text: "second updated",
+            }))
+    }
+
+    #[tokio::test]
+    async fn event_batch_applies_every_event() {
+        let ctx = Ctx {
+            stocks: Box::leak(Box::new(Mutex::new(BTreeMap::new()))),
+            stocks_tx: tokio::sync::broadcast::channel(1).0,
+        };
+
+        let app = cheers::router::new(
+            Router::new()
+                .route(
+                    "/",
+                    get(|| async {
+                        html! {
+                            Base {
+                                Note id=1 text="first";
+                                Note id=2 text="second";
+                                button type="button" !on:click(UpdateNotesAction) { "Update" }
+                            }
+                        }
+                    }),
+                )
+                .action::<UpdateNotesAction>(),
+            cheers::router::Config::default(),
+        )
+        .expect("create app")
+        .with_state(ctx);
+
+        let app = cheers::test::App::new(app).await.unwrap();
+
+        app.run(|app| async move {
+            app.goto(app.url("/")).await?;
+
+            app.query(By::XPath("//button[text()='Update']"))
+                .and_clickable()
+                .first()
+                .await?
+                .click()
+                .await?;
+
+            for (id, text) in [(1, "first updated"), (2, "second updated")] {
+                app.query(By::Id(Note::id(id).to_string()))
+                    .with_text(text.match_full())
+                    .first()
+                    .await?;
+            }
+
+            Ok(())
+        })
+        .await
+        .expect("apply every event in a batch");
     }
 
     /// Datastar binds the page from an undelayed `setTimeout`; holding it past the load event makes

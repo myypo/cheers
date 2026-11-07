@@ -2,7 +2,9 @@ use axum::response::IntoResponse;
 use serde::Serialize;
 use serde_json::{Map, Value};
 
-use super::{DATASTAR_PATCH_SIGNALS, Error, Event, sanitize_axum_sse_data};
+use super::{
+    DATASTAR_PATCH_SIGNALS, EncodeError, Event, IntoEvent, sanitize_axum_sse_data, sealed,
+};
 use crate::{reference::Signal, signal_path::try_parse_signal_path};
 
 /// A signal patch command that merges JSON values into the client-side signal store.
@@ -141,18 +143,18 @@ fn compose_patch(dst: &mut Value, src: Value) {
     }
 }
 
-impl TryFrom<PatchSignals> for Event {
-    type Error = Error;
+impl sealed::Sealed for PatchSignals {}
 
-    fn try_from(
-        PatchSignals {
+impl IntoEvent for PatchSignals {
+    fn into_event(self) -> Result<Event, EncodeError> {
+        let PatchSignals {
             only_if_missing,
             patch,
             error,
-        }: PatchSignals,
-    ) -> Result<Self, Self::Error> {
+        } = self;
+
         if let Some(error) = error {
-            return Err(Error::InvalidSignalPatch(error));
+            return Err(EncodeError(format!("invalid signal patch: {error}")));
         }
 
         let mut data = String::new();
@@ -176,7 +178,7 @@ impl TryFrom<PatchSignals> for Event {
             .event(DATASTAR_PATCH_SIGNALS)
             .data(data);
 
-        Ok(Self(ev))
+        Ok(Event(ev))
     }
 }
 
@@ -214,7 +216,10 @@ mod tests {
     use serde_json::json;
 
     use super::{super::read_sse_body, *};
-    use crate::{events::events, test_utils::read_axum_body};
+    use crate::{
+        events::{EventStream, SendError},
+        test_utils::read_axum_body,
+    };
 
     #[expect(dead_code)]
     #[derive(Cheers)]
@@ -427,7 +432,7 @@ mod tests {
         );
 
         assert!(
-            Event::try_from(patch).is_err(),
+            patch.into_event().is_err(),
             "`__proto__` signal path segments must be rejected before serializing a patch"
         );
     }
@@ -485,14 +490,14 @@ mod tests {
 
     #[test]
     fn serialization_failures_surface_from_event_sender() {
-        let (tx, _rx) = events();
+        let (tx, _stream) = EventStream::channel();
 
         let error = tx
             .send(PatchSignals::new().set(BrokenCounter::signal_count(), Broken))
             .expect_err("sending an invalid signal patch should fail");
 
         assert!(
-            matches!(error, Error::InvalidSignalPatch(message) if message.contains("broken signal payload"))
+            matches!(error, SendError::Encode(error) if error.to_string().contains("broken signal payload"))
         );
     }
 }

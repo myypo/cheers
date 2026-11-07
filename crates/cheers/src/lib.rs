@@ -9,7 +9,7 @@ mod bundle;
 pub mod components;
 mod context;
 mod custom_event;
-mod events;
+pub mod events;
 mod internal;
 #[cfg(all(feature = "pi-extension", debug_assertions))]
 mod pi_extension;
@@ -50,8 +50,8 @@ pub mod prelude {
         context::{AttributeValue, DatastarSource, Element, ScriptSource},
         custom_event::EventTarget,
         events::{
-            Event, EventReceiver, EventSender, JsScript, PatchElements, PatchElementsMode,
-            PatchSignals, ViewTransition, events,
+            EventBatch, EventSender, EventStream, ExecuteScript, IntoEvent, PatchElements,
+            PatchElementsMode, PatchSignals, ViewTransition,
         },
         include_css, include_js_bundle, include_svg_sprite,
         reference::{ElementId, FormName, Signal},

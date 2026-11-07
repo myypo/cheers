@@ -160,7 +160,7 @@ html! {
 
 In inline Datastar fragments and `datastar_source!`, string literals are raw JavaScript source, interpolated Rust strings render as JS string literals, and signals/action values render in `DatastarSource` context. Keep expressions small; prefer actions/patches/signals over large inline scripts.
 
-Use `js_script!` for JavaScript source that will run from a `<script>` body, such as `JsScript::new(js_script! { ... })`. This context does not HTML-attribute-escape JavaScript operators and escapes interpolated values so they cannot terminate the surrounding `<script>` element. Use `JsScript::dangerously_from_string(...)` only for trusted raw script source.
+Use `js_script!` for JavaScript source that will run from a `<script>` body, such as `ExecuteScript::new(js_script! { ... })`. This context does not HTML-attribute-escape JavaScript operators and escapes interpolated values so they cannot terminate the surrounding `<script>` element. Use `ExecuteScript::dangerously_from_string(...)` only for trusted raw script source.
 
 Suspense:
 
@@ -175,7 +175,7 @@ html! {
 }
 ```
 
-Use `@async` for streamed initial rendering with accessible, layout-stable fallbacks. Use `EventReceiver` for long-lived updates after initial response.
+Use `@async` for streamed initial rendering with accessible, layout-stable fallbacks. Use `EventStream` for long-lived updates after initial response.
 
 # State and app wiring
 
@@ -204,8 +204,8 @@ Choose the smallest layer that works:
 1. Normal navigation: anchor, form submit, redirect.
 2. `#[action]` returning `PatchElements`: default for structural server-rendered HTML updates.
 3. Generated `#[signal]` values or `scoped_signal!`: small client-side state/display values.
-4. `EventReceiver`: multiple/coordinated events or long-lived server push.
-5. `JsScript`: last resort for dynamic/server-pushed imperative code.
+4. `EventBatch`: several events in one action response; `EventStream`: long-lived server push.
+5. `ExecuteScript`: last resort for dynamic/server-pushed imperative code.
 6. Const JS bundle: reusable static client helpers when there is a lot of JS.
 
 Keep backend state authoritative; do not mirror broad backend state into signals by default.
@@ -230,7 +230,8 @@ html! {
 
 - `PatchElements`: when the rendered element has the target id, the default outer morph is enough. Add `.id(generated_id)` / `.selector(...)` only when targeting something other than the rendered element's own id or when one response must target multiple elements. Set `.mode(...)` only for non-default operations such as `Inner`, `Replace`, `Append`, `Prepend`, `Before`, `After`, or `Remove`.
 - `PatchSignals`: `.set(signal, value)`, `.remove(signal)`, `.only_if_missing()` for small values already read by the page.
-- `EventReceiver`: create `(tx, rx) = events()`, send `PatchElements`, `PatchSignals`, or `JsScript`, return `rx`; spawn only for updates continuing after handler return.
+- `EventBatch`: return `EventBatch::new().with(...)` for several `PatchElements`, `PatchSignals`, or `ExecuteScript` in one response; `push`/`extend` for conditional or looped events.
+- `EventStream`: create `(tx, stream) = EventStream::channel()`, send events from a spawned task or another source after the handler returns, return `stream`. Do not use it to batch events a handler computes before returning; use `EventBatch`.
 
 # Testing
 

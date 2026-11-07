@@ -41,9 +41,9 @@ fn invalid_datastar_modifier_is_rejected() {
 }
 
 #[test]
-fn js_script_new_rejects_string() {
+fn execute_script_new_rejects_string() {
     let tests = trybuild::TestCases::new();
-    tests.compile_fail("tests/ui/js_script_new_rejects_string.rs");
+    tests.compile_fail("tests/ui/execute_script_new_rejects_string.rs");
 }
 
 #[test]
