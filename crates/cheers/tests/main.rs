@@ -2641,6 +2641,41 @@ fn data_signals_render_vecs_as_js_arrays() {
 }
 
 #[test]
+fn option_renders_nothing_for_none_in_html_and_attributes() {
+    let none: Option<&str> = None;
+    let some = Some("x");
+
+    let result = html! {
+        p title=(none) { (none) }
+        p title=(some) { (some) }
+    }
+    .render();
+
+    assert_eq!(result.as_inner(), r#"<p title=""></p><p title="x">x</p>"#);
+}
+
+#[test]
+fn optional_datastar_fragment_renders_through_ok_or_unit() {
+    let guard = datastar_source! { "confirm('Sure?') && " };
+    let render = |guard: Option<_>| {
+        html! {
+            button !on:click({ (guard.ok_or(())) "@post('/x')" }) {}
+        }
+        .render()
+        .into_inner()
+    };
+
+    assert_eq!(
+        render(Some(&guard)),
+        r#"<button data-on:click="confirm('Sure?') &amp;&amp; @post('/x')"></button>"#
+    );
+    assert_eq!(
+        render(None),
+        r#"<button data-on:click="@post('/x')"></button>"#
+    );
+}
+
+#[test]
 fn data_style() {
     #[expect(dead_code)]
     #[derive(Cheers)]

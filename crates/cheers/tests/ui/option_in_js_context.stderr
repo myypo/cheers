@@ -1,0 +1,18 @@
+error[E0277]: the trait bound `Option<u32>: Render<DatastarSource>` is not satisfied
+ --> tests/ui/option_in_js_context.rs:5:13
+  |
+5 |       let _ = html! {
+  |  _____________^
+6 | |         div !text(count) {}
+7 | |     };
+  | |_____^ the trait `Render<DatastarSource>` is not implemented for `Option<u32>`
+  |
+help: `Option<T>` implements trait `Render<C>`
+ --> src/render.rs
+  |
+  | impl<T: Render> Render for Option<T> {
+  | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `Render`
+...
+  | impl<T: Render<AttributeValue>> Render<AttributeValue> for Option<T> {
+  | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `Render<AttributeValue>`
+  = note: this error originates in the macro `html` (in Nightly builds, run with -Z macro-backtrace for more info)

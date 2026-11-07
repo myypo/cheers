@@ -752,6 +752,10 @@ pub mod data {
     ///
     /// The signal can be used to show a loading indicator.
     ///
+    /// It tracks every fetch started from its own element, whichever action started it. To track
+    /// only a form's submission, put the form's other actions on the controls that trigger them,
+    /// such as `!on:input` on an input; a form action there still sends the closest form.
+    ///
     /// # Examples
     ///
     /// ```
