@@ -123,35 +123,16 @@ impl IntoResponse for EventBatch {
 #[cfg(test)]
 mod tests {
     use axum::response::IntoResponse as _;
-    use macros::{Cheers, js_script};
-
-    use serde::{Deserialize, Serialize};
+    use macros::js_script;
 
     use super::EventBatch;
     use crate::{
-        events::{ExecuteScript, PatchElements, PatchElementsMode, PatchSignals},
-        render::{Buffer, Render},
+        events::{
+            ExecuteScript, PatchElements, PatchElementsMode, PatchSignals,
+            fixtures::{Broken, BrokenCounter, Counter},
+        },
         test_utils::read_axum_body,
     };
-
-    #[derive(Cheers)]
-    struct Counter {
-        #[id]
-        id: u32,
-        #[signal]
-        count: u32,
-    }
-
-    impl Render for Counter {
-        fn render_to(&self, buffer: &mut Buffer<crate::context::Element>) {
-            let CounterIds { id } = self.ids();
-
-            macros::html! {
-                p id=id { (self.count) }
-            }
-            .render_to(buffer);
-        }
-    }
 
     #[tokio::test]
     async fn sends_every_event_in_order_as_one_stream() {
@@ -213,22 +194,6 @@ mod tests {
 
         assert_eq!(response.status(), axum::http::StatusCode::OK);
         assert_eq!(read_axum_body(response).await, "");
-    }
-
-    #[derive(Deserialize)]
-    struct Broken;
-
-    impl Serialize for Broken {
-        fn serialize<S: serde::Serializer>(&self, _: S) -> Result<S::Ok, S::Error> {
-            Err(serde::ser::Error::custom("broken signal payload"))
-        }
-    }
-
-    #[expect(dead_code)]
-    #[derive(Cheers)]
-    struct BrokenCounter {
-        #[signal]
-        count: Broken,
     }
 
     #[test]

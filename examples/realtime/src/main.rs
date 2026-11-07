@@ -10,6 +10,7 @@ use cheers::{
     prelude::*,
 };
 use rand::Rng;
+use tokio::sync::broadcast::error::RecvError;
 
 #[derive(Clone)]
 struct Ctx {
@@ -143,25 +144,26 @@ async fn increment_stock(Path(stock_id): Path<String>, ctx: State<Ctx>) -> Patch
 #[action(POST)]
 async fn create_subscription(ctx: State<Ctx>) -> EventStream {
     println!("creating new subscription");
-    let (tx, stream) = EventStream::channel();
-    tokio::spawn(async move {
+    EventStream::spawn(|tx| async move {
         let mut stocks_rx = ctx.stocks_tx.subscribe();
-        while let Ok((id, name, price_cents)) = stocks_rx.recv().await {
+        loop {
+            let (id, name, price_cents) = match stocks_rx.recv().await {
+                Ok(update) => update,
+                Err(RecvError::Lagged(skipped)) => {
+                    eprintln!("subscription skipped {skipped} stock updates");
+                    continue;
+                }
+                Err(RecvError::Closed) => return Ok::<_, SendError>(()),
+            };
             let stock = Stock {
                 id: &id,
                 name: &name,
                 price_cents,
             };
-            if let Err(e) = tx.send(PatchElements::new().id(Stock::id(&id)).element(stock)) {
-                eprintln!("error forwarding update to subscription: {e}");
-                break;
-            } else {
-                println!("sent stock update for {id}: {name}");
-            };
+            tx.send(PatchElements::new().id(Stock::id(&id)).element(stock))?;
+            println!("sent stock update for {id}: {name}");
         }
-    });
-
-    stream
+    })
 }
 
 const MAIN_CSS: CssBundle = include_css!("./main.css");

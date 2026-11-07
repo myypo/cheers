@@ -51,7 +51,7 @@ pub mod prelude {
         custom_event::EventTarget,
         events::{
             EventBatch, EventSender, EventStream, ExecuteScript, IntoEvent, PatchElements,
-            PatchElementsMode, PatchSignals, ViewTransition,
+            PatchElementsMode, PatchSignals, SendError, ViewTransition,
         },
         include_css, include_js_bundle, include_svg_sprite,
         reference::{ElementId, FormName, Signal},
