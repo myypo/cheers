@@ -1,18 +1,20 @@
 use axum::response::{IntoResponse, sse};
 
-use super::{DATASTAR_PATCH_ELEMENTS, Event, sanitize_axum_sse_data};
+use super::{
+    DATASTAR_PATCH_ELEMENTS, EncodeError, Event, IntoEvent, sanitize_axum_sse_data, sealed,
+};
 use crate::{
     context::ScriptSource,
     render::{Buffer, Lazy, Render},
 };
 
 /// A JavaScript snippet sent to the client for execution.
-pub struct JsScript {
+pub struct ExecuteScript {
     js: String,
     persist: bool,
 }
 
-impl JsScript {
+impl ExecuteScript {
     /// Creates a new script payload from safely rendered `<script>` source.
     pub fn new<F>(script: Lazy<F, ScriptSource>) -> Self
     where
@@ -28,7 +30,7 @@ impl JsScript {
 
     /// Creates a new script payload from raw JavaScript source.
     ///
-    /// Prefer [`JsScript::new`] with `js_script!` when interpolating dynamic values.
+    /// Prefer [`ExecuteScript::new`] with `js_script!` when interpolating dynamic values.
     ///
     /// # Safety
     ///
@@ -50,14 +52,16 @@ impl JsScript {
     }
 }
 
-impl From<JsScript> for Event {
-    fn from(value: JsScript) -> Self {
-        let lines = sanitize_axum_sse_data(value.js);
+impl sealed::Sealed for ExecuteScript {}
+
+impl IntoEvent for ExecuteScript {
+    fn into_event(self) -> Result<Event, EncodeError> {
+        let lines = sanitize_axum_sse_data(self.js);
         let mut lines = lines.lines();
 
         let mut script = String::new();
         if let Some(s) = lines.next() {
-            if value.persist {
+            if self.persist {
                 script.push_str(&format!("elements <script>{s}"));
             } else {
                 script.push_str(&format!(r#"elements <script data-init="el.remove()">{s}"#,));
@@ -70,11 +74,11 @@ impl From<JsScript> for Event {
         let ev = sse::Event::default()
             .event(DATASTAR_PATCH_ELEMENTS)
             .data(format!("mode append\nselector body\n{script}</script>"));
-        Self(ev)
+        Ok(Event(ev))
     }
 }
 
-impl IntoResponse for JsScript {
+impl IntoResponse for ExecuteScript {
     fn into_response(self) -> axum::response::Response {
         axum::response::Response::builder()
             .header("Content-Type", "text/javascript")
@@ -98,7 +102,7 @@ mod tests {
     async fn works_with_into_response() {
         let s = "console.log('yo')".to_owned();
 
-        let script = JsScript::dangerously_from_string("console.log('yo')");
+        let script = ExecuteScript::dangerously_from_string("console.log('yo')");
         let rx = script.into_response();
 
         let headers = rx.headers();
@@ -117,7 +121,7 @@ mod tests {
     async fn enclosed_in_script_tags_in_sse() {
         let s = r#"history.pushState({}, "", "456");"#.to_owned();
 
-        let script = JsScript::dangerously_from_string(r#"history.pushState({}, "", "456");"#);
+        let script = ExecuteScript::dangerously_from_string(r#"history.pushState({}, "", "456");"#);
         let body = read_sse_body(script).await;
         assert_eq!(
             body,
@@ -131,8 +135,8 @@ mod tests {
     async fn respects_persist_in_sse() {
         let s = r#"history.pushState({}, "", "456");"#.to_owned();
 
-        let script =
-            JsScript::dangerously_from_string(r#"history.pushState({}, "", "456");"#).persist();
+        let script = ExecuteScript::dangerously_from_string(r#"history.pushState({}, "", "456");"#)
+            .persist();
         let body = read_sse_body(script).await;
         assert_eq!(
             body,
@@ -144,7 +148,8 @@ mod tests {
 
     #[tokio::test]
     async fn works_with_multiline_scripts_in_sse() {
-        let script = JsScript::dangerously_from_string("console.log('hi');\nconsole.log('there');");
+        let script =
+            ExecuteScript::dangerously_from_string("console.log('hi');\nconsole.log('there');");
 
         let body = read_sse_body(script).await;
         assert_eq!(
@@ -156,7 +161,7 @@ mod tests {
     #[tokio::test]
     async fn new_renders_script_source() {
         let url = "</script><img>";
-        let script = JsScript::new(js_script! {
+        let script = ExecuteScript::new(js_script! {
             "window.location.assign("
             url
             ");"

@@ -275,7 +275,7 @@ pub fn datastar_source(tokens: proc_macro::TokenStream) -> proc_macro::TokenStre
 /// use cheers::prelude::*;
 ///
 /// let url = "/profile";
-/// let script = JsScript::new(js_script! {
+/// let script = ExecuteScript::new(js_script! {
 ///     "window.location.assign("
 ///     url
 ///     ");"
