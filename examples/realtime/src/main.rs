@@ -421,6 +421,146 @@ mod tests {
         .expect("apply every event in a batch");
     }
 
+    #[action(POST)]
+    async fn sign_in() -> axum::response::Redirect {
+        axum::response::Redirect::to("/hall")
+    }
+
+    #[action(POST)]
+    async fn open_script_url() -> axum::response::Redirect {
+        axum::response::Redirect::to("javascript:window.scriptUrlRan = true")
+    }
+
+    #[action(POST)]
+    async fn show_notes() -> axum::response::Redirect {
+        axum::response::Redirect::to("/#notes")
+    }
+
+    fn navigation_app() -> Router {
+        let ctx = Ctx {
+            stocks: Box::leak(Box::new(Mutex::new(BTreeMap::new()))),
+            stocks_tx: tokio::sync::broadcast::channel(1).0,
+        };
+
+        cheers::router::new(
+            Router::new()
+                .route(
+                    "/",
+                    get(|| async {
+                        html! {
+                            Base {
+                                Note id=1 text="first page";
+                                button type="button" !on:click(SignInAction) { "Sign in" }
+                                button type="button" !on:click(OpenScriptUrlAction) { "Open" }
+                                button type="button" !on:click(ShowNotesAction) { "Notes" }
+                            }
+                        }
+                    }),
+                )
+                .route(
+                    "/hall",
+                    get(|| async {
+                        html! {
+                            Base {
+                                h1 { "Hall" }
+                            }
+                        }
+                    }),
+                )
+                .action::<SignInAction>()
+                .action::<OpenScriptUrlAction>()
+                .action::<ShowNotesAction>(),
+            cheers::router::Config::default(),
+        )
+        .expect("create app")
+        .with_state(ctx)
+    }
+
+    #[tokio::test]
+    async fn a_redirect_from_an_action_navigates_the_browser() {
+        let app = cheers::test::App::new(navigation_app()).await.unwrap();
+
+        app.run(|app| async move {
+            app.goto(app.url("/")).await?;
+
+            app.query(By::XPath("//button[text()='Sign in']"))
+                .and_clickable()
+                .first()
+                .await?
+                .click()
+                .await?;
+
+            app.query(By::XPath("//h1[text()='Hall']")).first().await?;
+            assert_eq!(app.current_url().await?.path(), "/hall");
+            assert!(
+                app.find_all(By::Id(Note::id(1).to_string()))
+                    .await?
+                    .is_empty()
+            );
+
+            Ok(())
+        })
+        .await
+        .expect("navigate after a redirect");
+    }
+
+    #[tokio::test]
+    async fn a_redirect_to_a_script_url_does_not_run_it() {
+        let app = cheers::test::App::new(navigation_app()).await.unwrap();
+
+        app.run(|app| async move {
+            app.goto(app.url("/")).await?;
+
+            app.query(By::XPath("//button[text()='Open']"))
+                .and_clickable()
+                .first()
+                .await?
+                .click()
+                .await?;
+            tokio::time::sleep(Duration::from_millis(500)).await;
+
+            let ran = app
+                .execute("return window.scriptUrlRan === true;", vec![])
+                .await?
+                .convert::<bool>()?;
+            assert!(!ran, "a redirect must not run a javascript: URL");
+            assert_eq!(app.current_url().await?.path(), "/");
+
+            Ok(())
+        })
+        .await
+        .expect("ignore a redirect to a script URL");
+    }
+
+    #[tokio::test]
+    async fn a_redirect_to_the_same_page_with_a_fragment_reloads_it() {
+        let app = cheers::test::App::new(navigation_app()).await.unwrap();
+
+        app.run(|app| async move {
+            app.goto(app.url("/")).await?;
+            app.execute(
+                "document.body.insertAdjacentHTML('beforeend', '<p id=\"stale\"></p>');",
+                vec![],
+            )
+            .await?;
+
+            app.query(By::XPath("//button[text()='Notes']"))
+                .and_clickable()
+                .first()
+                .await?
+                .click()
+                .await?;
+
+            assert!(app.query(By::Id("stale")).not_exists().await?);
+            let url = app.current_url().await?;
+            assert_eq!((url.path(), url.fragment()), ("/", Some("notes")));
+
+            Ok(())
+        })
+        .await
+        .expect("reload the page on a redirect to its own URL");
+    }
+
     /// Datastar binds the page from an undelayed `setTimeout`; holding it past the load event makes
     /// a navigation that does not wait for Datastar observably early.
     const HOLD_DATASTAR_SCRIPT: &str = r#"<script>

@@ -4,6 +4,8 @@ pub use assets::svg_sprite_url;
 pub use assets::{CSS_BUNDLER, SVG_SPRITE_BUNDLER};
 pub(crate) use assets::{css_bundle_url, js_bundle_url, js_url};
 mod compression;
+mod datastar_redirect;
+pub use datastar_redirect::datastar_redirect;
 #[cfg(debug_assertions)]
 mod hot_reload;
 mod redirect_trailing_slash;
@@ -58,6 +60,15 @@ pub(crate) fn live_reload_enabled() -> bool {
     cfg!(debug_assertions) && !LIVE_RELOAD_DISABLED.load(Ordering::Relaxed)
 }
 
+/// Wraps the app's pages and actions with the routes and middleware Cheers needs.
+///
+/// Besides serving the runtime assets under `/cheers`:
+///
+/// - An HTTP redirect answering a Datastar request, such as an action returning axum's
+///   `Redirect::to`, navigates the browser there; see [`datastar_redirect`] for the details and for
+///   redirects from layers added to the returned router.
+/// - A path with a trailing slash redirects to the path without it.
+/// - Responses are compressed when the client accepts it.
 pub fn new<S: Clone + Send + Sync + 'static>(
     actions_and_pages: Router<S>,
     config: Config,
@@ -70,6 +81,9 @@ pub fn new<S: Clone + Send + Sync + 'static>(
         .nest("/cheers", router)
         .merge(actions_and_pages);
 
+    let router = router.layer(axum::middleware::from_fn(
+        datastar_redirect::datastar_redirect,
+    ));
     let router = router.layer(axum::middleware::from_fn(
         redirect_trailing_slash::redirect_trailing_slash,
     ));
