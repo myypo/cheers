@@ -1,0 +1,20 @@
+error[E0308]: mismatched types
+ --> tests/ui/html_value_in_script.rs:5:13
+  |
+5 |       let _ = html! {
+  |  _____________^
+6 | |         script { (markup) }
+7 | |     };
+  | |     ^
+  | |     |
+  | |_____expected `&mut Buffer`, found `&mut Buffer<ScriptSource>`
+  |       arguments to this function are incorrect
+  |
+  = note: expected mutable reference `&mut Buffer<cheers::prelude::Element>`
+             found mutable reference `&mut Buffer<ScriptSource>`
+note: method defined here
+ --> src/render.rs
+  |
+  |     fn render_to(&self, buffer: &mut Buffer<C>);
+  |        ^^^^^^^^^
+  = note: this error originates in the macro `html` (in Nightly builds, run with -Z macro-backtrace for more info)

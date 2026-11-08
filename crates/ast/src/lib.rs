@@ -135,6 +135,9 @@ impl Generate for ElementNode {
 
     fn generate(&mut self, g: &mut Generator<'_>) {
         match self {
+            node @ (Self::Element(_) | Self::Component(_)) if g.in_script_source() => {
+                g.push_markup_in_script_error(control::element_node_span(node), "HTML markup");
+            }
             Self::Element(element) => g.push(element),
             Self::Component(component) => g.push(component),
             Self::Literal(lit) => g.push_escaped_literal(Self::CONTEXT, &lit.lit_str()),
@@ -455,6 +458,33 @@ impl<N: Node> Generate for Nodes<N> {
     }
 }
 
+/// The `type` values the HTML spec runs as a script: JavaScript MIME type essences and `module`.
+fn is_javascript_script_type(value: &str) -> bool {
+    const TYPES: &[&str] = &[
+        "",
+        "module",
+        "application/ecmascript",
+        "application/javascript",
+        "application/x-ecmascript",
+        "application/x-javascript",
+        "text/ecmascript",
+        "text/javascript",
+        "text/javascript1.0",
+        "text/javascript1.1",
+        "text/javascript1.2",
+        "text/javascript1.3",
+        "text/javascript1.4",
+        "text/javascript1.5",
+        "text/jscript",
+        "text/livescript",
+        "text/x-ecmascript",
+        "text/x-javascript",
+    ];
+
+    let value = value.trim_matches(|c: char| c.is_ascii_whitespace());
+    TYPES.iter().any(|t| t.eq_ignore_ascii_case(value))
+}
+
 pub struct Element {
     pub name: UnquotedName,
     pub attrs: Vec<Attribute>,
@@ -525,6 +555,10 @@ impl Generate for Element {
             });
         }
 
+        let script_body_is_javascript = flavour == NodeFlavour::Html
+            && self.name.name() == "script"
+            && self.script_body_is_javascript();
+
         match &mut self.body {
             ElementBody::Normal { children, .. } => {
                 g.push_str(">");
@@ -532,6 +566,10 @@ impl Generate for Element {
                 let child_flavour = flavour.child_flavour(&self.name);
                 if child_flavour != flavour {
                     g.push_with_flavour(child_flavour, |g| g.push(children));
+                } else if script_body_is_javascript && !g.has_context_override() {
+                    // The HTML parser reads a `<script>` body as raw text up to `</script`, and
+                    // decodes no character references there.
+                    g.with_context_override(Context::ScriptSource, |g| g.push(children));
                 } else {
                     g.push(children);
                 }
@@ -548,6 +586,24 @@ impl Generate for Element {
 }
 
 impl Element {
+    /// Whether browsers run this `script` as JavaScript. Any other static `type` makes it a data
+    /// block (JSON-LD, import maps, templates), and a dynamic one can't be known here.
+    fn script_body_is_javascript(&self) -> bool {
+        let type_attr = self.attrs.iter().find_map(|attr| match attr {
+            Attribute::Regular { name, kind } if name.is("type") => Some(kind),
+            _ => None,
+        });
+
+        match type_attr {
+            None | Some(AttributeKind::Empty(None)) => true,
+            Some(AttributeKind::Value {
+                value: AttributeValueNode::Literal(lit),
+                toggle: None,
+            }) => is_javascript_script_type(&lit.lit_str().value()),
+            Some(_) => false,
+        }
+    }
+
     #[cfg(feature = "pi-extension")]
     fn has_regular_attribute(&self, name: &str) -> bool {
         self.attrs.iter().any(|attr| {
@@ -830,6 +886,14 @@ impl AttributeName {
                 data,
             )),
         }
+    }
+
+    fn is(&self, name: &str) -> bool {
+        self.literals()
+            .iter()
+            .map(LitStr::value)
+            .collect::<String>()
+            == name
     }
 
     fn is_style(&self) -> bool {

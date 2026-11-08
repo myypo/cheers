@@ -75,3 +75,15 @@ fn datastar_event_does_not_ambiguous_glob_import() {
     let tests = trybuild::TestCases::new();
     tests.pass("tests/ui/datastar_event_does_not_ambiguous_glob_import.rs");
 }
+
+#[test]
+fn markup_in_script_is_rejected() {
+    let tests = trybuild::TestCases::new();
+    tests.compile_fail("tests/ui/markup_in_script.rs");
+}
+
+#[test]
+fn html_value_in_script_is_rejected() {
+    let tests = trybuild::TestCases::new();
+    tests.compile_fail("tests/ui/html_value_in_script.rs");
+}
