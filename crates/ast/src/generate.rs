@@ -14,23 +14,32 @@ use super::{
 };
 use crate::validation;
 
+/// Escapes `</script`, which would end the element, and `<!--`, which together with a later
+/// `<script` puts the HTML tokenizer in a state where `</script>` no longer ends it.
 fn escape_script_source_literal(value: &str) -> std::borrow::Cow<'_, str> {
     let bytes = value.as_bytes();
-    let script_end = b"</script";
     let mut i = 0;
     let mut start = 0;
     let mut escaped = None::<String>;
 
-    while i + script_end.len() <= bytes.len() {
-        if bytes[i] == b'<'
-            && bytes[i + 1] == b'/'
-            && bytes[i + 2..i + script_end.len()].eq_ignore_ascii_case(b"script")
+    while i < bytes.len() {
+        let rest = &bytes[i..];
+        let replacement = if rest.starts_with(b"<!--") {
+            Some(("\\x3C!--", 4))
+        } else if rest.len() >= 8
+            && rest.starts_with(b"</")
+            && rest[2..8].eq_ignore_ascii_case(b"script")
         {
-            let escaped = escaped.get_or_insert_with(|| String::with_capacity(value.len() + 1));
+            Some(("<\\/", 2))
+        } else {
+            None
+        };
+
+        if let Some((replacement, len)) = replacement {
+            let escaped = escaped.get_or_insert_with(|| String::with_capacity(value.len() + 4));
             escaped.push_str(&value[start..i]);
-            escaped.push_str("<\\/");
-            escaped.push_str(&value[i + 2..i + script_end.len()]);
-            i += script_end.len();
+            escaped.push_str(replacement);
+            i += len;
             start = i;
         } else {
             i += 1;
@@ -541,6 +550,31 @@ impl<'a> Generator<'a> {
                 #buffer_expr
             );
         });
+    }
+
+    pub const fn has_context_override(&self) -> bool {
+        self.context_override.is_some()
+    }
+
+    pub const fn in_element_context(&self) -> bool {
+        matches!(self.context, Context::Element) && self.context_override.is_none()
+    }
+
+    pub const fn in_script_source(&self) -> bool {
+        matches!(self.context_override, Some(Context::ScriptSource))
+    }
+
+    pub fn push_markup_in_script_error(&mut self, span: Span, what: &str) {
+        self.push_diagnostic(
+            Error::new(
+                span,
+                format!(
+                    "{what} cannot appear in JavaScript source, such as a `script` body or \
+                     `js_script!`. Write the JavaScript as string literals and `(values)`."
+                ),
+            )
+            .to_compile_error(),
+        );
     }
 
     pub fn push_js_value_node(&mut self, node: &mut AttributeValueNode) {

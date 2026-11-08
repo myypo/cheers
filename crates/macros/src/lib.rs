@@ -157,6 +157,12 @@ pub fn cheers_derive(item: proc_macro::TokenStream) -> proc_macro::TokenStream {
 /// `html!` captures interpolated values by value. Use `(@&expr)` in expression positions when
 /// you want to borrow instead and keep using the original value after the macro invocation.
 ///
+/// The body of an HTML `script` element that browsers run as JavaScript (no `type`, `module`, or a
+/// JavaScript MIME type) renders in the `ScriptSource` context, as in `js_script!`: string literals
+/// are raw source, interpolated strings become JavaScript string literals, and `js_script!` output
+/// can be interpolated directly. Elements, components and `@async` are rejected there. A `script`
+/// with any other `type` is a data block and renders its body as HTML text.
+///
 /// # Example
 ///
 /// ```ignore
@@ -171,6 +177,13 @@ pub fn cheers_derive(item: proc_macro::TokenStream) -> proc_macro::TokenStream {
 /// };
 ///
 /// assert_eq!(page.render().into_inner(), "<section><h1>Hello</h1><p>Ferris</p></section>");
+///
+/// let url = "/profile";
+/// let redirect = html! {
+///     script { (js_script! { "location.assign(" url ")" }) }
+/// };
+///
+/// assert_eq!(redirect.render().into_inner(), "<script>location.assign('/profile')</script>");
 /// ```
 pub fn html(tokens: proc_macro::TokenStream) -> proc_macro::TokenStream {
     expand_document_lazy(tokens, NodeFlavour::Html)
@@ -263,7 +276,8 @@ pub fn datastar_source(tokens: proc_macro::TokenStream) -> proc_macro::TokenStre
 }
 
 #[proc_macro]
-/// Builds JavaScript source for a `<script>` body.
+/// Builds JavaScript source for a `<script>` body: interpolate it into `script { .. }` in `html!`,
+/// or send it with `ExecuteScript::new`.
 ///
 /// Unlike `datastar_source!`, this macro does not HTML-attribute-escape JavaScript operators such as
 /// `<`. Interpolated string-like values are emitted as JavaScript string literals and escaped so

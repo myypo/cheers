@@ -1,0 +1,29 @@
+error: HTML markup cannot appear in JavaScript source, such as a `script` body or `js_script!`. Write the JavaScript as string literals and `(values)`.
+  --> tests/ui/markup_in_script.rs:16:13
+   |
+16 |             b { "bold" }
+   |             ^
+
+error: HTML markup cannot appear in JavaScript source, such as a `script` body or `js_script!`. Write the JavaScript as string literals and `(values)`.
+  --> tests/ui/markup_in_script.rs:17:13
+   |
+17 |             Greeting;
+   |             ^^^^^^^^
+
+error: `@async` streams HTML, so it cannot appear in attribute values or JavaScript source, such as a `script` body or `js_script!`.
+  --> tests/ui/markup_in_script.rs:18:14
+   |
+18 |             @async {
+   |              ^^^^^
+
+error: `@async` streams HTML, so it cannot appear in attribute values or JavaScript source, such as a `script` body or `js_script!`.
+  --> tests/ui/markup_in_script.rs:26:10
+   |
+26 |         @async { "later" } @else { div {} }
+   |          ^^^^^
+
+error: `@async` streams HTML, so it cannot appear in attribute values or JavaScript source, such as a `script` body or `js_script!`.
+  --> tests/ui/markup_in_script.rs:29:10
+   |
+29 |         @async { script { "a" } } @else { div {} }
+   |          ^^^^^

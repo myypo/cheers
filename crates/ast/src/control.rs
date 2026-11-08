@@ -755,7 +755,7 @@ fn is_let(node: &ElementNode) -> bool {
     )
 }
 
-fn element_node_span(node: &ElementNode) -> Span {
+pub(crate) fn element_node_span(node: &ElementNode) -> Span {
     match node {
         ElementNode::Element(element) => element.name.span(),
         ElementNode::Component(component) => component.name.span(),
@@ -1021,6 +1021,18 @@ impl Generate for Async {
     const CONTEXT: Context = ElementNode::CONTEXT;
 
     fn generate(&mut self, g: &mut Generator<'_>) {
+        if !g.in_element_context() {
+            g.push_diagnostic(
+                syn::Error::new(
+                    self.async_token.span,
+                    "`@async` streams HTML, so it cannot appear in attribute values or \
+                     JavaScript source, such as a `script` body or `js_script!`.",
+                )
+                .to_compile_error(),
+            );
+            return;
+        }
+
         g.mark_async();
         // Code in a shared closure cannot move its captures, so a block there is built ahead of
         // rendering unless it runs once per loop iteration or uses template bindings, which do not

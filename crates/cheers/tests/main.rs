@@ -3016,6 +3016,144 @@ fn js_script_macro_interpolated_string_is_script_safe_js_string_literal() {
 }
 
 #[test]
+fn script_body_literals_are_raw_script_source() {
+    let rendered = html! {
+        script { "if (a < b && c) { run(() => '&amp;') }" }
+    }
+    .render()
+    .into_inner();
+
+    assert_eq!(
+        rendered,
+        "<script>if (a < b && c) { run(() => '&amp;') }</script>"
+    );
+}
+
+#[test]
+fn script_body_literals_cannot_close_script_element() {
+    let rendered = html! {
+        script { "console.log('</SCRIPT>');" }
+    }
+    .render()
+    .into_inner();
+
+    assert_eq!(rendered, "<script>console.log('<\\/SCRIPT>');</script>");
+}
+
+#[test]
+fn script_body_accepts_js_script() {
+    let url = "/done?a=1&b=</script>";
+    let script = js_script! { "window.location.assign(" url ");" };
+
+    let rendered = html! {
+        script type="module" { (script) }
+    }
+    .render()
+    .into_inner();
+
+    assert_eq!(
+        rendered,
+        "<script type=\"module\">window.location.assign('/done?a=1&b=\\x3C/script>');</script>"
+    );
+}
+
+#[test]
+fn script_body_interpolates_values_as_javascript() {
+    let name = "Ferris's <b>";
+    let count = 3;
+    let ready = true;
+
+    let rendered = html! {
+        script {
+            "greet(" (name) ", " (count) ");"
+            @if ready { " start();" }
+        }
+    }
+    .render()
+    .into_inner();
+
+    assert_eq!(
+        rendered,
+        "<script>greet('Ferris\\'s \\x3Cb>', 3); start();</script>"
+    );
+}
+
+#[test]
+fn script_body_accepts_raw_script() {
+    // XSS SAFETY: static test script
+    let raw = RawScript::dangerously_create("a && b");
+
+    let rendered = html! {
+        script { (raw) }
+    }
+    .render()
+    .into_inner();
+
+    assert_eq!(rendered, "<script>a && b</script>");
+}
+
+#[test]
+fn script_body_literals_cannot_open_an_escaped_script_comment() {
+    let rendered = html! {
+        script { "s = '<!--<script>';" }
+    }
+    .render()
+    .into_inner();
+
+    assert_eq!(rendered, "<script>s = '\\x3C!--<script>';</script>");
+}
+
+#[test]
+fn script_body_is_javascript_for_javascript_types() {
+    let name = "Ferris";
+
+    let rendered = html! {
+        script type="module" { "greet(" (name) ");" }
+        script type=" Text/JavaScript " { "a && b" }
+        r#script { "a && b" }
+    }
+    .render()
+    .into_inner();
+
+    assert_eq!(
+        rendered,
+        "<script type=\"module\">greet('Ferris');</script>\
+         <script type=\" Text/JavaScript \">a && b</script>\
+         <script>a && b</script>"
+    );
+}
+
+#[test]
+fn script_body_of_a_data_block_stays_markup() {
+    let json = r#"{"name":"a<b"}"#;
+    let kind = "module";
+
+    let rendered = html! {
+        script type="application/ld+json" { (json) }
+        script type=(kind) { "a && b" }
+    }
+    .render()
+    .into_inner();
+
+    assert_eq!(
+        rendered,
+        "<script type=\"application/ld+json\">{\"name\":\"a&lt;b\"}</script>\
+         <script type=\"module\">a &amp;&amp; b</script>"
+    );
+}
+
+#[test]
+fn script_body_in_svg_stays_markup() {
+    let rendered = html! {
+        svg { script { "a < b" } }
+    }
+    .render()
+    .into_inner();
+
+    assert_eq!(rendered, "<svg><script>a &lt; b</script></svg>");
+}
+
+#[test]
 fn signal_id() {
     #[derive(Cheers)]
     #[expect(dead_code)]
