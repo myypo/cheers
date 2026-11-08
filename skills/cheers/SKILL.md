@@ -160,6 +160,8 @@ html! {
 
 In inline Datastar fragments and `datastar_source!`, string literals are raw JavaScript source, interpolated Rust strings render as JS string literals, and signals/action values render in `DatastarSource` context. Keep expressions small; prefer actions/patches/signals over large inline scripts.
 
+To run several expressions from one attribute, join them inside the fragment, never by pushing a separator through `dangerously_get_string()`: `!on:click({ (SaveAction) ";" (track) })`, or, when the second part is optional, `datastar_source! { (save) @if let Some(track) = track { ";" (track) } }`.
+
 When the same `!attr` or `!style` entries go on several elements, build them once with `datastar_object!`, which takes the same `key: value` entries, and spread it with `..`. Later entries override spread keys. Only `datastar_object!` values can be spread, and a spread can't be conditional. In these entries and in `!computed`, every value must render something: an `@if` needs an `@else`, and an interpolated value must not be empty, which the macro can't check:
 
 ```rust
