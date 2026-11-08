@@ -2730,6 +2730,48 @@ fn security_repro_dynamic_datastar_attr_key_should_be_quoted() {
 }
 
 #[test]
+fn datastar_object_spreads_into_several_attributes() {
+    let label = "Save \"draft\"";
+    let busy = datastar_object! {
+        "disabled": "$saving",
+        "aria-busy": "$saving",
+        "aria-label": label,
+    };
+
+    let rendered = html! {
+        button !attr(..(@&busy)) {}
+        button !attr(..(@&busy), "disabled": { "$saving || !$valid" }) {}
+    }
+    .render()
+    .into_inner();
+
+    assert_eq!(
+        rendered,
+        concat!(
+            r#"<button data-attr="{...{'disabled':$saving,'aria-busy':$saving,'aria-label':'Save &quot;draft&quot;'}}"></button>"#,
+            r#"<button data-attr="{...{'disabled':$saving,'aria-busy':$saving,'aria-label':'Save &quot;draft&quot;'},'disabled':$saving || !$valid}"></button>"#,
+        )
+    );
+}
+
+#[test]
+fn datastar_object_spreads_into_style_and_nests() {
+    let base = datastar_object! { "color": "'red'" };
+    let wide = datastar_object! { ..base, "width": "'100%'" };
+
+    let rendered = html! {
+        pre !style(..wide) {}
+    }
+    .render()
+    .into_inner();
+
+    assert_eq!(
+        rendered,
+        r#"<pre data-style="{...{...{'color':'red'},'width':'100%'}}"></pre>"#
+    );
+}
+
+#[test]
 fn control_flow_inside_js_attributes_uses_js_context() {
     #[expect(dead_code)]
     #[derive(Cheers)]

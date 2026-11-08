@@ -7,7 +7,7 @@ mod scoped_signal;
 mod shared;
 
 use ast::{
-    AttributeValueNode, DatastarSourceNodes, Document, Nodes, ScriptSourceNodes,
+    AttributeValueNode, DatastarObject, DatastarSourceNodes, Document, Nodes, ScriptSourceNodes,
     generate::{NodeFlavour, XmlFlavour},
 };
 use syn::{ItemStruct, parse_macro_input};
@@ -273,6 +273,35 @@ pub fn attribute(tokens: proc_macro::TokenStream) -> proc_macro::TokenStream {
 /// ```
 pub fn datastar_source(tokens: proc_macro::TokenStream) -> proc_macro::TokenStream {
     expand_datastar_source_lazy(tokens)
+}
+
+#[proc_macro]
+/// Builds a `cheers::datastar_object::DatastarObject` from the same `key: value` entries as
+/// `!attr(..)` and `!style(..)`, so one set of entries can be stored and spread into several
+/// attributes with `..`. Entries after a spread override its keys.
+///
+/// # Example
+///
+/// ```ignore
+/// use cheers::prelude::*;
+///
+/// let busy = datastar_object! {
+///     "disabled": (@&signal_saving),
+///     "aria-busy": (@&signal_saving),
+/// };
+///
+/// html! {
+///     button !attr(..(@&busy)) { "Save" }
+///     button !attr(..(@&busy), "disabled": { (@&signal_saving) " || !" (@&signal_valid) }) {
+///         "Publish"
+///     }
+/// };
+/// ```
+pub fn datastar_object(tokens: proc_macro::TokenStream) -> proc_macro::TokenStream {
+    ast::generate::lazy::<DatastarObject>(tokens.into())
+        .map(|lazy| quote::quote!(::cheers::datastar_object::DatastarObject::__new(#lazy)))
+        .unwrap_or_else(|err| err.to_compile_error())
+        .into()
 }
 
 #[proc_macro]

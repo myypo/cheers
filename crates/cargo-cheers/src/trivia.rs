@@ -228,6 +228,33 @@ impl Trivia {
         Some(self.comments[idx].comment.clone())
     }
 
+    /// Like [`Self::take_trailing_comment`], but also takes a comment after a `,` that follows
+    /// `loc`, so a list entry keeps its comment whether or not the comma is written yet.
+    pub fn take_trailing_comment_after_comma(
+        &mut self,
+        source: &Rope,
+        loc: LineColumn,
+    ) -> Option<Comment> {
+        let loc_byte = Self::line_column_to_byte(source, loc)?;
+        let loc_line = source.line_of_byte(loc_byte);
+
+        let (idx, _) = self
+            .comments
+            .iter()
+            .enumerate()
+            .filter(|(_, comment)| !comment.consumed && comment.start >= loc_byte)
+            .filter(|(_, comment)| source.line_of_byte(comment.start) == loc_line)
+            .filter(|(_, comment)| {
+                let gap = source.byte_slice(loc_byte..comment.start).to_string();
+                let gap = gap.trim_start();
+                gap.strip_prefix(',').unwrap_or(gap).trim().is_empty()
+            })
+            .min_by_key(|(_, comment)| comment.start)?;
+
+        self.comments[idx].consumed = true;
+        Some(self.comments[idx].comment.clone())
+    }
+
     pub fn take_comments_in_delim(&mut self, source: &Rope, span: DelimSpan) -> Vec<Comment> {
         self.take_located_comments_in_delim(source, span)
             .into_iter()

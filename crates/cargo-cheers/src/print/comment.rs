@@ -165,7 +165,7 @@ impl<'a, 'b> Printer<'a, 'b> {
         }
     }
 
-    fn write_comment(&mut self, comment: &Comment) {
+    pub(super) fn write_comment(&mut self, comment: &Comment) {
         let raw = comment.raw.trim_end();
 
         if let Some(rest) = raw.strip_prefix("//") {

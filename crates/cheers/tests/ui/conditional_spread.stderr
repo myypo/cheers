@@ -1,0 +1,11 @@
+error: `..` takes a `datastar_object!` value, such as `..busy` or `..(@&busy)`, and cannot be conditional
+ --> tests/ui/conditional_spread.rs:6:36
+  |
+6 |     let _ = html! { button !attr(..@if show { (busy) }) {} };
+  |                                    ^
+
+error: wrap a borrowed spread in parentheses: `..(@&busy)`
+ --> tests/ui/conditional_spread.rs:7:36
+  |
+7 |     let _ = html! { button !attr(..@&busy) {} };
+  |                                    ^

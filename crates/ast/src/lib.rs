@@ -10,7 +10,7 @@ use std::marker::PhantomData;
 
 pub use basics::UnquotedName;
 use proc_macro2::{Span, TokenStream};
-use quote::{ToTokens, quote};
+use quote::{ToTokens, quote, quote_spanned};
 use syn::{
     Error, Expr, Ident, LitBool, LitChar, LitFloat, LitInt, LitStr, Token, braced, bracketed,
     ext::IdentExt,
@@ -24,7 +24,7 @@ pub use validation::table_checks as validation_table_checks;
 use self::{
     basics::Literal,
     component::Component,
-    control::Control,
+    control::{Control, ControlIfOrBlock, ControlKind, If, MatchNodeArmBody},
     generate::{
         AnyBlock, AttributeNameCheck, AttributeNameCheckKind, ElementCheck, ElementKind, Generate,
         Generator, NodeFlavour,
@@ -1018,6 +1018,83 @@ impl Node for AttributeValueNode {
     }
 }
 
+impl AttributeValueNode {
+    fn child_nodes(&self) -> Vec<&Self> {
+        fn if_nodes<'a>(node: &'a If<AttributeValueNode>, out: &mut Vec<&'a AttributeValueNode>) {
+            out.extend(&node.then_block.nodes.0);
+            match node.else_branch.as_ref().map(|(_, _, branch)| &**branch) {
+                None => {}
+                Some(ControlIfOrBlock::If(else_if)) => if_nodes(else_if, out),
+                Some(ControlIfOrBlock::Block(block)) => out.extend(&block.nodes.0),
+            }
+        }
+
+        match self {
+            Self::Group(group) => group.nodes.0.iter().collect(),
+            Self::Control(control) => match &control.kind {
+                ControlKind::If(node) => {
+                    let mut out = Vec::new();
+                    if_nodes(node, &mut out);
+                    out
+                }
+                ControlKind::For(for_) => for_.block.nodes.0.iter().collect(),
+                ControlKind::While(while_) => while_.block.nodes.0.iter().collect(),
+                ControlKind::Match(match_) => match_
+                    .arms
+                    .iter()
+                    .flat_map(|arm| match &arm.body {
+                        MatchNodeArmBody::Block(block) => block.nodes.0.iter().collect(),
+                        MatchNodeArmBody::Node(node) => vec![node],
+                    })
+                    .collect(),
+                ControlKind::Let(_) | ControlKind::Async(_) => Vec::new(),
+            },
+            Self::Literal(_) | Self::Expr(_) | Self::Ident(_) => Vec::new(),
+        }
+    }
+
+    fn find_async(&self) -> Option<Span> {
+        match self {
+            Self::Control(Control {
+                at_token,
+                kind: ControlKind::Async(_),
+            }) => Some(at_token.span),
+            _ => self.child_nodes().into_iter().find_map(Self::find_async),
+        }
+    }
+
+    /// Whether the node can render no output at all, such as an `@if` without `@else`.
+    fn may_render_empty(&self) -> bool {
+        fn nodes(nodes: &Nodes<AttributeValueNode>) -> bool {
+            nodes.0.iter().all(AttributeValueNode::may_render_empty)
+        }
+
+        fn if_(node: &If<AttributeValueNode>) -> bool {
+            nodes(&node.then_block.nodes)
+                || match node.else_branch.as_ref().map(|(_, _, branch)| &**branch) {
+                    None => true,
+                    Some(ControlIfOrBlock::If(else_if)) => if_(else_if),
+                    Some(ControlIfOrBlock::Block(block)) => nodes(&block.nodes),
+                }
+        }
+
+        match self {
+            Self::Literal(lit) => lit.lit_str().value().trim().is_empty(),
+            Self::Group(group) => nodes(&group.nodes),
+            Self::Control(control) => match &control.kind {
+                ControlKind::Let(_) | ControlKind::For(_) | ControlKind::While(_) => true,
+                ControlKind::If(node) => if_(node),
+                ControlKind::Match(match_) => match_.arms.iter().any(|arm| match &arm.body {
+                    MatchNodeArmBody::Block(block) => nodes(&block.nodes),
+                    MatchNodeArmBody::Node(node) => node.may_render_empty(),
+                }),
+                ControlKind::Async(_) => false,
+            },
+            Self::Expr(_) | Self::Ident(_) => false,
+        }
+    }
+}
+
 impl SyntaxStatic for AttributeValueNode {
     fn is_static(&self) -> bool {
         match self {
@@ -1146,6 +1223,153 @@ impl<V: Parse> Parse for DataExprValue<V> {
                 input.parse()?
             },
         })
+    }
+}
+
+/// An entry of an object-valued Datastar attribute (`!attr`, `!style`) or of `datastar_object!`.
+#[allow(clippy::large_enum_variant)]
+pub enum KvEntry {
+    Pair(DataExprValue<AttributeValueNode>),
+    /// `..value` spreads a `datastar_object!` value. Entries after it override its keys, as in a
+    /// JavaScript object literal.
+    Spread {
+        dot2_token: Token![..],
+        value: DataExpr,
+    },
+}
+
+impl Parse for KvEntry {
+    fn parse(input: ParseStream) -> syn::Result<Self> {
+        if input.peek(Token![...]) {
+            return Err(input.error("spread an object with `..`, not `...`"));
+        }
+
+        if !input.peek(Token![..]) {
+            return parse_js_object_pair(input).map(Self::Pair);
+        }
+
+        let dot2_token = input.parse()?;
+        if input.peek(Token![@]) && input.peek2(Token![&]) {
+            return Err(input.error("wrap a borrowed spread in parentheses: `..(@&busy)`"));
+        }
+        if input.peek(Token![@]) {
+            return Err(input.error(
+                "`..` takes a `datastar_object!` value, such as `..busy` or `..(@&busy)`, \
+                 and cannot be conditional",
+            ));
+        }
+
+        Ok(Self::Spread {
+            dot2_token,
+            value: input.parse()?,
+        })
+    }
+}
+
+impl KvEntry {
+    fn is_static(&self) -> bool {
+        match self {
+            Self::Pair(pair) => {
+                pair.ident.paren_token.is_none()
+                    && matches!(pair.ident.expr, Expr::Lit(_))
+                    && pair.value.is_static()
+            }
+            Self::Spread { .. } => false,
+        }
+    }
+}
+
+pub type KvEntries = Punctuated<KvEntry, Token![,]>;
+
+/// Parses a `key: value` entry of a JavaScript object, rejecting values whose template can render
+/// nothing and so leave `key:` without a value. What an interpolated `(expr)` renders is not
+/// known here, so an empty one still breaks the object.
+fn parse_js_object_pair(input: ParseStream) -> syn::Result<DataExprValue<AttributeValueNode>> {
+    const ASYNC_ERROR: &str = "`@async` cannot be used in a Datastar object value";
+
+    let ident = input.parse()?;
+    input.parse::<Token![:]>()?;
+    if input.peek(Token![@]) && input.peek2(Token![async]) {
+        return Err(input.error(ASYNC_ERROR));
+    }
+    let span = input.span();
+    let value: AttributeValueNode = input.parse()?;
+
+    if let Some(span) = value.find_async() {
+        return Err(Error::new(span, ASYNC_ERROR));
+    }
+    if value.may_render_empty() {
+        return Err(Error::new(
+            span,
+            "this value can render nothing, which leaves its key without a JavaScript value; \
+             give every branch some output, such as `@else { \"null\" }`",
+        ));
+    }
+
+    Ok(DataExprValue { ident, value })
+}
+
+fn generate_kv_object(g: &mut Generator<'_>, entries: &mut KvEntries) {
+    g.push_str("{");
+    for (idx, entry) in entries.iter_mut().enumerate() {
+        if idx > 0 {
+            g.push_str(",");
+        }
+
+        match entry {
+            KvEntry::Pair(pair) => {
+                match pair.ident.mode {
+                    ParenExprMode::Normal => {
+                        g.push_expr(
+                            pair.ident.paren_token(),
+                            Context::DatastarSource,
+                            &pair.ident.expr,
+                        );
+                    }
+                    ParenExprMode::Ref => {
+                        let ident_ref = pair.ident.borrowed_expr(g);
+                        g.push_expr(Paren::default(), Context::DatastarSource, ident_ref);
+                    }
+                }
+                g.push_str(":");
+                g.push_js_value_node(&mut pair.value);
+            }
+            KvEntry::Spread { value, .. } => {
+                g.push_str("...");
+                let span = syn::spanned::Spanned::span(&value.expr);
+                let value = value.borrowed_expr(g);
+                g.push_expr(
+                    Paren::default(),
+                    Context::DatastarSource,
+                    quote_spanned!(span=> ::cheers::__internal::__spread(#value)),
+                );
+            }
+        }
+    }
+    g.push_str("}");
+}
+
+/// The input of `datastar_object!`: the entries of `!attr(..)`, rendered as a JavaScript object.
+/// The macro wraps the output in `DatastarObject`, the only type `..` accepts.
+pub struct DatastarObject(pub KvEntries);
+
+impl Parse for DatastarObject {
+    fn parse(input: ParseStream) -> syn::Result<Self> {
+        KvEntries::parse_terminated(input).map(Self)
+    }
+}
+
+impl SyntaxStatic for DatastarObject {
+    fn is_static(&self) -> bool {
+        self.0.iter().all(KvEntry::is_static)
+    }
+}
+
+impl Generate for DatastarObject {
+    const CONTEXT: Context = Context::DatastarSource;
+
+    fn generate(&mut self, g: &mut Generator<'_>) {
+        generate_kv_object(g, &mut self.0);
     }
 }
 
@@ -1322,7 +1546,7 @@ impl Parse for DataModifiers {
 pub enum DataContent {
     Node(AttributeValueNode),
     Signals(Punctuated<DataExprValue<Expr>, Token![,]>),
-    Kv(Punctuated<DataExprValue<AttributeValueNode>, Token![,]>),
+    Kv(KvEntries),
     Computed(Punctuated<DataExprValue<AttributeValueNode>, Token![,]>),
     Bind(DataExpr),
     /// `!show(expr, initially: bool)`.
@@ -1431,15 +1655,10 @@ impl DataParseKind {
                 DataExprValue<Expr>,
                 Token![,],
             >::parse_terminated(input)?)),
-            Self::Kv => Ok(DataContent::Kv(Punctuated::<
-                DataExprValue<AttributeValueNode>,
-                Token![,],
-            >::parse_terminated(input)?)),
-            Self::Computed => Ok(DataContent::Computed(Punctuated::<
-                DataExprValue<AttributeValueNode>,
-                Token![,],
-            >::parse_terminated(
-                input
+            Self::Kv => Ok(DataContent::Kv(KvEntries::parse_terminated(input)?)),
+            Self::Computed => Ok(DataContent::Computed(Punctuated::parse_terminated_with(
+                input,
+                parse_js_object_pair,
             )?)),
             Self::Bind => Ok(DataContent::Bind(input.parse()?)),
             Self::Node => Ok(DataContent::Node(input.parse()?)),
@@ -1505,6 +1724,8 @@ impl Parse for Data {
         let paren_token = parenthesized!(data in input);
 
         if recovery_error.is_some() {
+            // syn reports leftover tokens in `data` instead of `recovery_error` unless consumed.
+            data.parse::<TokenStream>()?;
             return Ok(Self {
                 namespace,
                 name,
@@ -1519,6 +1740,8 @@ impl Parse for Data {
         let content = match parse_kind.parse_content(&data) {
             Ok(content) => content,
             Err(err) => {
+                // syn reports leftover tokens in `data` instead of `err` unless they are consumed.
+                data.parse::<TokenStream>()?;
                 recovery_error = Some(err);
                 DataContent::Recovered
             }
@@ -1614,36 +1837,11 @@ impl Generate for Data {
                 g.push_str("}");
                 g.push_str("\"");
             }
-            DataContent::Kv(styles) => {
+            DataContent::Kv(entries) => {
                 g.push_str(" data-");
                 g.push_literals(name_literals);
                 g.push_str("=\"");
-                g.push_str("{");
-                let mut first = true;
-                for d in styles {
-                    if !first {
-                        g.push_str(",");
-                    } else {
-                        first = false;
-                    }
-
-                    match d.ident.mode {
-                        ParenExprMode::Normal => {
-                            g.push_expr(
-                                d.ident.paren_token(),
-                                Context::DatastarSource,
-                                &d.ident.expr,
-                            );
-                        }
-                        ParenExprMode::Ref => {
-                            let ident_ref = d.ident.borrowed_expr(g);
-                            g.push_expr(Paren::default(), Context::DatastarSource, ident_ref);
-                        }
-                    }
-                    g.push_str(":");
-                    g.push_js_value_node(&mut d.value);
-                }
-                g.push_str("}");
+                generate_kv_object(g, entries);
                 g.push_str("\"");
             }
             DataContent::Computed(d) => {

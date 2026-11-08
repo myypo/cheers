@@ -1,0 +1,11 @@
+error: spread an object with `..`, not `...`
+ --> tests/ui/js_spread_in_datastar_object.rs:5:32
+  |
+5 |     let _ = datastar_object! { ...base };
+  |                                ^
+
+error: spread an object with `..`, not `...`
+ --> tests/ui/js_spread_in_datastar_object.rs:6:32
+  |
+6 |     let _ = html! { pre !style(...base) {} };
+  |                                ^

@@ -1,4 +1,7 @@
-use ast::{DatastarSourceNodes, Document, Node, ParenExpr, ParenExprBody, ScriptSourceNodes};
+use ast::{
+    DatastarObject, DatastarSourceNodes, Document, Node, ParenExpr, ParenExprBody,
+    ScriptSourceNodes,
+};
 use proc_macro2::Span;
 use syn::{
     Expr, ExprMacro, ExprTuple,
@@ -82,6 +85,7 @@ impl<'a, 'b> Printer<'a, 'b> {
             macro_: &expr_macro.mac,
             indent: Indent { tabs: 0, spaces: 0 },
             macro_name: macro_name.clone(),
+            column: self.line_len(),
         };
 
         let formatted = if macro_name == "datastar_source" {
@@ -91,6 +95,13 @@ impl<'a, 'b> Printer<'a, 'b> {
             )
             .ok()?;
             crate::print::print_datastar_source(document, &macro_, self.source, self.options)
+        } else if macro_name == "datastar_object" {
+            let object: DatastarObject = Parser::parse2(
+                |input: ParseStream| DatastarObject::parse(input),
+                expr_macro.mac.tokens.clone(),
+            )
+            .ok()?;
+            crate::print::print_datastar_object(object, &macro_, self.source, self.options)
         } else if macro_name == "js_script" {
             let document: ScriptSourceNodes = Parser::parse2(
                 |input: ParseStream| ScriptSourceNodes::parse(input),

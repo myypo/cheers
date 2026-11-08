@@ -1,7 +1,7 @@
 use std::ops::Range;
 
 use anyhow::{Context, Result};
-use ast::{DatastarSourceNodes, Document, ScriptSourceNodes};
+use ast::{DatastarObject, DatastarSourceNodes, Document, ScriptSourceNodes};
 use crop::Rope;
 use syn::{
     parse::{Parse, ParseStream, Parser},
@@ -10,7 +10,7 @@ use syn::{
 
 use crate::{
     collect::MaudMacro,
-    print::{print, print_datastar_source, print_js_script},
+    print::{print, print_datastar_object, print_datastar_source, print_js_script},
 };
 
 pub struct FormatOptions {
@@ -27,6 +27,7 @@ impl Default for FormatOptions {
                 String::from("svg"),
                 String::from("datastar_source"),
                 String::from("js_script"),
+                String::from("datastar_object"),
             ],
         }
     }
@@ -87,6 +88,16 @@ fn format_macro(mac: &MaudMacro, source: &Rope, options: &FormatOptions) -> Resu
         .context("Failed to parse datastar_source macro")?;
 
         return Ok(print_datastar_source(document, mac, source, options));
+    }
+
+    if mac.macro_name == "datastar_object" {
+        let object: DatastarObject = Parser::parse2(
+            |input: ParseStream| DatastarObject::parse(input),
+            mac.macro_.tokens.clone(),
+        )
+        .context("Failed to parse datastar_object macro")?;
+
+        return Ok(print_datastar_object(object, mac, source, options));
     }
 
     if mac.macro_name == "js_script" {

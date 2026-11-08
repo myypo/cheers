@@ -160,6 +160,19 @@ html! {
 
 In inline Datastar fragments and `datastar_source!`, string literals are raw JavaScript source, interpolated Rust strings render as JS string literals, and signals/action values render in `DatastarSource` context. Keep expressions small; prefer actions/patches/signals over large inline scripts.
 
+When the same `!attr` or `!style` entries go on several elements, build them once with `datastar_object!`, which takes the same `key: value` entries, and spread it with `..`. Later entries override spread keys. Only `datastar_object!` values can be spread, and a spread can't be conditional. In these entries and in `!computed`, every value must render something: an `@if` needs an `@else`, and an interpolated value must not be empty, which the macro can't check:
+
+```rust
+let busy = datastar_object! {
+    "disabled": (@&signal_saving),
+    "aria-busy": (@&signal_saving),
+};
+html! {
+    button !attr(..(@&busy)) { "Save" }
+    button !attr(..(@&busy), "disabled": { (@&signal_saving) " || !" (@&signal_valid) }) { "Publish" }
+}
+```
+
 Use `js_script!` for JavaScript source that will run from a `<script>` body, such as `ExecuteScript::new(js_script! { ... })` or an inline `script { (js_script! { ... }) }`. The body of a JavaScript `script` in `html!` (no `type`, `type="module"`, or a JavaScript MIME type) is already in this context, so `script { "..." }` literals are raw JavaScript and interpolated strings become JS string literals. Don't wrap `js_script!` output in `Raw`; use `RawScript` only for trusted script source. A `script` with any other `type` (JSON-LD, import maps) is a data block and its body renders as ordinary HTML text. This context does not HTML-attribute-escape JavaScript operators and escapes interpolated values so they cannot terminate the surrounding `<script>` element. Use `ExecuteScript::dangerously_from_string(...)` only for trusted raw script source.
 
 Suspense:

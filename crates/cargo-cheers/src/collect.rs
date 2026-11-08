@@ -9,6 +9,8 @@ pub struct MaudMacro<'a> {
     pub macro_: &'a Macro,
     pub indent: Indent,
     pub macro_name: String,
+    /// The column the formatted macro starts at, after any text before it on its first line.
+    pub column: usize,
 }
 
 pub struct Indent {
@@ -46,6 +48,7 @@ impl<'ast> Visit<'ast> for MacroVisitor<'ast> {
                 macro_: node,
                 indent: Indent { tabs, spaces },
                 macro_name: get_macro_full_path(node),
+                column: node.span().start().column,
             })
         }
 

@@ -1,0 +1,29 @@
+error: this value can render nothing, which leaves its key without a JavaScript value; give every branch some output, such as `@else { "null" }`
+ --> tests/ui/empty_js_object_value.rs:5:37
+  |
+5 |     let _ = datastar_object! { "a": @if on { "1" } };
+  |                                     ^
+
+error: this value can render nothing, which leaves its key without a JavaScript value; give every branch some output, such as `@else { "null" }`
+ --> tests/ui/empty_js_object_value.rs:7:24
+  |
+7 |         div !attr("b": {}) {}
+  |                        ^
+
+error: this value can render nothing, which leaves its key without a JavaScript value; give every branch some output, such as `@else { "null" }`
+ --> tests/ui/empty_js_object_value.rs:8:25
+  |
+8 |         div !style("c": @if on { "1" } @else if !on { "2" }) {}
+  |                         ^
+
+error: this value can render nothing, which leaves its key without a JavaScript value; give every branch some output, such as `@else { "null" }`
+ --> tests/ui/empty_js_object_value.rs:9:24
+  |
+9 |         div !attr("d": @match on { true => "1", false => {} }) {}
+  |                        ^
+
+error: this value can render nothing, which leaves its key without a JavaScript value; give every branch some output, such as `@else { "null" }`
+  --> tests/ui/empty_js_object_value.rs:10:24
+   |
+10 |         div !attr("e": "") {}
+   |                        ^^

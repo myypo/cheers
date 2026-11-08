@@ -1,0 +1,21 @@
+error[E0277]: `str` cannot be spread with `..`
+ --> tests/ui/spread_non_object.rs:5:36
+  |
+5 |     let _ = html! { button !attr(..label) {} };
+  |                                    ^^^^^ not a `datastar_object!` value
+  |
+  = help: the trait `Spread` is not implemented for `str`
+  = note: build the entries with `datastar_object! { .. }` and spread that
+help: the following other types implement trait `Spread`
+ --> src/datastar_object.rs
+  |
+  | impl<R: Render<DatastarSource>> Spread for DatastarObject<R> {}
+  | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `DatastarObject<R>`
+  | impl<T: Spread + ?Sized> Spread for &T {}
+  | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `&T`
+  = note: required for `&str` to implement `Spread`
+note: required by a bound in `cheers::datastar_object::__spread`
+ --> src/datastar_object.rs
+  |
+  | pub fn __spread<T: Spread + ?Sized>(value: &T) -> &T {
+  |                    ^^^^^^ required by this bound in `__spread`
