@@ -1,6 +1,8 @@
 mod collect;
 mod fmt;
 mod format;
+#[cfg(test)]
+mod invariants;
 mod line_length;
 mod print;
 mod subsecond;
