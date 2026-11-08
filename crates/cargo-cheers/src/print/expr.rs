@@ -314,6 +314,8 @@ impl<'a, 'b> Printer<'a, 'b> {
 
         if has_comments {
             if let ParenExprBody::Expr(expr) = &paren_expr.body
+                && let Expr::Macro(expr_macro) = expr
+                && !self.has_comments_outside(paren_span, expr_macro.mac.delimiter.span().join())
                 && let Some(lines) = self.macro_expr_lines(expr, indent_level)
             {
                 self.consume_comments_in_span(paren_span);
@@ -384,6 +386,24 @@ impl<'a, 'b> Printer<'a, 'b> {
 #[cfg(test)]
 mod test {
     use crate::testing::*;
+
+    test_default!(
+        comment_outside_nested_macro_is_kept,
+        r#"
+        html! {
+            div x=(/* c */ datastar_object! { "a": "b" }) {}
+            div x=(html! /* c */ { p {} }) {}
+        }
+        "#,
+        r#"
+        html! {
+            div
+                x=(/* c */ datastar_object! { "a": "b" }) {}
+            div
+                x=(html! /* c */ { p {} }) {}
+        }
+        "#
+    );
 
     test_default!(
         if_let_chain,
