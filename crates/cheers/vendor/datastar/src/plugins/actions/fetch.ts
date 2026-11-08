@@ -639,6 +639,7 @@ const fetchEventSource = (
           script.textContent = await response.text()
           document.head.appendChild(script)
           dispose()
+          resolve()
           return
         }
 

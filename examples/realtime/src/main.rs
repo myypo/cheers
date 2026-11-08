@@ -421,6 +421,93 @@ mod tests {
         .expect("apply every event in a batch");
     }
 
+    #[derive(Cheers)]
+    struct RunButton;
+
+    impl Render for RunButton {
+        fn render_to(&self, buffer: &mut Buffer<Element>) {
+            scoped_signal!(signal_running: bool);
+
+            html! {
+                button
+                    type="button"
+                    !on:click(MarkScriptRanAction)
+                    !indicator(signal_running)
+                    !attr("disabled": signal_running)
+                { "Run" }
+            }
+            .render_to(buffer);
+        }
+    }
+
+    #[action(POST)]
+    async fn mark_script_ran() -> ExecuteScript {
+        ExecuteScript::new(js_script! { "window.scriptRan = true" })
+    }
+
+    #[tokio::test]
+    async fn a_script_response_finishes_the_request() {
+        let ctx = Ctx {
+            stocks: Box::leak(Box::new(Mutex::new(BTreeMap::new()))),
+            stocks_tx: tokio::sync::broadcast::channel(1).0,
+        };
+
+        let app = cheers::router::new(
+            Router::new()
+                .route(
+                    "/",
+                    get(|| async {
+                        html! {
+                            Base {
+                                RunButton;
+                            }
+                        }
+                    }),
+                )
+                .action::<MarkScriptRanAction>(),
+            cheers::router::Config::default(),
+        )
+        .expect("create app")
+        .with_state(ctx);
+
+        let app = cheers::test::App::new(app).await.unwrap();
+
+        app.run(|app| async move {
+            app.goto(app.url("/")).await?;
+
+            let button = By::XPath("//button[text()='Run']");
+            app.query(button.clone())
+                .and_clickable()
+                .first()
+                .await?
+                .click()
+                .await?;
+
+            let mut ran = false;
+            for _ in 0..50 {
+                ran = app
+                    .execute("return window.scriptRan === true;", vec![])
+                    .await?
+                    .convert::<bool>()?;
+                if ran {
+                    break;
+                }
+                tokio::time::sleep(Duration::from_millis(100)).await;
+            }
+            assert!(ran, "the script response should run");
+
+            app.query(button)
+                .and_enabled()
+                .wait(Duration::from_secs(2), Duration::from_millis(100))
+                .first()
+                .await?;
+
+            Ok(())
+        })
+        .await
+        .expect("clear the indicator after a script response");
+    }
+
     #[action(POST)]
     async fn sign_in() -> axum::response::Redirect {
         axum::response::Redirect::to("/hall")
