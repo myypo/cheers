@@ -41,6 +41,7 @@ pub fn print<'b>(
         source,
         options,
         trivia: Trivia::new(source, macro_range(mac, source)),
+        line_comment_open: false,
     };
 
     printer.print_ast(ast);
@@ -63,6 +64,7 @@ pub fn print_datastar_source<'b>(
         source,
         options,
         trivia: Trivia::new(source, macro_range(mac, source)),
+        line_comment_open: false,
     };
 
     printer.print_datastar_source_ast(ast);
@@ -85,6 +87,7 @@ pub fn print_js_script<'b>(
         source,
         options,
         trivia: Trivia::new(source, macro_range(mac, source)),
+        line_comment_open: false,
     };
 
     printer.print_js_script_ast(ast);
@@ -107,6 +110,7 @@ pub fn print_datastar_object<'b>(
         source,
         options,
         trivia: Trivia::new(source, macro_range(mac, source)),
+        line_comment_open: false,
     };
 
     printer.print_datastar_object_ast(ast);
@@ -123,6 +127,8 @@ struct Printer<'a, 'b> {
     source: &'a Rope,
     options: &'a FormatOptions,
     trivia: Trivia,
+    /// Whether the current line ends in a `//` comment.
+    line_comment_open: bool,
 }
 
 struct ElementOpeningLayout {
@@ -282,6 +288,7 @@ impl<'a, 'b> Printer<'a, 'b> {
     }
 
     fn new_line(&mut self, indent_level: usize) {
+        self.line_comment_open = false;
         self.lines.push(self.buf.clone());
         self.buf = String::from(self.indent_str).repeat(self.base_indent + indent_level);
     }
@@ -365,12 +372,25 @@ impl<'a, 'b> Printer<'a, 'b> {
     }
 
     fn blank_line(&mut self, indent_level: usize) {
+        self.line_comment_open = false;
         self.lines.push(self.buf.clone());
         self.lines.push(String::new());
         self.buf = String::from(self.indent_str).repeat(self.base_indent + indent_level);
     }
 
     fn write(&mut self, content: &str) {
+        let mut content = content;
+        if self.line_comment_open && !content.trim_start_matches(' ').is_empty() {
+            self.line_comment_open = false;
+            if !content.trim_start_matches(' ').starts_with('\n') {
+                // Anything written after a `//` comment would become part of it.
+                let line = self.buf.rsplit('\n').next().unwrap_or_default();
+                let indent = &line[..line.len() - line.trim_start().len()];
+                let indent = indent.to_owned();
+                self.lines.push(std::mem::replace(&mut self.buf, indent));
+                content = content.trim_start();
+            }
+        }
         self.buf += content;
     }
 

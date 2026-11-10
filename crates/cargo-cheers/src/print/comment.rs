@@ -165,15 +165,38 @@ impl<'a, 'b> Printer<'a, 'b> {
         }
     }
 
+    /// Starts a new line if the current one ends in a `//` comment, which would swallow
+    /// anything written after it. Returns whether it did.
+    pub(super) fn end_line_comment(&mut self, indent_level: usize) -> bool {
+        let line_comment_open = self.line_comment_open;
+        if line_comment_open {
+            self.new_line(indent_level);
+        }
+        line_comment_open
+    }
+
+    /// Whether `outer` holds comments that are not inside `inner`.
+    pub fn has_comments_outside(&self, outer: Span, inner: Span) -> bool {
+        let (Some(outer), Some(inner)) = (
+            Trivia::span_range(self.source, outer),
+            Trivia::span_range(self.source, inner),
+        ) else {
+            return true;
+        };
+        self.trivia.has_comments_in_range(outer.start..inner.start)
+            || self.trivia.has_comments_in_range(inner.end..outer.end)
+    }
+
     pub(super) fn write_comment(&mut self, comment: &Comment) {
         let raw = comment.raw.trim_end();
 
-        if let Some(rest) = raw.strip_prefix("//") {
-            if rest.starts_with('/') || rest.starts_with('!') {
-                self.write(raw);
-                return;
-            }
-
+        let Some(rest) = raw.strip_prefix("//") else {
+            self.write(raw);
+            return;
+        };
+        if rest.starts_with('/') || rest.starts_with('!') {
+            self.write(raw);
+        } else {
             self.write("//");
             if !rest.is_empty() {
                 if !rest.starts_with(char::is_whitespace) {
@@ -181,9 +204,8 @@ impl<'a, 'b> Printer<'a, 'b> {
                 }
                 self.write(rest);
             }
-        } else {
-            self.write(raw);
         }
+        self.line_comment_open = true;
     }
 }
 

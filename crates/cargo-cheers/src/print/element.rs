@@ -527,6 +527,7 @@ impl<'a, 'b> Printer<'a, 'b> {
     ) {
         match body {
             ElementBody::Void { semi_token } => {
+                self.end_line_comment(indent_level);
                 self.write(";");
                 self.print_trailing_comment(semi_token.span().end());
             }
@@ -538,7 +539,10 @@ impl<'a, 'b> Printer<'a, 'b> {
                 let child_count = children.0.len();
 
                 if child_count == 0 && !contains_comments {
-                    self.write(" {}");
+                    if !self.end_line_comment(indent_level) {
+                        self.write(" ");
+                    }
+                    self.write("{}");
                     self.print_trailing_comment(brace_token.span.close().end());
                     return;
                 }
@@ -1407,6 +1411,50 @@ mod test {
                     "disabled": "x",  // busy
                     ..(@&base),  // tail
                 ) {}
+        }
+        "#
+    );
+
+    test_default!(
+        line_comment_before_element_body_keeps_the_body,
+        r#"
+        html! {
+            div !on_interval("x") // after attribute
+            {}
+            p // after name
+            {}
+            br id="a" // before semicolon
+            ;
+        }
+        "#,
+        r#"
+        html! {
+            div
+                !on_interval("x")  // after attribute
+            {}
+            p  // after name
+            {}
+            br
+                id="a"  // before semicolon
+            ;
+        }
+        "#
+    );
+
+    test_default!(
+        line_comment_inside_data_attribute_keeps_the_closing_paren,
+        r#"
+        html! {
+            p !effect("a" // c
+            ) { "text" }
+        }
+        "#,
+        r#"
+        html! {
+            p
+                !effect("a"  // c
+                )
+            { "text" }
         }
         "#
     );
