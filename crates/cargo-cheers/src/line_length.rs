@@ -1,7 +1,7 @@
 use ast::{
     Attribute, AttributeKind, AttributeName, AttributeValueNode, DataContent, DataExpr,
-    DataExprValue, DataModifierPart, DataModifiers, ElementBody, ElementNode, Node, ParenExpr,
-    ParenExprBody, Toggle,
+    DataExprValue, DataModifierPart, DataModifiers, ElementBody, ElementNode, KvEntries, KvEntry,
+    Node, ParenExpr, ParenExprBody, Toggle,
     component::{ComponentAttribute, ComponentAttributeValue, ComponentDefaultAttributes},
     control::{self, ControlBlock},
 };
@@ -177,8 +177,8 @@ pub fn element_len(ident: &Ident, attrs: &[Attribute], body: &ElementBody) -> Op
                     DataContent::Signals(decls) => {
                         element_len += data_decl_len_expr(decls)?;
                     }
-                    DataContent::Kv(decls) => {
-                        element_len += data_decl_len_attr_values(decls)?;
+                    DataContent::Kv(entries) => {
+                        element_len += kv_entries_len(entries)?;
                     }
                     DataContent::Computed(decls) => {
                         element_len += data_decl_len_attr_values(decls)?;
@@ -189,7 +189,19 @@ pub fn element_len(ident: &Ident, attrs: &[Attribute], body: &ElementBody) -> Op
                         element_len += attribute_value_len(value)?;
                         element_len += span_len(initially)?;
                     }
-                    DataContent::Empty | DataContent::Recovered => {}
+                    DataContent::Empty => {}
+                    // Printed back verbatim, so it takes its original width (parens counted above).
+                    DataContent::Recovered => {
+                        if let Some(paren_span) = data.paren_span() {
+                            let span = paren_span.join();
+                            let (start, end) = (span.start(), span.end());
+                            if start.line != end.line {
+                                return None;
+                            }
+                            element_len +=
+                                end.column.saturating_sub(start.column).saturating_sub(2);
+                        }
+                    }
                 }
 
                 if let Some(modifiers) = &data.modifiers {
@@ -440,42 +452,40 @@ fn attribute_value_group_len(nodes: &[AttributeValueNode]) -> Option<usize> {
     Some(len)
 }
 
-pub fn data_decl_len_expr(decls: &Punctuated<DataExprValue<Expr>, Token![,]>) -> Option<usize> {
+fn comma_separated_len<T>(
+    items: impl IntoIterator<Item = T>,
+    mut item_len: impl FnMut(T) -> Option<usize>,
+) -> Option<usize> {
     let mut total_len = 0usize;
-    let mut first = true;
-    for d in decls {
-        if first {
-            first = false;
-        } else {
+    for (idx, item) in items.into_iter().enumerate() {
+        if idx > 0 {
             // `, `
             total_len += 2;
         }
-        total_len += data_expr_len(&d.ident)?;
-
-        // `: `
-        total_len += 2;
-
-        total_len += span_len(&d.value)?;
+        total_len += item_len(item)?;
     }
     Some(total_len)
+}
+
+pub fn data_decl_len_expr(decls: &Punctuated<DataExprValue<Expr>, Token![,]>) -> Option<usize> {
+    comma_separated_len(decls, |d| {
+        // `: `
+        Some(data_expr_len(&d.ident)? + 2 + span_len(&d.value)?)
+    })
 }
 
 pub fn data_decl_len_attr_values(
     decls: &Punctuated<DataExprValue<AttributeValueNode>, Token![,]>,
 ) -> Option<usize> {
-    let mut total_len = 0usize;
-    let mut first = true;
-    for d in decls {
-        if first {
-            first = false;
-        } else {
-            // `, `
-            total_len += 2;
-        }
+    comma_separated_len(decls, data_decl_len_attr_value)
+}
 
-        total_len += data_decl_len_attr_value(d)?;
-    }
-    Some(total_len)
+pub fn kv_entries_len(entries: &KvEntries) -> Option<usize> {
+    comma_separated_len(entries, |entry| match entry {
+        KvEntry::Pair(pair) => data_decl_len_attr_value(pair),
+        // `..`
+        KvEntry::Spread { value, .. } => Some(2 + data_expr_len(value)?),
+    })
 }
 
 pub fn data_decl_len_attr_value(decl: &DataExprValue<AttributeValueNode>) -> Option<usize> {

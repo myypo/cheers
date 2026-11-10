@@ -1,0 +1,11 @@
+error: `@async` cannot be used in a Datastar object value
+ --> tests/ui/async_js_object_value.rs:4:37
+  |
+4 |     let _ = datastar_object! { "k": @async { "1" } @else { span {} } };
+  |                                     ^
+
+error: `@async` cannot be used in a Datastar object value
+ --> tests/ui/async_js_object_value.rs:7:35
+  |
+7 |         div !attr("k": { @if on { @async { "1" } @else { span {} } } @else { "2" } }) {}
+  |                                   ^

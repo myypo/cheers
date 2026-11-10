@@ -87,3 +87,39 @@ fn html_value_in_script_is_rejected() {
     let tests = trybuild::TestCases::new();
     tests.compile_fail("tests/ui/html_value_in_script.rs");
 }
+
+#[test]
+fn js_spread_in_datastar_object_is_rejected() {
+    let tests = trybuild::TestCases::new();
+    tests.compile_fail("tests/ui/js_spread_in_datastar_object.rs");
+}
+
+#[test]
+fn spread_non_object_is_rejected() {
+    let tests = trybuild::TestCases::new();
+    tests.compile_fail("tests/ui/spread_non_object.rs");
+}
+
+#[test]
+fn conditional_spread_is_rejected() {
+    let tests = trybuild::TestCases::new();
+    tests.compile_fail("tests/ui/conditional_spread.rs");
+}
+
+#[test]
+fn empty_js_object_value_is_rejected() {
+    let tests = trybuild::TestCases::new();
+    tests.compile_fail("tests/ui/empty_js_object_value.rs");
+}
+
+#[test]
+fn missing_data_name_is_reported() {
+    let tests = trybuild::TestCases::new();
+    tests.compile_fail("tests/ui/missing_data_name.rs");
+}
+
+#[test]
+fn async_js_object_value_is_rejected() {
+    let tests = trybuild::TestCases::new();
+    tests.compile_fail("tests/ui/async_js_object_value.rs");
+}

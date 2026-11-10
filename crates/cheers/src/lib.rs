@@ -9,6 +9,7 @@ mod bundle;
 pub mod components;
 mod context;
 mod custom_event;
+pub mod datastar_object;
 pub mod events;
 mod internal;
 #[cfg(all(feature = "pi-extension", debug_assertions))]
@@ -37,13 +38,15 @@ pub mod __internal {
 
 pub mod macros {
     pub use macros::{
-        Cheers, action, attribute, datastar_source, html, js_script, scoped_signal, svg,
+        Cheers, action, attribute, datastar_object, datastar_source, html, js_script,
+        scoped_signal, svg,
     };
 }
 
 pub mod prelude {
     pub use macros::{
-        Cheers, action, attribute, datastar_source, html, js_script, scoped_signal, svg,
+        Cheers, action, attribute, datastar_object, datastar_source, html, js_script,
+        scoped_signal, svg,
     };
 
     pub use crate::{

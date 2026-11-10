@@ -9,7 +9,7 @@ use syn::{
 
 use crate::{
     Attribute, AttributeKind, AttributeValueNode, DataContent, DataExpr, ElementBody, ElementNode,
-    Node, Nodes, ParenExpr, ParenExprBody,
+    KvEntry, Node, Nodes, ParenExpr, ParenExprBody,
     component::{Component, ComponentAttribute, ComponentAttributeValue},
     control::{
         Control, ControlIfOrBlock, ControlKind, If, Let, MatchNodeArmBody, for_each_pat_ident,
@@ -283,7 +283,18 @@ impl Uses for DataContent {
                     scan.expr(&signal.value);
                 }
             }
-            Self::Kv(pairs) | Self::Computed(pairs) => {
+            Self::Kv(entries) => {
+                for entry in entries {
+                    match entry {
+                        KvEntry::Pair(pair) => {
+                            scan.data_expr(&pair.ident);
+                            pair.value.uses(scan);
+                        }
+                        KvEntry::Spread { value, .. } => scan.data_expr(value),
+                    }
+                }
+            }
+            Self::Computed(pairs) => {
                 for pair in pairs {
                     scan.data_expr(&pair.ident);
                     pair.value.uses(scan);

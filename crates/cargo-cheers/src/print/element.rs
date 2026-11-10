@@ -1,18 +1,16 @@
 use ast::{
     Attribute, AttributeKind, AttributeName, AttributeValueNode, DataContent, DataExpr,
-    DataExprValue, DataModifierPart, DataModifiers, Element, ElementBody,
+    DataExprValue, DataModifierPart, DataModifiers, Element, ElementBody, KvEntries, KvEntry,
 };
-use proc_macro2::LineColumn;
+use proc_macro2::{LineColumn, extra::DelimSpan};
 use quote::ToTokens;
 use syn::{Expr, Token, punctuated::Punctuated, spanned::Spanned as _};
 
 use crate::{
-    line_length::{
-        data_decl_len_attr_value, data_decl_len_attr_values, data_decl_len_expr, element_len,
-        node_len,
-    },
+    line_length::{data_decl_len_expr, element_len, kv_entries_len, node_len},
     print::{
         NodePrinter, Printer,
+        attribute_value_node::attribute_value_node_end,
         element_node::{element_node_end, element_node_start},
     },
 };
@@ -48,27 +46,40 @@ fn toggle_end(toggle: &ast::Toggle) -> LineColumn {
 }
 
 fn data_end(data: &ast::Data) -> LineColumn {
-    if let Some(paren_span) = data.paren_span() {
-        return paren_span.close().end();
-    }
+    // Only empty and recovered contents can come without parentheses.
+    data.paren_span()
+        .map(|paren_span| paren_span.close().end())
+        .or_else(|| {
+            data.modifiers
+                .as_ref()
+                .map(|modifiers| modifiers.bracket_token.span.close().end())
+        })
+        .unwrap_or_else(|| data.name.span().end())
+}
 
-    match &data.content {
-        DataContent::Node(node) => attribute_value_end(node),
-        DataContent::Show { initially, .. } => initially.span().end(),
-        DataContent::Signals(decls) => decls
-            .last()
-            .map(|decl| decl.value.span().end())
-            .unwrap_or_else(|| data.name.span().end()),
-        DataContent::Kv(decls) | DataContent::Computed(decls) => decls
-            .last()
-            .map(|decl| attribute_value_end(&decl.value))
-            .unwrap_or_else(|| data.name.span().end()),
-        DataContent::Bind(expr) => expr.expr.span().end(),
-        DataContent::Empty | DataContent::Recovered => data
-            .modifiers
-            .as_ref()
-            .map(|modifiers| modifiers.bracket_token.span.close().end())
-            .unwrap_or_else(|| data.name.span().end()),
+fn data_expr_start(expr: &DataExpr) -> LineColumn {
+    expr.paren_token
+        .map(|paren| paren.span.open().start())
+        .unwrap_or_else(|| expr.expr.span().start())
+}
+
+fn data_expr_end(expr: &DataExpr) -> LineColumn {
+    expr.paren_token
+        .map(|paren| paren.span.close().end())
+        .unwrap_or_else(|| expr.expr.span().end())
+}
+
+fn kv_entry_start(entry: &KvEntry) -> LineColumn {
+    match entry {
+        KvEntry::Pair(pair) => data_expr_start(&pair.ident),
+        KvEntry::Spread { dot2_token, .. } => dot2_token.span().start(),
+    }
+}
+
+fn kv_entry_end(entry: &KvEntry) -> LineColumn {
+    match entry {
+        KvEntry::Pair(pair) => attribute_value_node_end(&pair.value),
+        KvEntry::Spread { value, .. } => data_expr_end(value),
     }
 }
 
@@ -202,56 +213,19 @@ impl<'a, 'b> Printer<'a, 'b> {
                             self.print_data_decl_expr(decls, attr_indent_level);
                             self.write(")");
                         }
-                        DataContent::Kv(decls) => {
+                        DataContent::Kv(entries) => {
                             self.write("(");
-                            self.print_data_decl_attr_value(decls, attr_indent_level);
+                            self.print_kv_entries(entries, paren_span, attr_indent_level, false);
                             self.write(")");
                         }
                         DataContent::Computed(decls) => {
                             self.write("(");
-
-                            let should_wrap_decls = {
-                                let decls_len: Option<usize> = decls
-                                    .iter()
-                                    .map(data_decl_len_attr_value)
-                                    .reduce(|sum, l| l.map(|l| l + sum.unwrap_or_default()))
-                                    .flatten();
-                                if let Some(decl_len) = decls_len {
-                                    (self.line_len() + decl_len) > self.options.line_length
-                                } else {
-                                    true
-                                }
-                            };
-
-                            let decls_empty = decls.is_empty();
-                            let mut first = true;
-                            for d in decls.into_iter() {
-                                if !first {
-                                    self.write(",");
-                                }
-
-                                if should_wrap_decls {
-                                    self.new_line(attr_indent_level + 1);
-                                } else if !first {
-                                    self.write(" ");
-                                }
-
-                                self.print_data_expr(d.ident, attr_indent_level);
-                                self.write(": ");
-                                self.print_attribute_value_node(
-                                    d.value,
-                                    attr_indent_level + 1,
-                                    preserve_blank_lines,
-                                );
-
-                                first = false;
-                            }
-
-                            if should_wrap_decls && !decls_empty {
-                                self.write(",");
-                                self.new_line(attr_indent_level);
-                            }
-
+                            self.print_kv_entries(
+                                decls.into_iter().map(KvEntry::Pair).collect(),
+                                paren_span,
+                                attr_indent_level,
+                                preserve_blank_lines,
+                            );
                             self.write(")");
                         }
                         DataContent::Node(node) => {
@@ -390,42 +364,101 @@ impl<'a, 'b> Printer<'a, 'b> {
         }
     }
 
-    fn print_data_decl_attr_value(
+    fn print_kv_entries(
         &mut self,
-        decls: Punctuated<DataExprValue<AttributeValueNode>, Token![,]>,
+        entries: KvEntries,
+        paren_span: Option<DelimSpan>,
         indent_level: usize,
+        preserve_blank_lines: bool,
     ) {
-        let should_wrap_decls = {
-            let decl_len = data_decl_len_attr_values(&decls);
-            if let Some(decl_len) = decl_len {
-                (self.line_len() + decl_len) > self.options.line_length
-            } else {
-                true
-            }
-        };
+        let contains_comments =
+            paren_span.is_some_and(|paren_span| self.delim_contains_comments(paren_span));
+        let should_wrap = contains_comments
+            || kv_entries_len(&entries)
+                .is_none_or(|len| (self.line_len() + len) > self.options.line_length);
 
-        let decls_empty = decls.is_empty();
-        for (idx, d) in decls.into_iter().enumerate() {
-            if idx > 0 {
-                self.write(",");
-            }
-
-            if should_wrap_decls {
-                self.new_line(indent_level + 1);
-            } else if idx > 0 {
-                self.write(" ");
-            }
-
-            self.print_data_expr(d.ident, indent_level);
-            self.write(": ");
-            self.print_attribute_value_node(d.value, indent_level + 1, false);
+        if entries.is_empty() {
+            return;
         }
 
-        if should_wrap_decls && !decls_empty {
-            // Trailing comma
-            self.write(",");
-            // Move `)` to its own line
-            self.new_line(indent_level);
+        match paren_span {
+            Some(paren_span) if should_wrap => {
+                self.print_expanded_kv_entries(
+                    entries,
+                    paren_span,
+                    indent_level,
+                    indent_level + 1,
+                    preserve_blank_lines,
+                );
+                self.new_line(indent_level);
+            }
+            _ => {
+                for (idx, entry) in entries.into_iter().enumerate() {
+                    if idx > 0 {
+                        self.write(", ");
+                    }
+                    self.print_kv_entry(
+                        entry,
+                        indent_level,
+                        indent_level + 1,
+                        preserve_blank_lines,
+                    );
+                }
+            }
+        }
+    }
+
+    /// Prints one entry per line at `indent_level + 1`, each with a trailing comma, keeping
+    /// the comments between and after them.
+    pub(super) fn print_expanded_kv_entries(
+        &mut self,
+        entries: KvEntries,
+        delim_span: DelimSpan,
+        key_indent_level: usize,
+        indent_level: usize,
+        preserve_blank_lines: bool,
+    ) {
+        self.print_expanded_nodes(
+            entries,
+            delim_span,
+            indent_level,
+            preserve_blank_lines,
+            NodePrinter {
+                start: kv_entry_start,
+                end: kv_entry_end,
+                print: |p: &mut Self, entry, i, pb| {
+                    let trailing_comment = p
+                        .trivia
+                        .take_trailing_comment_after_comma(p.source, kv_entry_end(&entry));
+                    p.print_leading_comments(kv_entry_start(&entry), i);
+                    p.print_kv_entry(entry, key_indent_level, i, pb);
+                    p.write(",");
+                    if let Some(comment) = trailing_comment {
+                        p.write("  ");
+                        p.write_comment(&comment);
+                    }
+                },
+            },
+        );
+    }
+
+    pub(super) fn print_kv_entry(
+        &mut self,
+        entry: KvEntry,
+        key_indent_level: usize,
+        indent_level: usize,
+        preserve_blank_lines: bool,
+    ) {
+        match entry {
+            KvEntry::Pair(pair) => {
+                self.print_data_expr(pair.ident, key_indent_level);
+                self.write(": ");
+                self.print_attribute_value_node(pair.value, indent_level, preserve_blank_lines);
+            }
+            KvEntry::Spread { value, .. } => {
+                self.write("..");
+                self.print_data_expr(value, indent_level);
+            }
         }
     }
 
@@ -611,6 +644,21 @@ mod test {
         html! {
             div !show(signal_open) { "Panel" }
             button !on:click( ) {}
+        }
+        "#
+    );
+
+    test_small_line!(
+        long_data_attribute_with_invalid_payload_wraps,
+        r#"
+        html! {
+            button !attr(...base, "long-key": "x") {}
+        }
+        "#,
+        r#"
+        html! {
+            button
+                !attr(...base, "long-key": "x") {}
         }
         "#
     );
@@ -1206,6 +1254,20 @@ mod test {
         "#
     );
 
+    test_default!(
+        data_attributes_spread,
+        r#"
+        html! {
+            button !attr(..(@&busy),"disabled":{"$saving || !$valid"}) { "Save" }
+        }
+        "#,
+        r#"
+        html! {
+            button !attr(..(@&busy), "disabled": { "$saving || !$valid" }) { "Save" }
+        }
+        "#
+    );
+
     test_small_line!(
         data_attributes_long_style,
         r#"
@@ -1300,6 +1362,51 @@ mod test {
                     another: "hi, mom",
                 )
             { "content" }
+        }
+        "#
+    );
+
+    test_small_line!(
+        data_attributes_computed_counts_separators,
+        r#"
+        html! {
+            div !computed(a: 1, b: 2, c: 3) {}
+        }
+        "#,
+        r#"
+        html! {
+            div !computed(
+                    a: 1,
+                    b: 2,
+                    c: 3,
+                ) {}
+        }
+        "#
+    );
+
+    test_default!(
+        data_attribute_entries_keep_trailing_comments,
+        r#"
+        html! {
+            button !attr("disabled": "x" // busy
+            ) {}
+            button !attr(
+                "disabled": "x", // busy
+                ..(@&base) // tail
+            ) {}
+        }
+        "#,
+        r#"
+        html! {
+            button
+                !attr(
+                    "disabled": "x",  // busy
+                ) {}
+            button
+                !attr(
+                    "disabled": "x",  // busy
+                    ..(@&base),  // tail
+                ) {}
         }
         "#
     );
