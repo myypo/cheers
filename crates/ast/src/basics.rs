@@ -160,7 +160,7 @@ impl ToTokens for Literal {
 }
 
 // from dtolnay/unindent
-fn unindent(s: &str) -> String {
+pub(crate) fn unindent(s: &str) -> String {
     const fn is_indent(c: char) -> bool {
         c == ' ' || c == '\t'
     }

@@ -3083,6 +3083,91 @@ fn script_body_literals_cannot_close_script_element() {
 }
 
 #[test]
+fn script_body_cannot_close_script_element_across_dynamic_parts() {
+    let negative = -1;
+    let ready = true;
+    let tail = js_script! { "ipt>" };
+    let empty = js_script! {};
+
+    let rendered = [
+        html! { script { "</scr" (empty) "ipt>" } }.render(),
+        html! { script { "</scr" @let _x = 1; "ipt>" } }.render(),
+        html! { script { "<" @if ready { "/script>" } } }.render(),
+        html! { script { "x <!-" (negative) } }.render(),
+        html! { script { "</scr" (tail) } }.render(),
+    ]
+    .map(|rendered| rendered.into_inner());
+
+    assert_eq!(
+        rendered,
+        [
+            "<script><\\/script></script>",
+            "<script><\\/script></script>",
+            "<script><\\/script></script>",
+            "<script>x \\x3C!--1</script>",
+            "<script><\\/script></script>",
+        ]
+    );
+}
+
+#[test]
+fn execute_script_cannot_close_script_element_across_dynamic_parts() {
+    let empty = js_script! {};
+    let script = ExecuteScript::new(js_script! { "</scr" (empty) "ipt>" });
+
+    let response = script.into_response();
+    let body = futures::executor::block_on(axum::body::to_bytes(response.into_body(), usize::MAX))
+        .expect("body");
+    assert_eq!(body, "<\\/script>");
+}
+
+proptest::proptest! {
+    #[test]
+    fn script_body_cannot_close_script_element(
+        pieces in proptest::collection::vec(
+            proptest::sample::select(vec!["<", "/", "!", "-", "script", "SCRIPT", "</", "<!-", "x"]),
+            0..16,
+        ),
+    ) {
+        let body_pieces = pieces.clone();
+        let rendered = html! {
+            script {
+                @for piece in &body_pieces {
+                    // XSS SAFETY: the test checks that the script body escapes these
+                    (RawScript::dangerously_create(*piece))
+                }
+            }
+        }
+        .render()
+        .into_inner();
+
+        let body = rendered
+            .strip_prefix("<script>")
+            .and_then(|html| html.strip_suffix("</script>"))
+            .expect("a script element")
+            .to_ascii_lowercase();
+        proptest::prop_assert!(
+            !body.contains("</script") && !body.contains("<!--"),
+            "{pieces:?} -> {rendered:?}"
+        );
+    }
+}
+
+#[test]
+fn script_body_literals_cannot_close_script_element_across_literals() {
+    let rendered = html! {
+        script { "console.log('</scr" "ipt>', '<" "!--');" }
+    }
+    .render()
+    .into_inner();
+
+    assert_eq!(
+        rendered,
+        "<script>console.log('<\\/script>', '\\x3C!--');</script>"
+    );
+}
+
+#[test]
 fn script_body_accepts_js_script() {
     let url = "/done?a=1&b=</script>";
     let script = js_script! { "window.location.assign(" url ");" };

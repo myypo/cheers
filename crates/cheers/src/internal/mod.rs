@@ -10,7 +10,9 @@ pub use futures;
 pub use inventory;
 pub use serde;
 
-pub use crate::{datastar_object::__spread, reference::FormComponent};
+pub use crate::{
+    datastar_object::__spread, reference::FormComponent, render::__escape_script_body,
+};
 
 pub mod action_rendering;
 pub mod action_security;

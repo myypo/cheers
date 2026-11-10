@@ -50,6 +50,7 @@ crop = "0.4"
 prettyplease = { version = "0.2", features = ["verbatim"] }
 rustc_lexer = "0.1"
 pretty_assertions = "1"
+proptest = { version = "1", default-features = false, features = ["std"] }
 predicates = "3"
 assert_fs = "1"
 assert_cmd = "2"

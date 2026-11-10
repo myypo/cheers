@@ -569,7 +569,13 @@ impl Generate for Element {
                 } else if script_body_is_javascript && !g.has_context_override() {
                     // The HTML parser reads a `<script>` body as raw text up to `</script`, and
                     // decodes no character references there.
-                    g.with_context_override(Context::ScriptSource, |g| g.push(children));
+                    if children.is_static() {
+                        g.with_context_override(Context::ScriptSource, |g| g.push(children));
+                    } else {
+                        g.push_runtime_escaped_script(|g| {
+                            g.with_context_override(Context::ScriptSource, |g| g.push(children));
+                        });
+                    }
                 } else {
                     g.push(children);
                 }

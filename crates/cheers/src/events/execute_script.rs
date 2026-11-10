@@ -5,7 +5,7 @@ use super::{
 };
 use crate::{
     context::ScriptSource,
-    render::{Buffer, Lazy, Render},
+    render::{__escape_script_body, Buffer, Lazy, Render},
 };
 
 /// A JavaScript snippet sent to the client for execution.
@@ -22,10 +22,9 @@ impl ExecuteScript {
     {
         let mut buffer = Buffer::<ScriptSource>::new();
         script.render_to(&mut buffer);
-        Self {
-            js: buffer.rendered().into_inner(),
-            persist: false,
-        }
+        let mut js = buffer.rendered().into_inner();
+        __escape_script_body(&mut js, 0);
+        Self { js, persist: false }
     }
 
     /// Creates a new script payload from raw JavaScript source.
