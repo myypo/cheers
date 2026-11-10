@@ -1,4 +1,4 @@
-use std::fmt::Display;
+use std::fmt::{Display, Write};
 
 use axum::response::{IntoResponse, sse};
 
@@ -164,9 +164,34 @@ fn is_datastar_scalar_control(ch: char) -> bool {
 }
 
 fn css_escape_identifier(value: &str) -> String {
-    let mut escaped = String::with_capacity(value.len());
-    cssparser::serialize_identifier(value, &mut escaped)
+    let mut serialized = String::with_capacity(value.len());
+    cssparser::serialize_identifier(value, &mut serialized)
         .expect("writing CSS identifier to String should not fail");
+
+    // Selectors also travel in response headers, which browsers decode one byte per character,
+    // and `sanitize_datastar_scalar_value` turns C1 controls into spaces. So everything that is
+    // not printable ASCII becomes a CSS hex escape.
+    if serialized
+        .bytes()
+        .all(|b| b.is_ascii_graphic() || b == b' ')
+    {
+        return serialized;
+    }
+    let mut escaped = String::with_capacity(serialized.len() + 8);
+    let mut chars = serialized.chars().peekable();
+    while let Some(ch) = chars.next() {
+        if ch.is_ascii_graphic() || ch == ' ' {
+            escaped.push(ch);
+            continue;
+        }
+        _ = write!(escaped, "\\{:x}", u32::from(ch));
+        if chars
+            .peek()
+            .is_some_and(|next| next.is_ascii_hexdigit() || next.is_whitespace())
+        {
+            escaped.push(' ');
+        }
+    }
     escaped
 }
 
@@ -348,6 +373,8 @@ impl IntoResponse for PatchElements {
 
 #[cfg(test)]
 mod tests {
+    use proptest::strategy::Strategy;
+
     use super::{super::read_sse_body, *};
 
     #[tokio::test]
@@ -379,6 +406,38 @@ data: selector #foo\n\n"
             .expect("patch response should set datastar-selector header");
 
         assert_eq!(selector, r#"#row\ 1"#);
+    }
+
+    #[tokio::test]
+    async fn id_selector_escapes_c1_controls() {
+        let patch = PatchElements::new()
+            .id(ElementId::__dynamic("a\u{85}b".to_owned()))
+            .mode(PatchElementsMode::Outer);
+
+        let response = patch.into_response();
+        let selector = response
+            .headers()
+            .get("datastar-selector")
+            .and_then(|value| value.to_str().ok())
+            .expect("patch response should set datastar-selector header");
+
+        assert_eq!(selector, r#"#a\85 b"#);
+    }
+
+    #[tokio::test]
+    async fn id_selector_header_is_ascii() {
+        let patch = PatchElements::new()
+            .id(ElementId::__dynamic("café".to_owned()))
+            .mode(PatchElementsMode::Outer);
+
+        let response = patch.into_response();
+        let selector = response
+            .headers()
+            .get("datastar-selector")
+            .and_then(|value| value.to_str().ok())
+            .expect("patch response should set datastar-selector header");
+
+        assert_eq!(selector, r#"#caf\e9"#);
     }
 
     #[tokio::test]
@@ -517,5 +576,27 @@ data: elements Home of me
 data: elements 
 data: elements Here we go\n\n"
         );
+    }
+
+    proptest::proptest! {
+        #[test]
+        fn css_escaped_id_selects_exactly_that_id(
+            id in proptest::collection::vec(proptest::char::any(), 1..16)
+                .prop_map(|chars| chars.into_iter().filter(|&ch| ch != '\0').collect::<String>())
+                .prop_filter("non-empty", |id| !id.is_empty()),
+        ) {
+            let escaped = css_escape_identifier(&id);
+            proptest::prop_assert!(
+                escaped.bytes().all(|b| b.is_ascii_graphic() || b == b' '),
+                "{escaped:?} is not printable ASCII"
+            );
+
+            let selector = format!("#{escaped}");
+            let mut input = cssparser::ParserInput::new(&selector);
+            let mut parser = cssparser::Parser::new(&mut input);
+            let token = parser.next_including_whitespace().cloned();
+            proptest::prop_assert_eq!(token, Ok(cssparser::Token::IDHash(id.as_str().into())));
+            proptest::prop_assert!(parser.is_exhausted(), "{selector:?} has trailing tokens");
+        }
     }
 }

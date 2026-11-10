@@ -16,7 +16,11 @@ use crate::validation;
 
 /// Escapes `</script`, which would end the element, and `<!--`, which together with a later
 /// `<script` puts the HTML tokenizer in a state where `</script>` no longer ends it.
-fn escape_script_source_literal(value: &str) -> std::borrow::Cow<'_, str> {
+///
+/// `cheers` runs the same escaping at runtime over script bodies with dynamic parts, and its
+/// tests check that the two agree.
+#[doc(hidden)]
+pub fn escape_script_source_literal(value: &str) -> std::borrow::Cow<'_, str> {
     let bytes = value.as_bytes();
     let mut i = 0;
     let mut start = 0;
@@ -25,19 +29,26 @@ fn escape_script_source_literal(value: &str) -> std::borrow::Cow<'_, str> {
     while i < bytes.len() {
         let rest = &bytes[i..];
         let replacement = if rest.starts_with(b"<!--") {
-            Some(("\\x3C!--", 4))
+            // A JS escape such as `'\<!--'` would otherwise escape the `\` of `\x3C`, so the
+            // backslash is dropped: `\<` and `\x3C` both mean `<`.
+            let backslashes = bytes[start..i]
+                .iter()
+                .rev()
+                .take_while(|&&b| b == b'\\')
+                .count();
+            Some((i - backslashes % 2, "\\x3C!--", 4))
         } else if rest.len() >= 8
             && rest.starts_with(b"</")
             && rest[2..8].eq_ignore_ascii_case(b"script")
         {
-            Some(("<\\/", 2))
+            Some((i, "<\\/", 2))
         } else {
             None
         };
 
-        if let Some((replacement, len)) = replacement {
+        if let Some((end, replacement, len)) = replacement {
             let escaped = escaped.get_or_insert_with(|| String::with_capacity(value.len() + 4));
-            escaped.push_str(&value[start..i]);
+            escaped.push_str(&value[start..end]);
             escaped.push_str(replacement);
             i += len;
             start = i;
@@ -344,37 +355,20 @@ impl<'a> Generator<'a> {
     fn finish(self) -> AnyBlock {
         let buffer_ident = Self::buffer_ident();
         let mut stmts = TokenStream::new();
-        let mut parts = self.parts.into_iter();
         let mut size_estimate = 0;
+        let mut run = StaticRun::default();
 
-        while let Some(part) = parts.next() {
+        for part in self.parts {
             match part {
-                Part::Static(lit) => {
-                    let mut dynamic_stmt = None;
-                    let mut static_str = lit.value();
-                    for part in parts.by_ref() {
-                        match part {
-                            Part::Static(lit) => static_str.push_str(&lit.value()),
-                            Part::Dynamic(stmt) => {
-                                dynamic_stmt = Some(stmt);
-                                break;
-                            }
-                        }
-                    }
-                    size_estimate += static_str.len();
-                    let static_lit = LitStr::new(&static_str, lit.span());
-
-                    // XSS SAFETY: static parts are literal strings pushed by us
-                    stmts.extend(quote! {
-                        #buffer_ident.dangerously_get_string().push_str(#static_lit);
-                    });
-                    stmts.extend(dynamic_stmt);
-                }
+                Part::Static(lit) => run.push_static(&lit),
+                Part::ScriptStatic(lit) => run.push_script(&lit),
                 Part::Dynamic(stmt) => {
+                    run.flush_into(&buffer_ident, &mut stmts, &mut size_estimate);
                     stmts.extend(stmt);
                 }
             }
         }
+        run.flush_into(&buffer_ident, &mut stmts, &mut size_estimate);
 
         // XSS SAFETY: prealoc does not add any content
         let render = quote! {
@@ -458,18 +452,41 @@ impl<'a> Generator<'a> {
     }
 
     pub fn push_escaped_literal(&mut self, context: Context, lit: &LitStr) {
-        let value = lit.value();
         let effective_context = self.context_override.unwrap_or(context);
-        let escaped_value = match effective_context {
-            Context::Element => html_escape::encode_text(&value),
+        let escape = match effective_context {
+            Context::Element => html_escape::encode_text::<str>,
             Context::AttributeValue | Context::DatastarSource => {
-                html_escape::encode_double_quoted_attribute(&value)
+                html_escape::encode_double_quoted_attribute::<str>
             }
-            Context::ScriptSource => escape_script_source_literal(&value),
+            Context::ScriptSource => {
+                self.parts.push(Part::ScriptStatic(lit.clone()));
+                return;
+            }
         };
 
+        let value = lit.value();
         self.parts
-            .push(Part::Static(LitStr::new(&escaped_value, lit.span())));
+            .push(Part::Static(LitStr::new(&escape(&value), lit.span())));
+    }
+
+    /// Runs `f`, then escapes everything it rendered once more at runtime: a `</script` or
+    /// `<!--` can form across the literals and values of a dynamic script body.
+    pub fn push_runtime_escaped_script(&mut self, f: impl FnOnce(&mut Self)) {
+        let buffer_ident = Self::buffer_ident();
+        let start_ident = Ident::new("__cheers_script_start", Span::mixed_site());
+
+        // XSS SAFETY: only records the buffer length.
+        self.push_stmt(quote! {
+            let #start_ident = #buffer_ident.dangerously_get_string().len();
+        });
+        f(self);
+        // XSS SAFETY: only escapes what the script body rendered.
+        self.push_stmt(quote! {
+            ::cheers::__internal::__escape_script_body(
+                #buffer_ident.dangerously_get_string(),
+                #start_ident,
+            );
+        });
     }
 
     pub fn push_literals(&mut self, literals: Vec<LitStr>) {
@@ -714,7 +731,61 @@ impl<'a> Generator<'a> {
 
 enum Part {
     Static(LitStr),
+    /// A `<script>` body literal that has not been escaped yet.
+    ScriptStatic(LitStr),
     Dynamic(TokenStream),
+}
+
+/// Consecutive static parts, merged into one `push_str`.
+#[derive(Default)]
+struct StaticRun {
+    span: Option<Span>,
+    text: String,
+    /// Script literals are escaped as one string so that a `</script` or `<!--` split
+    /// across adjacent literals is still caught.
+    script: String,
+}
+
+impl StaticRun {
+    fn push_static(&mut self, lit: &LitStr) {
+        self.span.get_or_insert_with(|| lit.span());
+        self.flush_script();
+        self.text.push_str(&lit.value());
+    }
+
+    fn push_script(&mut self, lit: &LitStr) {
+        self.span.get_or_insert_with(|| lit.span());
+        self.script.push_str(&lit.value());
+    }
+
+    fn flush_script(&mut self) {
+        if !self.script.is_empty() {
+            self.text
+                .push_str(&escape_script_source_literal(&self.script));
+            self.script.clear();
+        }
+    }
+
+    fn flush_into(
+        &mut self,
+        buffer_ident: &Ident,
+        stmts: &mut TokenStream,
+        size_estimate: &mut usize,
+    ) {
+        let Some(span) = self.span.take() else {
+            return;
+        };
+        self.flush_script();
+        *size_estimate += self.text.len();
+        let static_lit = LitStr::new(&self.text, span);
+        self.text.clear();
+
+        // XSS SAFETY: static parts are literal strings pushed by us, and `flush_script` has
+        // escaped the script literals among them.
+        stmts.extend(quote! {
+            #buffer_ident.dangerously_get_string().push_str(#static_lit);
+        });
+    }
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -1154,5 +1225,89 @@ impl ToTokens for AnyBlock {
         self.brace_token.surround(tokens, |tokens| {
             self.stmts.to_tokens(tokens);
         });
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use proc_macro2::{Span, TokenStream, TokenTree};
+    use proptest::prelude::*;
+    use quote::quote;
+    use syn::LitStr;
+
+    use super::{escape_script_source_literal, lazy};
+    use crate::{Document, basics::unindent};
+
+    fn script_text() -> impl Strategy<Value = String> {
+        let fragment = prop_oneof![
+            any::<char>().prop_map(String::from),
+            Just("<".to_owned()),
+            Just("/".to_owned()),
+            Just("!".to_owned()),
+            Just("-".to_owned()),
+            Just("</".to_owned()),
+            Just("<!-".to_owned()),
+            Just("script".to_owned()),
+            Just("ScRiPt".to_owned()),
+            Just("</script".to_owned()),
+            Just("<!--".to_owned()),
+            Just("-->".to_owned()),
+            Just("\\".to_owned()),
+        ];
+        prop::collection::vec(fragment, 0..16).prop_map(|parts| parts.concat())
+    }
+
+    fn breaks_out_of_script(body: &str) -> bool {
+        let lower = body.to_ascii_lowercase();
+        lower.contains("</script") || lower.contains("<!--")
+    }
+
+    fn pushed_literals(tokens: TokenStream, out: &mut String) {
+        let mut tokens = tokens.into_iter().peekable();
+        while let Some(token) = tokens.next() {
+            match token {
+                TokenTree::Ident(ident) if ident == "push_str" => {
+                    if let Some(TokenTree::Group(group)) = tokens.peek()
+                        && let Ok(lit) = syn::parse2::<LitStr>(group.stream())
+                    {
+                        out.push_str(&lit.value());
+                    }
+                }
+                TokenTree::Group(group) => pushed_literals(group.stream(), out),
+                _ => {}
+            }
+        }
+    }
+
+    proptest! {
+        #[test]
+        fn script_source_literal_cannot_break_out(value in script_text()) {
+            let escaped = escape_script_source_literal(&value);
+
+            prop_assert!(!breaks_out_of_script(&escaped), "{value:?} -> {escaped:?}");
+            if !breaks_out_of_script(&value) {
+                prop_assert_eq!(escaped.as_ref(), value.as_str());
+            }
+        }
+
+        #[test]
+        fn adjacent_static_script_literals_are_escaped_together(
+            pieces in prop::collection::vec(script_text(), 1..6),
+        ) {
+            let literals = pieces.iter().map(|piece| LitStr::new(piece, Span::call_site()));
+            let expanded = lazy::<Document>(quote!(script { #(#literals)* })).expect("script expands");
+
+            let mut html = String::new();
+            pushed_literals(expanded, &mut html);
+            let body = html
+                .strip_prefix("<script>")
+                .and_then(|html| html.strip_suffix("</script>"))
+                .expect("rendered a script element");
+
+            prop_assert!(!breaks_out_of_script(body), "{pieces:?} -> {body:?}");
+            let joined = pieces.iter().map(|piece| unindent(piece)).collect::<String>();
+            let expected = escape_script_source_literal(&joined);
+            prop_assert_eq!(body, expected.as_ref());
+        }
     }
 }

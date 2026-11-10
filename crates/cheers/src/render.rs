@@ -640,6 +640,67 @@ pub(crate) fn push_js_single_quoted_string_to_script(dst: &mut String, value: &s
     dst.push('\'');
 }
 
+/// Escapes `</script`, which would end the element, and `<!--`, which together with a later
+/// `<script` puts the HTML tokenizer in a state where `</script>` no longer ends it.
+///
+/// Must match `escape_script_source_literal` in `cheers-ast`, which escapes static script
+/// literals at compile time.
+pub(crate) fn escape_script_source(value: &str) -> Cow<'_, str> {
+    let bytes = value.as_bytes();
+    let mut i = 0;
+    let mut start = 0;
+    let mut escaped = None::<String>;
+
+    while i < bytes.len() {
+        let rest = &bytes[i..];
+        let replacement = if rest.starts_with(b"<!--") {
+            // A JS escape such as `'\<!--'` would otherwise escape the `\` of `\x3C`, so the
+            // backslash is dropped: `\<` and `\x3C` both mean `<`.
+            let backslashes = bytes[start..i]
+                .iter()
+                .rev()
+                .take_while(|&&b| b == b'\\')
+                .count();
+            Some((i - backslashes % 2, "\\x3C!--", 4))
+        } else if rest.len() >= 8
+            && rest.starts_with(b"</")
+            && rest[2..8].eq_ignore_ascii_case(b"script")
+        {
+            Some((i, "<\\/", 2))
+        } else {
+            None
+        };
+
+        if let Some((end, replacement, len)) = replacement {
+            let escaped = escaped.get_or_insert_with(|| String::with_capacity(value.len() + 4));
+            escaped.push_str(&value[start..end]);
+            escaped.push_str(replacement);
+            i += len;
+            start = i;
+        } else {
+            i += 1;
+        }
+    }
+
+    if let Some(mut escaped) = escaped {
+        escaped.push_str(&value[start..]);
+        Cow::Owned(escaped)
+    } else {
+        Cow::Borrowed(value)
+    }
+}
+
+/// Escapes the script body rendered into `buffer` since `start`.
+#[doc(hidden)]
+pub fn __escape_script_body(buffer: &mut String, start: usize) {
+    let escaped = match escape_script_source(&buffer[start..]) {
+        Cow::Owned(escaped) => escaped,
+        Cow::Borrowed(_) => return,
+    };
+    buffer.truncate(start);
+    buffer.push_str(&escaped);
+}
+
 impl Render for fmt::Arguments<'_> {
     #[inline]
     fn render_to(&self, buffer: &mut Buffer) {
@@ -1204,3 +1265,6 @@ impl_tuple!((0 T0) (1 T1) (2 T2) (3 T3) (4 T4) (5 T5) (6 T6) (7 T7) (8 T8));
 impl_tuple!((0 T0) (1 T1) (2 T2) (3 T3) (4 T4) (5 T5) (6 T6) (7 T7) (8 T8) (9 T9));
 impl_tuple!((0 T0) (1 T1) (2 T2) (3 T3) (4 T4) (5 T5) (6 T6) (7 T7) (8 T8) (9 T9) (10 T10));
 impl_tuple!((0 T0) (1 T1) (2 T2) (3 T3) (4 T4) (5 T5) (6 T6) (7 T7) (8 T8) (9 T9) (10 T10) (11 T11));
+
+#[cfg(test)]
+mod escaping_properties;
