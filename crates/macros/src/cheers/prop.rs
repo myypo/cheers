@@ -401,10 +401,14 @@ pub(crate) fn generate_prop_impl(item: &mut ItemStruct) -> Result<TokenStream, E
         (Fields::Unit, Some(_)) | (Fields::Unnamed(_), _) => TokenStream::new(),
     };
 
+    // The source spans on `#vis` and the field names, there for rust-analyzer navigation from
+    // `html!`, make span-based dead-code tools see this struct as handwritten; only some `html!`
+    // invocation forms use it.
     Ok(quote! {
         #(#wrapper_structs)*
 
         #[doc(hidden)]
+        #[allow(dead_code)]
         #vis struct #required_ident #required_generic_params #required_where_clause {
             #(#required_field_decls,)*
         }
