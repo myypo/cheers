@@ -121,6 +121,15 @@ find_nextest_pid() {
 
 nextest_pid="$(find_nextest_pid)"
 
+# Browser tests run in Chromium browsers cheers::test keeps running in this directory between
+# tests, so they are only pooled with a ChromeDriver started here, on the same host, and only when
+# the watcher below can stop them. Each browser leads its own process group, whose id it writes to
+# a *.pid file.
+pool_dir=""
+if [[ -n "$nextest_pid" ]]; then
+    pool_dir="$(mktemp -d "$(realpath -m "$log_dir")/chromium-pool.XXXXXX")"
+fi
+
 # Start ChromeDriver detached from this setup script so nextest doesn't treat the
 # long-running server as a leaked child process. A small watcher tears it down
 # when the cargo-nextest process exits.
@@ -131,10 +140,23 @@ setsid bash -c '
   log_file="$2"
   pid_file="$3"
   nextest_pid="$4"
+  pool_dir="$5"
 
   nohup chromedriver --port="$port" >"$log_file" 2>&1 &
   driver_pid="$!"
   echo "$driver_pid" >"$pid_file"
+
+  signal_browsers() {
+    local signal="$1" pid_file pid alive=1
+    for pid_file in "$pool_dir"/*.pid; do
+      [[ -e "$pid_file" ]] || continue
+      pid="$(<"$pid_file")"
+      if kill "-$signal" -- "-$pid" >/dev/null 2>&1; then
+        alive=0
+      fi
+    done
+    return "$alive"
+  }
 
   if [[ -n "$nextest_pid" ]]; then
     (
@@ -142,16 +164,26 @@ setsid bash -c '
         sleep 1
       done
       kill "$driver_pid" >/dev/null 2>&1 || true
+      signal_browsers TERM || true
+      for _ in {1..50}; do
+        signal_browsers 0 || break
+        sleep 0.1
+      done
+      signal_browsers KILL || true
       wait "$driver_pid" >/dev/null 2>&1 || true
       rm -f "$pid_file"
+      find "$pool_dir" -mindepth 1 -maxdepth 1 ! -name "*.log" -exec rm -rf {} +
     ) >/dev/null 2>&1 &
   fi
-' _ "$webdriver_port" "$log_file" "$pid_file" "$nextest_pid" >/dev/null 2>&1 </dev/null
+' _ "$webdriver_port" "$log_file" "$pid_file" "$nextest_pid" "$pool_dir" >/dev/null 2>&1 </dev/null
 
 for _ in {1..50}; do
     if webdriver_ready; then
         echo "started ChromeDriver at $webdriver_url (log: $log_file)" >&2
         echo "WEBDRIVER_URL=$webdriver_url" >>"$NEXTEST_ENV"
+        if [[ -n "$pool_dir" ]]; then
+            echo "CHEERS_TEST_BROWSER_POOL=$pool_dir" >>"$NEXTEST_ENV"
+        fi
         exit 0
     fi
     sleep 0.1

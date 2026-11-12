@@ -6,7 +6,7 @@ resolver = "3"
 version = "0.1.0-alpha.1"
 authors = ["Mykyta Polchanov <nikirsmcgl@gmail.com>"]
 edition = "2024"
-rust-version = "1.88"
+rust-version = "1.89"
 description = "Fullstack hypermedia framework"
 readme = "README.md"
 homepage = "https://github.com/myypo/cheers"
@@ -62,6 +62,8 @@ async-compression = { version = "0.4", features = [
   "brotli",
 ] }
 tokio-util = { version = "0.7", features = ["io"] }
+tokio-tungstenite = { version = "0.29" }
+libc = { version = "0.2" }
 thirtyfour = { version = "0.37.1", default-features = false, features = [
   "rustls",
   "component",

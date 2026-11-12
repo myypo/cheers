@@ -65,6 +65,8 @@ async fn page_uses_injected_state() -> Result<(), Box<dyn std::error::Error>> {
 
 Build tests with `cheers::router::new(...)`. Register any generated actions on the Axum router with `.action::<SomeAction>()` before `.with_state(...)`. Include `Scripts` on pages that exercise actions, signals, patches, or streams.
 
+`App` connects to the WebDriver at `WEBDRIVER_URL`. When `CHEERS_TEST_BROWSER_POOL` names a directory, each `App` borrows a running Chromium from it, in a fresh browser context, instead of starting its own; whoever sets the variable stops those browsers after the run, as `scripts/nextest-chromedriver.sh` does for nextest. Open extra tabs and windows with the session's `new_tab` and `new_window`, which keep them in that context.
+
 ## Actions and patches
 
 Navigate, wait for the initial target, fill inputs by semantic selectors, click the real control, wait for the patched DOM, then assert final text/structure.

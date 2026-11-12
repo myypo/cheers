@@ -56,6 +56,8 @@ inventory.workspace = true
 async-compression.workspace = true
 tokio-util.workspace = true
 thirtyfour = { workspace = true, optional = true }
+tokio-tungstenite = { workspace = true, optional = true }
+libc = { workspace = true, optional = true }
 dioxus-devtools = { workspace = true, optional = true }
 
 [build-dependencies]
@@ -68,7 +70,7 @@ proptest.workspace = true
 trybuild = "1"
 
 [features]
-test = ["dep:thirtyfour"]
+test = ["dep:thirtyfour", "dep:tokio-tungstenite", "dep:libc"]
 mathml = []
 pi-extension = ["macros/pi-extension", "dep:hmac", "dep:sha2"]
 subsecond = ["dep:dioxus-devtools"]
