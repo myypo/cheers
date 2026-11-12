@@ -6,17 +6,21 @@ use std::{
     net::SocketAddr,
     ops::Deref,
     panic,
+    path::PathBuf,
     pin::{Pin, pin},
+    sync::Arc,
     task::{Context, Poll},
     time::Duration,
 };
 
 use axum::Router;
 use thirtyfour::{
-    IntoArcStr,
+    IntoArcStr, WindowHandle,
     error::{WebDriverError, WebDriverResult},
 };
 use tokio::{net::TcpListener, sync::oneshot, task::JoinHandle};
+
+mod pool;
 
 /// A running test server and browser session.
 ///
@@ -37,6 +41,7 @@ pub struct App {
     shutdown_tx: Option<oneshot::Sender<()>>,
     task: Option<JoinHandle<io::Result<()>>>,
     driver: Option<thirtyfour::WebDriver>,
+    lease: Option<pool::Lease>,
 }
 
 /// Environment variable used by [`chrome`] to locate WebDriver.
@@ -45,36 +50,109 @@ pub const WEBDRIVER_URL_ENV: &str = "WEBDRIVER_URL";
 /// Environment variable used by [`chrome`] to locate the Chrome/Chromium binary.
 pub const CHROME_BIN_ENV: &str = "CHROME_BIN";
 
+/// Environment variable naming an absolute directory in which [`App`]s keep Chromium browsers
+/// running for later `App`s, in this process or another, instead of having ChromeDriver start and
+/// stop one each. Unix only.
+///
+/// Each `App` has a browser to itself and opens a fresh browser context in it, so cookies,
+/// storage, cache and window size never carry over. The browser is started on this host, so the
+/// WebDriver at [`WEBDRIVER_URL_ENV`] has to run here too, and it keeps the environment of the
+/// test process that started it. Whoever sets the variable stops the browsers once the tests are
+/// done: each writes its process id, which is also its process group, to a `*.pid` file in the
+/// directory.
+pub const BROWSER_POOL_ENV: &str = "CHEERS_TEST_BROWSER_POOL";
+
+const CHROMIUM_ARGS: &[&str] = &[
+    "--headless",
+    "--no-sandbox",
+    "--disable-gpu",
+    "--disable-dev-shm-usage",
+];
+
 fn chromium_binary() -> Option<String> {
+    const NAMES: &[&str] = &[
+        "chromium",
+        "chromium-browser",
+        "google-chrome-stable",
+        "google-chrome",
+        "chrome",
+    ];
+
     if let Ok(path) = std::env::var(CHROME_BIN_ENV) {
         return Some(path);
     }
 
-    std::env::var_os("PATH").and_then(|paths| {
-        std::env::split_paths(&paths)
-            .map(|p| p.join("chromium"))
-            .find(|p| p.is_file())
-            .map(|p| p.to_string_lossy().into_owned())
-    })
+    let paths: Vec<_> = std::env::split_paths(&std::env::var_os("PATH")?).collect();
+    NAMES
+        .iter()
+        .flat_map(|name| paths.iter().map(move |dir| dir.join(name)))
+        .find(|p| p.is_file())
+        .map(|p| p.to_string_lossy().into_owned())
 }
 
-/// Create a headless Chrome WebDriver session using [`WEBDRIVER_URL_ENV`] or a default URL.
-async fn chrome() -> WebDriverResult<thirtyfour::WebDriver> {
+fn pool_dir() -> io::Result<Option<PathBuf>> {
+    let Some(dir) = std::env::var_os(BROWSER_POOL_ENV) else {
+        return Ok(None);
+    };
+    let dir = PathBuf::from(dir);
+    if !dir.is_absolute() {
+        return Err(io::Error::other(format!(
+            "{BROWSER_POOL_ENV} must be an absolute path, not {dir:?}"
+        )));
+    }
+    Ok(Some(dir))
+}
+
+/// Create a headless Chrome WebDriver session using [`WEBDRIVER_URL_ENV`] or a default URL, in a
+/// browser from [`BROWSER_POOL_ENV`] when it is set.
+async fn chrome() -> WebDriverResult<(thirtyfour::WebDriver, Option<pool::Lease>)> {
     use thirtyfour::prelude::*;
 
     const DEFAULT_WEBDRIVER_URL: &str = "http://127.0.0.1:9515";
     let url = std::env::var(WEBDRIVER_URL_ENV).unwrap_or_else(|_| DEFAULT_WEBDRIVER_URL.to_owned());
 
-    let mut caps = DesiredCapabilities::chrome();
-    if let Some(path) = chromium_binary() {
-        caps.set_binary(&path)?;
-    }
-    caps.set_headless()?;
-    caps.set_no_sandbox()?;
-    caps.set_disable_gpu()?;
-    caps.set_disable_dev_shm_usage()?;
+    let Some(dir) = pool_dir()? else {
+        let mut caps = DesiredCapabilities::chrome();
+        if let Some(path) = chromium_binary() {
+            caps.set_binary(&path)?;
+        }
+        for arg in CHROMIUM_ARGS {
+            caps.add_arg(arg)?;
+        }
+        let driver = WebDriver::new(url, caps).await?;
+        return match record_datastar_ready(&driver).await {
+            Ok(()) => Ok((driver, None)),
+            Err(err) => {
+                let _ = driver.quit().await;
+                Err(err)
+            }
+        };
+    };
 
-    let driver = WebDriver::new(url, caps).await?;
+    let chromium = chromium_binary().ok_or_else(|| {
+        io::Error::other(format!(
+            "{BROWSER_POOL_ENV} is set but no browser was found to start; set {CHROME_BIN_ENV}"
+        ))
+    })?;
+    let lease = pool::Lease::take(&dir, &chromium, CHROMIUM_ARGS).await?;
+    let driver = match lease.attach(url).await {
+        Ok(driver) => driver,
+        Err(err) => {
+            let _ = lease.release().await;
+            return Err(err);
+        }
+    };
+    match record_datastar_ready(&driver).await {
+        Ok(()) => Ok((driver, Some(lease))),
+        Err(err) => {
+            let _ = driver.quit().await;
+            let _ = lease.release().await;
+            Err(err)
+        }
+    }
+}
+
+async fn record_datastar_ready(driver: &thirtyfour::WebDriver) -> WebDriverResult<()> {
     // Datastar announces readiness only through a one-shot event, so the listener has to exist
     // before any page script runs for `Session::goto` to tell a bound page from an unbound one.
     driver
@@ -82,7 +160,7 @@ async fn chrome() -> WebDriverResult<thirtyfour::WebDriver> {
         .page()
         .add_script_to_evaluate_on_new_document(RECORD_DATASTAR_READY_SCRIPT)
         .await?;
-    Ok(driver)
+    Ok(())
 }
 
 const RECORD_DATASTAR_READY_SCRIPT: &str = r#"
@@ -109,8 +187,8 @@ impl App {
                 .await
         });
 
-        let driver = match chrome().await {
-            Ok(driver) => driver,
+        let (driver, lease) = match chrome().await {
+            Ok(browser) => browser,
             Err(err) => {
                 let _ = shutdown_tx.send(());
                 return Err(err);
@@ -122,6 +200,7 @@ impl App {
             shutdown_tx: Some(shutdown_tx),
             task: Some(task),
             driver: Some(driver),
+            lease,
         })
     }
 
@@ -145,6 +224,7 @@ impl App {
         let session = Session {
             addr: self.addr,
             driver: self.driver.as_ref().expect("browser to be present").clone(),
+            context: self.lease.as_ref().map(pool::Lease::context),
         };
 
         let mut output = None;
@@ -189,6 +269,11 @@ impl App {
         {
             Self::remember_error(&mut first_error, err);
         }
+        if let Some(lease) = self.lease.take()
+            && let Err(err) = lease.release().await
+        {
+            Self::remember_error(&mut first_error, WebDriverError::IoError(err));
+        }
         if let Some(tx) = self.shutdown_tx.take() {
             let _ = tx.send(());
         }
@@ -223,6 +308,7 @@ impl App {
 pub struct Session {
     addr: SocketAddr,
     driver: thirtyfour::WebDriver,
+    context: Option<Arc<str>>,
 }
 
 impl Session {
@@ -242,6 +328,45 @@ impl Session {
     pub async fn goto(&self, url: impl IntoArcStr) -> WebDriverResult<()> {
         self.driver.goto(url).await?;
         self.wait_for_datastar().await
+    }
+
+    /// Open a tab without switching to it. This shadows [`thirtyfour::WebDriver::new_tab`], which
+    /// in a browser from [`BROWSER_POOL_ENV`] opens it outside the session's cookies and storage.
+    pub async fn new_tab(&self) -> WebDriverResult<WindowHandle> {
+        self.open_window(false).await
+    }
+
+    /// Open a window without switching to it. This shadows [`thirtyfour::WebDriver::new_window`],
+    /// which in a browser from [`BROWSER_POOL_ENV`] opens it outside the session's cookies and
+    /// storage.
+    pub async fn new_window(&self) -> WebDriverResult<WindowHandle> {
+        self.open_window(true).await
+    }
+
+    async fn open_window(&self, new_window: bool) -> WebDriverResult<WindowHandle> {
+        let Some(context) = &self.context else {
+            return if new_window {
+                self.driver.new_window().await
+            } else {
+                self.driver.new_tab().await
+            };
+        };
+        let created = self
+            .driver
+            .cdp()
+            .send_raw(
+                "Target.createTarget",
+                serde_json::json!({
+                    "url": "about:blank",
+                    "browserContextId": &**context,
+                    "newWindow": new_window,
+                }),
+            )
+            .await?;
+        let target = created["targetId"].as_str().ok_or_else(|| {
+            WebDriverError::ParseError(format!("Target.createTarget returned no id: {created}"))
+        })?;
+        Ok(target.into())
     }
 
     /// Wait until Datastar has bound the current page, if the page loads the Cheers runtime.

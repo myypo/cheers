@@ -499,6 +499,7 @@ dependencies = [
  "ignore",
  "inventory",
  "itoa",
+ "libc",
  "lightningcss",
  "notify",
  "percent-encoding",
@@ -519,6 +520,7 @@ dependencies = [
  "thirtyfour",
  "tokio",
  "tokio-stream",
+ "tokio-tungstenite",
  "tokio-util",
  "tower",
  "tracing",
@@ -567,6 +569,16 @@ dependencies = [
  "axum",
  "cheers",
  "rand 0.8.8",
+ "thirtyfour",
+ "tokio",
+]
+
+[[package]]
+name = "cheers-example-test-harness"
+version = "0.1.0-alpha.1"
+dependencies = [
+ "axum",
+ "cheers",
  "thirtyfour",
  "tokio",
 ]

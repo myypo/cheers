@@ -1,0 +1,18 @@
+[package]
+name = "cheers-example-test-harness"
+edition.workspace = true
+license.workspace = true
+publish = false
+rust-version.workspace = true
+version.workspace = true
+
+[dependencies]
+axum.workspace = true
+
+[dev-dependencies]
+cheers = { workspace = true, features = ["test"] }
+thirtyfour.workspace = true
+tokio = { workspace = true, features = ["macros", "rt-multi-thread", "net"] }
+
+[lints]
+workspace = true
