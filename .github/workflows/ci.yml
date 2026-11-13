@@ -23,7 +23,7 @@ jobs:
       - name: Check crate packaging
         run: >-
           nix develop --command cargo package --allow-dirty --no-verify
-          -p cheers-ast -p cheers-macros -p cargo-cheers -p cheers
+          -p cheers-ast -p cheers-macros -p cheers-prettyplease -p cargo-cheers -p cheers
 
       # `commitlint` is skipped here and run by its own job: it needs the head commit and full
       # history, while this job keeps the default merge-commit checkout so it tests the result
