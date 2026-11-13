@@ -8,6 +8,7 @@ mod async_stream;
 mod bundle;
 pub mod components;
 mod context;
+pub mod css;
 mod custom_event;
 pub mod datastar_object;
 pub mod events;
@@ -50,7 +51,8 @@ pub mod prelude {
     };
 
     pub use crate::{
-        context::{AttributeValue, DatastarSource, Element, ScriptSource},
+        context::{AttributeValue, DatastarSource, Element, ScriptSource, StyleSource},
+        css::{CssIdent, CssString},
         custom_event::EventTarget,
         events::{
             EventBatch, EventSender, EventStream, ExecuteScript, IntoEvent, PatchElements,
@@ -59,8 +61,8 @@ pub mod prelude {
         include_css, include_js_bundle, include_svg_sprite,
         reference::{ElementId, FormName, Signal},
         render::{
-            Buffer, Lazy, LazyAttribute, LazyScript, RawDatastarSource, RawScript, Render,
-            RenderExt as _,
+            Buffer, Lazy, LazyAttribute, LazyScript, LazyStyle, RawDatastarSource, RawScript,
+            RawStyle, Render, RenderExt as _,
         },
         response::{AsyncLazy, AsyncRender},
         router::{Action, ActionDef, ActionOptions, ActionRetry, ActionRouterExt as _},
@@ -68,5 +70,5 @@ pub mod prelude {
     };
 }
 pub use custom_event::EventTarget;
-pub use render::{Raw, RawAttribute, RawDatastarSource, RawScript, Rendered};
+pub use render::{Raw, RawAttribute, RawDatastarSource, RawScript, RawStyle, Rendered};
 pub use router::{Action, ActionDef, ActionOptions, ActionRetry, ActionRouterExt};

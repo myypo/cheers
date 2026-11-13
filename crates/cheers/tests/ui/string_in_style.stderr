@@ -1,0 +1,25 @@
+error[E0277]: the trait bound `str: Render<StyleSource>` is not satisfied
+ --> tests/ui/string_in_style.rs:6:31
+  |
+5 |       let _ = html! {
+  |  _____________-
+6 | |         style { "a { color: " (color) "; }" }
+  | |                               ^^^^^^^ the trait `Render<StyleSource>` is not implemented for `str`
+7 | |     };
+  | |_____- required by a bound introduced by this call
+  |
+help: `str` implements trait `Render<C>`
+ --> src/render.rs
+  |
+  | impl Render for str {
+  | ^^^^^^^^^^^^^^^^^^^ `Render`
+...
+  | impl Render<AttributeValue> for str {
+  | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `Render<AttributeValue>`
+...
+  | impl Render<DatastarSource> for str {
+  | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `Render<DatastarSource>`
+...
+  | impl Render<ScriptSource> for str {
+  | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `Render<ScriptSource>`
+  = note: required for `&str` to implement `Render<StyleSource>`

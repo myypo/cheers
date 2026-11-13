@@ -177,6 +177,8 @@ html! {
 
 Use `js_script!` for JavaScript source that will run from a `<script>` body, such as `ExecuteScript::new(js_script! { ... })` or an inline `script { (js_script! { ... }) }`. The body of a JavaScript `script` in `html!` (no `type`, `type="module"`, or a JavaScript MIME type) is already in this context, so `script { "..." }` literals are raw JavaScript and interpolated strings become JS string literals. Don't wrap `js_script!` output in `Raw`; use `RawScript` only for trusted script source. A `script` with any other `type` (JSON-LD, import maps) is a data block and its body renders as ordinary HTML text. This context does not HTML-attribute-escape JavaScript operators and escapes interpolated values so they cannot terminate the surrounding `<script>` element. Use `ExecuteScript::dangerously_from_string(...)` only for trusted raw script source.
 
+Prefer a `CssBundle` over inline `style` elements. In an `html!` `style` body, literals are raw CSS and Rust strings don't compile: interpolate numbers, `CssString(s)`, `CssIdent(s)` or an `ElementId`, and use `RawStyle` only for trusted CSS text, such as an inlined stylesheet in a standalone page.
+
 Suspense:
 
 ```rust

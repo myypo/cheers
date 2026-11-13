@@ -11,7 +11,9 @@ pub use inventory;
 pub use serde;
 
 pub use crate::{
-    datastar_object::__spread, reference::FormComponent, render::__escape_script_body,
+    datastar_object::__spread,
+    reference::FormComponent,
+    render::{__escape_script_body, __escape_style_body},
 };
 
 pub mod action_rendering;

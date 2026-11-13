@@ -16,6 +16,9 @@ help: `u64` implements trait `Render<C>`
   |               impl Render<AttributeValue> for $Ty {
   |               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `Render<AttributeValue>`
 ...
+  |               impl Render<StyleSource> for $Ty {
+  |               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `Render<StyleSource>`
+...
   | / render_big_int_via_itoa! {
   | |     i64 i128 isize
   | |     u64 u128 usize

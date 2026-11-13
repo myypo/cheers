@@ -3281,6 +3281,149 @@ fn script_body_in_svg_stays_markup() {
 }
 
 #[test]
+fn style_body_literals_are_raw_css() {
+    let rendered = html! {
+        style { ".nav > a:hover, .card & .title { content: '&amp;\"'; }" }
+    }
+    .render()
+    .into_inner();
+
+    assert_eq!(
+        rendered,
+        "<style>.nav > a:hover, .card & .title { content: '&amp;\"'; }</style>"
+    );
+}
+
+#[test]
+fn style_body_literals_cannot_close_style_element() {
+    let rendered = html! {
+        style { "a::after { content: '</STYLE><img>'; }" "b::after { content: '</sty" "le>'; }" }
+    }
+    .render()
+    .into_inner();
+
+    assert_eq!(
+        rendered,
+        "<style>a::after { content: '<\\/STYLE><img>'; }b::after { content: '<\\/style>'; }</style>"
+    );
+}
+
+#[test]
+fn style_body_cannot_close_an_enclosing_raw_text_element() {
+    // XSS SAFETY: the test checks that the style body escapes this
+    let css = RawStyle::dangerously_create("a{}</noscript><img src=x onerror=alert(1)>");
+
+    let rendered = html! {
+        noscript { style { (css) "b{background:url(a</*c*/)}" } }
+    }
+    .render()
+    .into_inner();
+
+    assert_eq!(
+        rendered,
+        "<noscript><style>a{}<\\/noscript><img src=x onerror=alert(1)>\
+         b{background:url(a</*c*/)}</style></noscript>"
+    );
+}
+
+#[test]
+fn style_body_cannot_close_style_element_across_dynamic_parts() {
+    let ready = true;
+    // XSS SAFETY: the test checks that the style body escapes this
+    let tail = RawStyle::dangerously_create("yle>");
+
+    let rendered = [
+        html! { style { "</st" @let _x = 1; "yle>" } }.render(),
+        html! { style { "<" @if ready { "/style>" } } }.render(),
+        html! { style { "</st" (tail) } }.render(),
+    ]
+    .map(|rendered| rendered.into_inner());
+
+    assert_eq!(
+        rendered,
+        [
+            "<style><\\/style></style>",
+            "<style><\\/style></style>",
+            "<style><\\/style></style>",
+        ]
+    );
+}
+
+proptest::proptest! {
+    #[test]
+    fn style_body_cannot_close_style_element(
+        pieces in proptest::collection::vec(
+            proptest::sample::select(vec!["<", "/", "style", "STYLE", "</", "</st", "noscript", "*", "x"]),
+            0..16,
+        ),
+    ) {
+        let body_pieces = pieces.clone();
+        let rendered = html! {
+            style {
+                @for piece in &body_pieces {
+                    // XSS SAFETY: the test checks that the style body escapes these
+                    (RawStyle::dangerously_create(*piece))
+                }
+            }
+        }
+        .render()
+        .into_inner();
+
+        let body = rendered
+            .strip_prefix("<style>")
+            .and_then(|html| html.strip_suffix("</style>"))
+            .expect("a style element")
+            .to_ascii_lowercase();
+        let opens_end_tag = body
+            .as_bytes()
+            .windows(3)
+            .any(|w| w[0] == b'<' && w[1] == b'/' && w[2].is_ascii_alphabetic());
+        proptest::prop_assert!(!opens_end_tag, "{pieces:?} -> {rendered:?}");
+    }
+}
+
+#[test]
+fn style_body_interpolates_css_values() {
+    #[derive(Cheers)]
+    struct Card {
+        #[id]
+        id: i32,
+    }
+
+    let CardIds { id } = Card { id: 7 }.ids();
+    let class = "1st card</style>";
+    let label = "a\"b\\c</style>\n";
+    let width = 12.5;
+    let columns = 3_usize;
+
+    let rendered = html! {
+        style {
+            "#" (id) " ." (CssIdent(class)) "::before { content: " (CssString(label)) "; }"
+            ".grid { width: " (width) "rem; columns: " (columns) "; }"
+        }
+    }
+    .render()
+    .into_inner();
+
+    assert_eq!(
+        rendered,
+        "<style>#card-7 .\\31 st\\ card\\<\\/style\\>::before { content: \"a\\\"b\\\\c\\3c /style>\\a \"; }\
+         .grid { width: 12.5rem; columns: 3; }</style>"
+    );
+}
+
+#[test]
+fn style_body_in_svg_stays_markup() {
+    let rendered = html! {
+        svg { style { "a > b {}" } }
+    }
+    .render()
+    .into_inner();
+
+    assert_eq!(rendered, "<svg><style>a &gt; b {}</style></svg>");
+}
+
+#[test]
 fn signal_id() {
     #[derive(Cheers)]
     #[expect(dead_code)]

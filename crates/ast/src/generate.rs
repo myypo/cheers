@@ -65,6 +65,37 @@ pub fn escape_script_source_literal(value: &str) -> std::borrow::Cow<'_, str> {
     }
 }
 
+/// Escapes every end tag opening, `</` before an ASCII letter, as `<\/`. `</style` would end the
+/// element, and any other end tag would end a raw text element around it, such as a `noscript`
+/// when scripting is enabled. `\/` means `/` in CSS strings, identifiers and URLs alike, so the
+/// escape keeps the value of the CSS around it.
+///
+/// `cheers` runs the same escaping at runtime over style bodies with dynamic parts, and its
+/// tests check that the two agree.
+#[doc(hidden)]
+pub fn escape_style_source_literal(value: &str) -> std::borrow::Cow<'_, str> {
+    let bytes = value.as_bytes();
+    let mut escaped = None::<String>;
+    let mut start = 0;
+
+    for i in 0..bytes.len().saturating_sub(2) {
+        if bytes[i] == b'<' && bytes[i + 1] == b'/' && bytes[i + 2].is_ascii_alphabetic() {
+            let escaped = escaped.get_or_insert_with(|| String::with_capacity(value.len() + 4));
+            escaped.push_str(&value[start..=i]);
+            escaped.push('\\');
+            start = i + 1;
+        }
+    }
+
+    match escaped {
+        Some(mut escaped) => {
+            escaped.push_str(&value[start..]);
+            std::borrow::Cow::Owned(escaped)
+        }
+        None => std::borrow::Cow::Borrowed(value),
+    }
+}
+
 pub fn async_key_ident() -> Ident {
     Ident::new("__cheers_async_key", Span::mixed_site())
 }
@@ -361,7 +392,7 @@ impl<'a> Generator<'a> {
         for part in self.parts {
             match part {
                 Part::Static(lit) => run.push_static(&lit),
-                Part::ScriptStatic(lit) => run.push_script(&lit),
+                Part::RawTextStatic(kind, lit) => run.push_raw_text(kind, &lit),
                 Part::Dynamic(stmt) => {
                     run.flush_into(&buffer_ident, &mut stmts, &mut size_estimate);
                     stmts.extend(stmt);
@@ -459,7 +490,13 @@ impl<'a> Generator<'a> {
                 html_escape::encode_double_quoted_attribute::<str>
             }
             Context::ScriptSource => {
-                self.parts.push(Part::ScriptStatic(lit.clone()));
+                self.parts
+                    .push(Part::RawTextStatic(RawText::Script, lit.clone()));
+                return;
+            }
+            Context::StyleSource => {
+                self.parts
+                    .push(Part::RawTextStatic(RawText::Style, lit.clone()));
                 return;
             }
         };
@@ -469,23 +506,24 @@ impl<'a> Generator<'a> {
             .push(Part::Static(LitStr::new(&escape(&value), lit.span())));
     }
 
-    /// Runs `f`, then escapes everything it rendered once more at runtime: a `</script` or
-    /// `<!--` can form across the literals and values of a dynamic script body.
-    pub fn push_runtime_escaped_script(&mut self, f: impl FnOnce(&mut Self)) {
+    /// Runs `f`, then escapes everything it rendered once more at runtime: an end tag or `<!--`
+    /// can form across the literals and values of a dynamic body.
+    pub fn push_runtime_escaped_raw_text(&mut self, kind: RawText, f: impl FnOnce(&mut Self)) {
         let buffer_ident = Self::buffer_ident();
-        let start_ident = Ident::new("__cheers_script_start", Span::mixed_site());
+        let start_ident = Ident::new("__cheers_raw_text_start", Span::mixed_site());
+        let escape_fn = match kind {
+            RawText::Script => quote!(::cheers::__internal::__escape_script_body),
+            RawText::Style => quote!(::cheers::__internal::__escape_style_body),
+        };
 
         // XSS SAFETY: only records the buffer length.
         self.push_stmt(quote! {
             let #start_ident = #buffer_ident.dangerously_get_string().len();
         });
         f(self);
-        // XSS SAFETY: only escapes what the script body rendered.
+        // XSS SAFETY: only escapes what the body rendered.
         self.push_stmt(quote! {
-            ::cheers::__internal::__escape_script_body(
-                #buffer_ident.dangerously_get_string(),
-                #start_ident,
-            );
+            #escape_fn(#buffer_ident.dangerously_get_string(), #start_ident);
         });
     }
 
@@ -531,7 +569,8 @@ impl<'a> Generator<'a> {
             (Context::Element, Context::Element)
             | (Context::AttributeValue, Context::AttributeValue)
             | (Context::DatastarSource, Context::DatastarSource)
-            | (Context::ScriptSource, Context::ScriptSource) => {
+            | (Context::ScriptSource, Context::ScriptSource)
+            | (Context::StyleSource, Context::StyleSource) => {
                 quote!(#buffer_ident)
             }
             (Context::Element, Context::AttributeValue) => {
@@ -543,19 +582,34 @@ impl<'a> Generator<'a> {
             (Context::Element, Context::ScriptSource) => {
                 quote!(#buffer_ident.as_script_buffer())
             }
+            (Context::Element, Context::StyleSource) => {
+                quote!(#buffer_ident.as_style_buffer())
+            }
             (Context::AttributeValue, Context::DatastarSource) => {
                 quote!(#buffer_ident.as_datastar_buffer())
             }
-            (Context::AttributeValue, Context::ScriptSource) => unreachable!(),
-            (Context::DatastarSource, Context::Element) => unreachable!(),
             (Context::DatastarSource, Context::AttributeValue) => {
                 quote!(#buffer_ident.as_attribute_buffer())
             }
-            (Context::DatastarSource, Context::ScriptSource) => unreachable!(),
-            (Context::AttributeValue, Context::Element) => unreachable!(),
-            (Context::ScriptSource, Context::Element)
-            | (Context::ScriptSource, Context::AttributeValue)
-            | (Context::ScriptSource, Context::DatastarSource) => unreachable!(),
+            (Context::AttributeValue | Context::DatastarSource, Context::Element)
+            | (
+                Context::AttributeValue | Context::DatastarSource,
+                Context::ScriptSource | Context::StyleSource,
+            )
+            | (
+                Context::ScriptSource,
+                Context::Element
+                | Context::AttributeValue
+                | Context::DatastarSource
+                | Context::StyleSource,
+            )
+            | (
+                Context::StyleSource,
+                Context::Element
+                | Context::AttributeValue
+                | Context::DatastarSource
+                | Context::ScriptSource,
+            ) => unreachable!(),
         };
 
         let mut paren_expr = TokenStream::new();
@@ -577,21 +631,27 @@ impl<'a> Generator<'a> {
         matches!(self.context, Context::Element) && self.context_override.is_none()
     }
 
-    pub const fn in_script_source(&self) -> bool {
-        matches!(self.context_override, Some(Context::ScriptSource))
+    /// The raw text element body, such as a `script` or `style` body, being generated.
+    pub const fn raw_text(&self) -> Option<RawText> {
+        match self.context_override {
+            Some(Context::ScriptSource) => Some(RawText::Script),
+            Some(Context::StyleSource) => Some(RawText::Style),
+            _ => None,
+        }
     }
 
-    pub fn push_markup_in_script_error(&mut self, span: Span, what: &str) {
-        self.push_diagnostic(
-            Error::new(
-                span,
-                format!(
-                    "{what} cannot appear in JavaScript source, such as a `script` body or \
-                     `js_script!`. Write the JavaScript as string literals and `(values)`."
-                ),
-            )
-            .to_compile_error(),
-        );
+    pub fn push_markup_in_raw_text_error(&mut self, kind: RawText, span: Span) {
+        let message = match kind {
+            RawText::Script => {
+                "HTML markup cannot appear in JavaScript source, such as a `script` body or \
+                 `js_script!`. Write the JavaScript as string literals and `(values)`."
+            }
+            RawText::Style => {
+                "HTML markup cannot appear in a `style` body. Write the CSS as string literals \
+                 and `(values)`."
+            }
+        };
+        self.push_diagnostic(Error::new(span, message).to_compile_error());
     }
 
     pub fn push_js_value_node(&mut self, node: &mut AttributeValueNode) {
@@ -731,9 +791,32 @@ impl<'a> Generator<'a> {
 
 enum Part {
     Static(LitStr),
-    /// A `<script>` body literal that has not been escaped yet.
-    ScriptStatic(LitStr),
+    /// A `<script>` or `<style>` body literal that has not been escaped yet.
+    RawTextStatic(RawText, LitStr),
     Dynamic(TokenStream),
+}
+
+/// An element whose body the HTML parser reads as raw text, decoding no character references.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RawText {
+    Script,
+    Style,
+}
+
+impl RawText {
+    pub const fn context(self) -> Context {
+        match self {
+            Self::Script => Context::ScriptSource,
+            Self::Style => Context::StyleSource,
+        }
+    }
+
+    fn escape(self, value: &str) -> std::borrow::Cow<'_, str> {
+        match self {
+            Self::Script => escape_script_source_literal(value),
+            Self::Style => escape_style_source_literal(value),
+        }
+    }
 }
 
 /// Consecutive static parts, merged into one `push_str`.
@@ -741,28 +824,28 @@ enum Part {
 struct StaticRun {
     span: Option<Span>,
     text: String,
-    /// Script literals are escaped as one string so that a `</script` or `<!--` split
-    /// across adjacent literals is still caught.
-    script: String,
+    /// Raw text literals are escaped as one string so that an end tag or `<!--` split across
+    /// adjacent literals is still caught.
+    raw_text: Option<(RawText, String)>,
 }
 
 impl StaticRun {
     fn push_static(&mut self, lit: &LitStr) {
         self.span.get_or_insert_with(|| lit.span());
-        self.flush_script();
+        self.flush_raw_text();
         self.text.push_str(&lit.value());
     }
 
-    fn push_script(&mut self, lit: &LitStr) {
+    fn push_raw_text(&mut self, kind: RawText, lit: &LitStr) {
         self.span.get_or_insert_with(|| lit.span());
-        self.script.push_str(&lit.value());
+        let (current, raw_text) = self.raw_text.get_or_insert_with(|| (kind, String::new()));
+        debug_assert_eq!(*current, kind, "a closing tag separates raw text bodies");
+        raw_text.push_str(&lit.value());
     }
 
-    fn flush_script(&mut self) {
-        if !self.script.is_empty() {
-            self.text
-                .push_str(&escape_script_source_literal(&self.script));
-            self.script.clear();
+    fn flush_raw_text(&mut self) {
+        if let Some((kind, raw_text)) = self.raw_text.take() {
+            self.text.push_str(&kind.escape(&raw_text));
         }
     }
 
@@ -775,13 +858,13 @@ impl StaticRun {
         let Some(span) = self.span.take() else {
             return;
         };
-        self.flush_script();
+        self.flush_raw_text();
         *size_estimate += self.text.len();
         let static_lit = LitStr::new(&self.text, span);
         self.text.clear();
 
-        // XSS SAFETY: static parts are literal strings pushed by us, and `flush_script` has
-        // escaped the script literals among them.
+        // XSS SAFETY: static parts are literal strings pushed by us, and `flush_raw_text` has
+        // escaped the raw text literals among them.
         stmts.extend(quote! {
             #buffer_ident.dangerously_get_string().push_str(#static_lit);
         });
@@ -794,6 +877,7 @@ pub enum Context {
     AttributeValue,
     DatastarSource,
     ScriptSource,
+    StyleSource,
 }
 
 impl Context {
@@ -803,6 +887,7 @@ impl Context {
             Self::AttributeValue => Ident::new("AttributeValue", Span::mixed_site()),
             Self::DatastarSource => Ident::new("DatastarSource", Span::mixed_site()),
             Self::ScriptSource => Ident::new("ScriptSource", Span::mixed_site()),
+            Self::StyleSource => Ident::new("StyleSource", Span::mixed_site()),
         };
 
         quote!(::cheers::prelude::#ident)
@@ -1235,7 +1320,7 @@ mod tests {
     use quote::quote;
     use syn::LitStr;
 
-    use super::{escape_script_source_literal, lazy};
+    use super::{escape_script_source_literal, escape_style_source_literal, lazy};
     use crate::{Document, basics::unindent};
 
     fn script_text() -> impl Strategy<Value = String> {
@@ -1255,6 +1340,29 @@ mod tests {
             Just("\\".to_owned()),
         ];
         prop::collection::vec(fragment, 0..16).prop_map(|parts| parts.concat())
+    }
+
+    fn style_text() -> impl Strategy<Value = String> {
+        let fragment = prop_oneof![
+            any::<char>().prop_map(String::from),
+            Just("<".to_owned()),
+            Just("/".to_owned()),
+            Just("</".to_owned()),
+            Just("st".to_owned()),
+            Just("yle".to_owned()),
+            Just("StYlE".to_owned()),
+            Just("</style".to_owned()),
+            Just("</noscript".to_owned()),
+            Just("</*".to_owned()),
+            Just("\\".to_owned()),
+        ];
+        prop::collection::vec(fragment, 0..16).prop_map(|parts| parts.concat())
+    }
+
+    fn breaks_out_of_style(body: &str) -> bool {
+        body.as_bytes()
+            .windows(3)
+            .any(|w| w[0] == b'<' && w[1] == b'/' && w[2].is_ascii_alphabetic())
     }
 
     fn breaks_out_of_script(body: &str) -> bool {
@@ -1307,6 +1415,36 @@ mod tests {
             prop_assert!(!breaks_out_of_script(body), "{pieces:?} -> {body:?}");
             let joined = pieces.iter().map(|piece| unindent(piece)).collect::<String>();
             let expected = escape_script_source_literal(&joined);
+            prop_assert_eq!(body, expected.as_ref());
+        }
+
+        #[test]
+        fn style_source_literal_cannot_break_out(value in style_text()) {
+            let escaped = escape_style_source_literal(&value);
+
+            prop_assert!(!breaks_out_of_style(&escaped), "{value:?} -> {escaped:?}");
+            if !breaks_out_of_style(&value) {
+                prop_assert_eq!(escaped.as_ref(), value.as_str());
+            }
+        }
+
+        #[test]
+        fn adjacent_static_style_literals_are_escaped_together(
+            pieces in prop::collection::vec(style_text(), 1..6),
+        ) {
+            let literals = pieces.iter().map(|piece| LitStr::new(piece, Span::call_site()));
+            let expanded = lazy::<Document>(quote!(style { #(#literals)* })).expect("style expands");
+
+            let mut html = String::new();
+            pushed_literals(expanded, &mut html);
+            let body = html
+                .strip_prefix("<style>")
+                .and_then(|html| html.strip_suffix("</style>"))
+                .expect("rendered a style element");
+
+            prop_assert!(!breaks_out_of_style(body), "{pieces:?} -> {body:?}");
+            let joined = pieces.iter().map(|piece| unindent(piece)).collect::<String>();
+            let expected = escape_style_source_literal(&joined);
             prop_assert_eq!(body, expected.as_ref());
         }
     }
