@@ -177,7 +177,7 @@ html! {
 
 Use `js_script!` for JavaScript source that will run from a `<script>` body, such as `ExecuteScript::new(js_script! { ... })` or an inline `script { (js_script! { ... }) }`. The body of a JavaScript `script` in `html!` (no `type`, `type="module"`, or a JavaScript MIME type) is already in this context, so `script { "..." }` literals are raw JavaScript and interpolated strings become JS string literals. Don't wrap `js_script!` output in `Raw`; use `RawScript` only for trusted script source. A `script` with any other `type` (JSON-LD, import maps) is a data block and its body renders as ordinary HTML text. This context does not HTML-attribute-escape JavaScript operators and escapes interpolated values so they cannot terminate the surrounding `<script>` element. Use `ExecuteScript::dangerously_from_string(...)` only for trusted raw script source.
 
-The body of an HTML `style` in `html!` is CSS: `style { ".list > li { color: red; }" }` literals are raw CSS (no `&gt;`), with end tags such as `</style` escaped. Interpolate CSS values, not Rust strings: numbers, `CssString(s)` for a quoted string (`content`, `font-family`), `CssIdent(s)` for a class, custom property or keyframes name, an `ElementId` for `"#" (id)` selectors, or `RawStyle` for trusted CSS source. Don't wrap stylesheet text in `Raw`; use `RawStyle::dangerously_create(include_str!(..))`, or better a `CssBundle`.
+Prefer a `CssBundle` over inline `style` elements. In an `html!` `style` body, literals are raw CSS and Rust strings don't compile: interpolate numbers, `CssString(s)`, `CssIdent(s)` or an `ElementId`, and use `RawStyle` only for trusted CSS text, such as an inlined stylesheet in a standalone page.
 
 Suspense:
 
