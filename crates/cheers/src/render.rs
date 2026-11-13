@@ -5,14 +5,15 @@ use core::{
 };
 use std::{borrow::Cow, rc::Rc, sync::Arc};
 
-use crate::context::{AttributeValue, Context, DatastarSource, Element, ScriptSource};
+use crate::context::{AttributeValue, Context, DatastarSource, Element, ScriptSource, StyleSource};
 
 /// Raw pre-escaped output for a specific rendering context.
 ///
 /// `Raw<T, Element>` is for already-sanitized HTML nodes. [`RawAttribute<T>`]
 /// is the same idea in attribute context. `Raw<T, DatastarSource>` is for already-sanitized
-/// JavaScript source intended for Datastar HTML attributes, and `Raw<T, ScriptSource>`
-/// is for already-sanitized JavaScript source intended for `<script>` bodies.
+/// JavaScript source intended for Datastar HTML attributes, `Raw<T, ScriptSource>`
+/// is for already-sanitized JavaScript source intended for `<script>` bodies, and
+/// `Raw<T, StyleSource>` is for trusted CSS source intended for `<style>` bodies.
 ///
 /// Most code should prefer [`html!`](crate::prelude::html) and normal [`Render`] implementations.
 /// Reach for `Raw` only when you already have trusted, pre-escaped markup and need to insert it
@@ -115,6 +116,12 @@ pub type RawDatastarSource<T> = Raw<T, DatastarSource>;
 ///
 /// This is a type alias for [`Raw<T, ScriptSource>`].
 pub type RawScript<T> = Raw<T, ScriptSource>;
+
+/// Raw CSS source for a `<style>` body.
+///
+/// This is a type alias for [`Raw<T, StyleSource>`]. A `</style` in it is still escaped when it
+/// renders in an `html!` `style` body.
+pub type RawStyle<T> = Raw<T, StyleSource>;
 
 /// A rendered HTML string.
 ///
@@ -272,6 +279,12 @@ impl<C: Context> Buffer<C> {
         self.cast_context()
     }
 
+    /// Converts this into a `&mut Buffer<StyleSource>`.
+    #[inline]
+    pub fn as_style_buffer(&mut self) -> &mut Buffer<StyleSource> {
+        self.cast_context()
+    }
+
     /// Renders the buffer to a [`Rendered<String>`].
     #[inline]
     #[must_use]
@@ -306,6 +319,10 @@ impl<C: Context> Buffer<C> {
     /// for a `<script>` body. The pushed contents must therefore remain valid
     /// JavaScript and avoid raw `</script` sequences that would terminate the
     /// surrounding script element.
+    ///
+    /// For `Buffer<StyleSource>` writes, the caller must push CSS source intended for a `<style>`
+    /// body, and avoid raw `</style` sequences that would terminate the surrounding style
+    /// element.
     ///
     /// It is recommended to add a `// XSS SAFETY` comment above the usage of
     /// this method to indicate why it is safe to directly write to the
@@ -372,6 +389,10 @@ impl Debug for Buffer {
 /// For [`Render<ScriptSource>`] implementations, this must render JavaScript source for
 /// a `<script>` body. The implementation must ensure the result is valid JavaScript
 /// and cannot terminate the surrounding script element.
+///
+/// For [`Render<StyleSource>`] implementations, this must render CSS source for a `<style>`
+/// body. The implementation must ensure the result cannot terminate the surrounding style
+/// element, and should keep it within the CSS token it renders.
 ///
 /// [`Option`] renders nothing for `None` as HTML or an attribute value, but implements neither
 /// JavaScript context, since no single expression suits both a value and an optional fragment.
@@ -484,6 +505,8 @@ impl<T: Render> RenderExt for T {}
 ///
 /// For [`Lazy<F, ScriptSource>`], this must render JavaScript source intended for a
 /// `<script>` body.
+///
+/// For [`Lazy<F, StyleSource>`], this must render CSS source intended for a `<style>` body.
 #[derive(Clone, Copy)]
 #[must_use = "`Lazy` does nothing unless `.render()` or `.render_to()` is called"]
 pub struct Lazy<F: Fn(&mut Buffer<C>), C: Context = Element> {
@@ -500,6 +523,11 @@ pub type LazyAttribute<F> = Lazy<F, AttributeValue>;
 ///
 /// This is a type alias for [`Lazy<F, ScriptSource>`].
 pub type LazyScript<F> = Lazy<F, ScriptSource>;
+
+/// CSS source for a `<style>` body lazily rendered via a closure.
+///
+/// This is a type alias for [`Lazy<F, StyleSource>`].
+pub type LazyStyle<F> = Lazy<F, StyleSource>;
 
 impl<F: Fn(&mut Buffer<C>), C: Context> Lazy<F, C> {
     /// Creates a new [`Lazy`] from the given closure.
@@ -694,6 +722,47 @@ pub(crate) fn escape_script_source(value: &str) -> Cow<'_, str> {
 #[doc(hidden)]
 pub fn __escape_script_body(buffer: &mut String, start: usize) {
     let escaped = match escape_script_source(&buffer[start..]) {
+        Cow::Owned(escaped) => escaped,
+        Cow::Borrowed(_) => return,
+    };
+    buffer.truncate(start);
+    buffer.push_str(&escaped);
+}
+
+/// Escapes `</style`, which would end the element.
+///
+/// Must match `escape_style_source_literal` in `cheers-ast`, which escapes static style
+/// literals at compile time.
+pub(crate) fn escape_style_source(value: &str) -> Cow<'_, str> {
+    let bytes = value.as_bytes();
+    let mut i = 0;
+    let mut start = 0;
+    let mut escaped = None::<String>;
+
+    while i + 7 <= bytes.len() {
+        if bytes[i..].starts_with(b"</") && bytes[i + 2..i + 7].eq_ignore_ascii_case(b"style") {
+            let escaped = escaped.get_or_insert_with(|| String::with_capacity(value.len() + 4));
+            escaped.push_str(&value[start..i]);
+            escaped.push_str("<\\/");
+            i += 2;
+            start = i;
+        } else {
+            i += 1;
+        }
+    }
+
+    if let Some(mut escaped) = escaped {
+        escaped.push_str(&value[start..]);
+        Cow::Owned(escaped)
+    } else {
+        Cow::Borrowed(value)
+    }
+}
+
+/// Escapes the style body rendered into `buffer` since `start`.
+#[doc(hidden)]
+pub fn __escape_style_body(buffer: &mut String, start: usize) {
+    let escaped = match escape_style_source(&buffer[start..]) {
         Cow::Owned(escaped) => escaped,
         Cow::Borrowed(_) => return,
     };
@@ -978,6 +1047,14 @@ macro_rules! render_big_int_via_itoa {
                     buffer.dangerously_get_string().push_str(itoa::Buffer::new().format(*self));
                 }
             }
+
+            impl Render<StyleSource> for $Ty {
+                #[inline]
+                fn render_to(&self, buffer: &mut Buffer<StyleSource>) {
+                    // XSS SAFETY: integers are safe
+                    buffer.dangerously_get_string().push_str(itoa::Buffer::new().format(*self));
+                }
+            }
         )*
     };
 }
@@ -1055,6 +1132,18 @@ macro_rules! render_via_deref {
                     T::render(&**self)
                 }
             }
+
+            impl<T: Render<StyleSource> + ?Sized> Render<StyleSource> for $Ty {
+                #[inline]
+                fn render_to(&self, buffer: &mut Buffer<StyleSource>) {
+                    T::render_to(&**self, buffer);
+                }
+
+                #[inline]
+                fn render(&self) -> Rendered<String> {
+                    T::render(&**self)
+                }
+            }
         )*
     };
 }
@@ -1101,6 +1190,18 @@ impl<'a, B: 'a + Render<DatastarSource> + ToOwned + ?Sized> Render<DatastarSourc
 impl<'a, B: 'a + Render<ScriptSource> + ToOwned + ?Sized> Render<ScriptSource> for Cow<'a, B> {
     #[inline]
     fn render_to(&self, buffer: &mut Buffer<ScriptSource>) {
+        B::render_to(&**self, buffer);
+    }
+
+    #[inline]
+    fn render(&self) -> Rendered<String> {
+        B::render(&**self)
+    }
+}
+
+impl<'a, B: 'a + Render<StyleSource> + ToOwned + ?Sized> Render<StyleSource> for Cow<'a, B> {
+    #[inline]
+    fn render_to(&self, buffer: &mut Buffer<StyleSource>) {
         B::render_to(&**self, buffer);
     }
 

@@ -30,7 +30,7 @@ use self::{
         Generator, NodeFlavour,
     },
 };
-use crate::generate::Context;
+use crate::generate::{Context, RawText};
 
 pub type Document = Nodes<ElementNode>;
 
@@ -134,10 +134,12 @@ impl Generate for ElementNode {
     const CONTEXT: Context = Context::Element;
 
     fn generate(&mut self, g: &mut Generator<'_>) {
+        if let (Self::Element(_) | Self::Component(_), Some(kind)) = (&*self, g.raw_text()) {
+            g.push_markup_in_raw_text_error(kind, control::element_node_span(self), "HTML markup");
+            return;
+        }
+
         match self {
-            node @ (Self::Element(_) | Self::Component(_)) if g.in_script_source() => {
-                g.push_markup_in_script_error(control::element_node_span(node), "HTML markup");
-            }
             Self::Element(element) => g.push(element),
             Self::Component(component) => g.push(component),
             Self::Literal(lit) => g.push_escaped_literal(Self::CONTEXT, &lit.lit_str()),
@@ -555,9 +557,17 @@ impl Generate for Element {
             });
         }
 
-        let script_body_is_javascript = flavour == NodeFlavour::Html
-            && self.name.name() == "script"
-            && self.script_body_is_javascript();
+        // The HTML parser reads these bodies as raw text up to the end tag, and decodes no
+        // character references there.
+        let raw_text = if flavour != NodeFlavour::Html {
+            None
+        } else if self.name.name() == "script" && self.script_body_is_javascript() {
+            Some(RawText::Script)
+        } else if self.name.name() == "style" {
+            Some(RawText::Style)
+        } else {
+            None
+        };
 
         match &mut self.body {
             ElementBody::Normal { children, .. } => {
@@ -566,14 +576,14 @@ impl Generate for Element {
                 let child_flavour = flavour.child_flavour(&self.name);
                 if child_flavour != flavour {
                     g.push_with_flavour(child_flavour, |g| g.push(children));
-                } else if script_body_is_javascript && !g.has_context_override() {
-                    // The HTML parser reads a `<script>` body as raw text up to `</script`, and
-                    // decodes no character references there.
+                } else if let Some(kind) = raw_text
+                    && !g.has_context_override()
+                {
                     if children.is_static() {
-                        g.with_context_override(Context::ScriptSource, |g| g.push(children));
+                        g.with_context_override(kind.context(), |g| g.push(children));
                     } else {
-                        g.push_runtime_escaped_script(|g| {
-                            g.with_context_override(Context::ScriptSource, |g| g.push(children));
+                        g.push_runtime_escaped_raw_text(kind, |g| {
+                            g.with_context_override(kind.context(), |g| g.push(children));
                         });
                     }
                 } else {

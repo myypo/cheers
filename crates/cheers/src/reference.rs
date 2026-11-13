@@ -3,7 +3,7 @@ use std::{borrow::Cow, fmt::Display, marker::PhantomData};
 use serde::Deserialize;
 
 use crate::{
-    context::{AttributeValue, DatastarSource, ScriptSource},
+    context::{AttributeValue, DatastarSource, ScriptSource, StyleSource},
     render::{
         Buffer, Render, push_datastar_source_to_html_attribute,
         push_js_single_quoted_string_to_html_attribute,
@@ -105,6 +105,15 @@ impl Render<DatastarSource> for ElementId {
 impl Render<ScriptSource> for ElementId {
     fn render_to(&self, buffer: &mut Buffer<ScriptSource>) {
         self.0.render_to(buffer);
+    }
+}
+
+/// Renders as a CSS identifier, so `"#" (id)` in a `style` body selects the element.
+impl Render<StyleSource> for ElementId {
+    fn render_to(&self, buffer: &mut Buffer<StyleSource>) {
+        // XSS SAFETY: identifier serialization escapes `<` and `/`, so the identifier cannot
+        // contain `</style`.
+        crate::css::push_css_identifier(buffer.dangerously_get_string(), &self.0);
     }
 }
 

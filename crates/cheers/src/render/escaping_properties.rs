@@ -7,10 +7,14 @@ use swc_ecma_ast::{EsVersion, Expr, Lit, Stmt};
 use swc_ecma_parser::{Syntax, parse_file_as_script};
 
 use super::{
-    __escape_script_body, Buffer, Render, escape_script_source,
-    push_datastar_source_to_html_attribute, push_json_source_to_html_attribute,
+    __escape_script_body, __escape_style_body, Buffer, Render, escape_script_source,
+    escape_style_source, push_datastar_source_to_html_attribute,
+    push_json_source_to_html_attribute,
 };
-use crate::context::{AttributeValue, Context, DatastarSource, Element, ScriptSource};
+use crate::{
+    context::{AttributeValue, Context, DatastarSource, Element, ScriptSource, StyleSource},
+    css::{CssIdent, CssString},
+};
 
 /// Arbitrary text biased towards the characters and sequences each escaper has to handle.
 fn text() -> impl Strategy<Value = String> {
@@ -20,6 +24,7 @@ fn text() -> impl Strategy<Value = String> {
             "&", "<", ">", "\"", "'", "`", "\\", "/", "\n", "\r", "\t", "\0", "\u{7f}",
             "\u{85}", "\u{2028}", "\u{2029}", "\u{feff}", "</script", "</ScRiPt>", "<!--",
             "-->", "&amp;", "&lt;", "&#60;", "&#x3C;", "${", "*/", "\\u2028", "\\x3C",
+            "</style", "</StYlE>", "-", "--", "0", "\\3c ",
         ])
         .prop_map(str::to_owned),
     ];
@@ -110,6 +115,41 @@ fn parse_js_string_literal(source: &str) -> Result<String, String> {
 fn breaks_out_of_script(body: &str) -> bool {
     let lower = body.to_ascii_lowercase();
     lower.contains("</script") || lower.contains("<!--")
+}
+
+fn breaks_out_of_style(body: &str) -> bool {
+    body.to_ascii_lowercase().contains("</style")
+}
+
+#[derive(Debug, PartialEq)]
+enum CssToken {
+    String(String),
+    Ident(String),
+    Other(String),
+}
+
+/// Parses `source` as one CSS token followed by nothing else.
+fn parse_css_token(source: &str) -> Result<CssToken, String> {
+    let mut input = cssparser::ParserInput::new(source);
+    let mut parser = cssparser::Parser::new(&mut input);
+    let token = match parser.next_including_whitespace_and_comments() {
+        Ok(cssparser::Token::QuotedString(value)) => CssToken::String(value.to_string()),
+        Ok(cssparser::Token::Ident(value)) => CssToken::Ident(value.to_string()),
+        Ok(token) => CssToken::Other(format!("{token:?}")),
+        Err(err) => return Err(format!("{err:?}")),
+    };
+    if !parser.is_exhausted() {
+        return Err(format!("more than one token in {source:?}"));
+    }
+    Ok(token)
+}
+
+/// The inside of a double-quoted CSS string, built from pieces that keep it valid.
+fn css_string_body() -> impl Strategy<Value = String> {
+    let fragment = prop::sample::select(vec![
+        "a", "<", "/", "style", "STYLE", "</style", "\\\\", "\\<", "\\/", "\\\"", "\\3c ", "'",
+    ]);
+    prop::collection::vec(fragment, 0..16).prop_map(|parts| parts.concat())
 }
 
 fn assert_no_raw(output: &str, forbidden: &[char], input: &impl Display) {
@@ -225,5 +265,64 @@ proptest! {
 
         let escaped = escape_script_source(&source);
         prop_assert_eq!(parse_js_string_literal(&escaped), expected, "{}", escaped);
+    }
+
+    #[test]
+    fn style_body_escaping_matches_compile_time_escaping(value in text()) {
+        prop_assert_eq!(
+            escape_style_source(&value),
+            ast::generate::escape_style_source_literal(&value)
+        );
+    }
+
+    #[test]
+    fn style_body_cannot_break_out(prefix in text(), body in text()) {
+        let mut buffer = format!("{prefix}<style>");
+        let start = buffer.len();
+        buffer.push_str(&body);
+        __escape_style_body(&mut buffer, start);
+
+        prop_assert_eq!(&buffer[..start], format!("{prefix}<style>"));
+        let escaped = &buffer[start..];
+        prop_assert!(!breaks_out_of_style(escaped), "{body:?} -> {escaped:?}");
+        if !breaks_out_of_style(&body) {
+            prop_assert_eq!(escaped, body.as_str());
+        }
+    }
+
+    #[test]
+    fn style_body_escaping_keeps_css_string_values(value in css_string_body()) {
+        let source = format!("\"{value}\"");
+        let expected = parse_css_token(&source);
+        prop_assert!(
+            matches!(expected, Ok(CssToken::String(_))),
+            "{source:?} is not a string: {expected:?}"
+        );
+
+        let escaped = escape_style_source(&source);
+        prop_assert_eq!(parse_css_token(&escaped), expected, "{}", escaped);
+    }
+
+    #[test]
+    fn css_string_is_one_css_string_in_a_style_body(value in text()) {
+        let output = rendered::<StyleSource, _>(&CssString(&value));
+
+        // Without any `<`, the body cannot contain `</style`.
+        assert_no_raw(&output, &['<'], &format!("{value:?}"));
+        let expected = value.replace('\0', "\u{fffd}");
+        prop_assert_eq!(
+            parse_css_token(&output),
+            Ok(CssToken::String(expected))
+        );
+    }
+
+    #[test]
+    fn css_ident_is_one_css_identifier_in_a_style_body(value in text()) {
+        prop_assume!(!value.is_empty());
+        let output = rendered::<StyleSource, _>(&CssIdent(&value));
+
+        prop_assert!(!breaks_out_of_style(&output), "{value:?} -> {output:?}");
+        let expected = value.replace('\0', "\u{fffd}");
+        prop_assert_eq!(parse_css_token(&output), Ok(CssToken::Ident(expected)));
     }
 }

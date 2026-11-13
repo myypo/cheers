@@ -10,19 +10,19 @@ error: HTML markup cannot appear in JavaScript source, such as a `script` body o
 17 |             Greeting;
    |             ^^^^^^^^
 
-error: `@async` streams HTML, so it cannot appear in attribute values or JavaScript source, such as a `script` body or `js_script!`.
+error: `@async` streams HTML, so it cannot appear in attribute values, JavaScript source (a `script` body or `js_script!`) or a `style` body.
   --> tests/ui/markup_in_script.rs:18:14
    |
 18 |             @async {
    |              ^^^^^
 
-error: `@async` streams HTML, so it cannot appear in attribute values or JavaScript source, such as a `script` body or `js_script!`.
+error: `@async` streams HTML, so it cannot appear in attribute values, JavaScript source (a `script` body or `js_script!`) or a `style` body.
   --> tests/ui/markup_in_script.rs:26:10
    |
 26 |         @async { "later" } @else { div {} }
    |          ^^^^^
 
-error: `@async` streams HTML, so it cannot appear in attribute values or JavaScript source, such as a `script` body or `js_script!`.
+error: `@async` streams HTML, so it cannot appear in attribute values, JavaScript source (a `script` body or `js_script!`) or a `style` body.
   --> tests/ui/markup_in_script.rs:29:10
    |
 29 |         @async { script { "a" } } @else { div {} }

@@ -83,6 +83,18 @@ fn markup_in_script_is_rejected() {
 }
 
 #[test]
+fn markup_in_style_is_rejected() {
+    let tests = trybuild::TestCases::new();
+    tests.compile_fail("tests/ui/markup_in_style.rs");
+}
+
+#[test]
+fn string_in_style_is_rejected() {
+    let tests = trybuild::TestCases::new();
+    tests.compile_fail("tests/ui/string_in_style.rs");
+}
+
+#[test]
 fn html_value_in_script_is_rejected() {
     let tests = trybuild::TestCases::new();
     tests.compile_fail("tests/ui/html_value_in_script.rs");
