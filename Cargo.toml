@@ -47,7 +47,6 @@ sha2 = "0.10"
 clap = { version = "4", features = ["derive"] }
 glob = "0.3"
 crop = "0.4"
-prettyplease = { version = "0.2", features = ["verbatim"] }
 rustc_lexer = "0.1"
 pretty_assertions = "1"
 proptest = { version = "1", default-features = false, features = ["std"] }
@@ -89,6 +88,9 @@ walkdir = "2"
 cheers = { path = "./crates/cheers", version = "=0.1.0-alpha.1" }
 ast = { package = "cheers-ast", path = "./crates/ast", version = "=0.1.0-alpha.1" }
 macros = { package = "cheers-macros", path = "./crates/macros", version = "=0.1.0-alpha.1" }
+prettyplease = { package = "cheers-prettyplease", path = "./crates/prettyplease", version = "=0.1.0-alpha.1", features = [
+  "verbatim",
+] }
 cli = { package = "cargo-cheers", path = "./crates/cargo-cheers", version = "=0.1.0-alpha.1" }
 
 [workspace.lints.clippy]

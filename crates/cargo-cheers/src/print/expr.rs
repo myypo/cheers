@@ -2,6 +2,7 @@ use ast::{
     DatastarObject, DatastarSourceNodes, Document, Node, ParenExpr, ParenExprBody,
     ScriptSourceNodes,
 };
+use prettyplease::{Place, unparse_condition, unparse_guard};
 use proc_macro2::Span;
 use syn::{
     Expr, ExprMacro, ExprTuple,
@@ -220,21 +221,71 @@ impl<'a, 'b> Printer<'a, 'b> {
         }
     }
 
-    /// Prints a control-flow condition or scrutinee without wrapping it in a block, since a
-    /// braced condition trips clippy's `blocks_in_conditions` in the generated code.
-    /// Returns whether the following `{` belongs on its own line, as rustfmt places it.
+    /// Prints a control-flow condition, scrutinee or iterable from the current column, before its
+    /// block's `{`, and returns whether the `{` belongs on its own line, as rustfmt places it.
     pub fn print_condition_expr(&mut self, expr: Expr, indent_level: usize) -> bool {
         if self.write_original_if_commented(expr.span()) {
             return false;
         }
-        // `lines_from_expr` yields only a block's statements, and its braces are part of the
-        // condition itself.
-        if matches!(expr, Expr::Block(_)) {
-            self.print_expr(expr, indent_level);
-            return false;
+        if let Some(lines) = self.macro_expr_lines(&expr, indent_level) {
+            return self.write_condition_lines(&lines, indent_level);
         }
+        let place = self.place();
+        match self.unparse_placed(&expr, |e| unparse_condition(e, place)) {
+            Some((text, brace_on_own_line)) => {
+                self.write(&text);
+                brace_on_own_line
+            }
+            None => false,
+        }
+    }
 
-        let lines = self.lines_from_expr(expr, indent_level);
+    /// Prints a match arm's guard from the current column, followed on its last line by
+    /// `trailing`.
+    pub(super) fn print_guard(&mut self, expr: Expr, trailing: &str, indent_level: usize) {
+        if self.write_original_if_commented(expr.span()) {
+            return;
+        }
+        if matches!(expr, Expr::Macro(_)) {
+            self.print_expr(expr, indent_level);
+            return;
+        }
+        let place = self.place();
+        if let Some(text) = self.unparse_placed(&expr, |e| unparse_guard(e, place, trailing)) {
+            self.write(&text);
+        }
+    }
+
+    /// Where an expression written next starts.
+    pub(super) fn place(&self) -> Place {
+        let line = self.buf.rsplit('\n').next().unwrap_or_default();
+        Place {
+            column: line.len(),
+            indent: line.len() - line.trim_start().len(),
+            line_length: self.options.line_length,
+        }
+    }
+
+    /// `unparse(expr)`, or `None` with `expr` written as it is when prettyplease panics on it.
+    fn unparse_placed<T>(
+        &mut self,
+        expr: &Expr,
+        unparse: impl FnOnce(&Expr) -> T + std::panic::UnwindSafe,
+    ) -> Option<T> {
+        let unparsed = std::panic::catch_unwind(|| unparse(expr));
+        if unparsed.is_err() {
+            let original_text = self.source_text(expr.span());
+            eprintln!(
+                "Warning: prettyplease panicked formatting expression, leaving unchanged: {original_text}"
+            );
+            self.write(original_text.trim());
+        }
+        unparsed.ok()
+    }
+
+    /// Writes a condition's `lines`, the later ones one level deeper than the header as
+    /// unparsing leaves them, and returns whether the following `{` belongs on its own line.
+    fn write_condition_lines(&mut self, lines: &[String], indent_level: usize) -> bool {
         let Some((first, rest)) = lines.split_first() else {
             return false;
         };
@@ -242,8 +293,6 @@ impl<'a, 'b> Printer<'a, 'b> {
         let Some(last) = rest.last() else {
             return false;
         };
-
-        // Unparsed lines sit one level deeper than the header, as if inside a block.
         for line in rest {
             self.new_line(0);
             self.buf = line

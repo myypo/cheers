@@ -51,6 +51,9 @@ fn control_kind_end<N: Node>(kind: &ControlKind<N>) -> LineColumn {
     }
 }
 
+/// What follows a match arm's pattern and guard on their last line, when its body is a block.
+const ARM_ARROW: &str = " => {";
+
 pub(super) fn control_end<N: Node>(control: &Control<N>) -> LineColumn {
     control_kind_end(&control.kind)
 }
@@ -63,7 +66,7 @@ impl<'a, 'b> Printer<'a, 'b> {
             true,
             |p, node, i, pb| p.print_element_node(node, i, pb),
             element_node_end,
-            |p, block, i, _| p.print_control_block(block, i),
+            |p, block, i, _, broken| p.print_control_block(block, i, broken),
         );
     }
 
@@ -79,7 +82,7 @@ impl<'a, 'b> Printer<'a, 'b> {
             preserve_blank_lines,
             |p, node, i, pb| p.print_attribute_value_node(node, i, pb),
             attribute_value_node_end,
-            |p, block, i, pb| p.print_control_block_attribute_value(block, i, pb),
+            |p, block, i, pb, broken| p.print_control_block_attribute_value(block, i, pb, broken),
         );
     }
 
@@ -95,14 +98,20 @@ impl<'a, 'b> Printer<'a, 'b> {
         indent_level: usize,
         brace_on_own_line: bool,
         child_preserve_blank_lines: bool,
-        print_block: &mut impl FnMut(&mut Self, ControlBlock<N>, usize, bool),
+        print_block: &mut impl FnMut(&mut Self, ControlBlock<N>, usize, bool, bool),
     ) {
         self.print_brace_after_header(
             block.brace_token.span.open().start(),
             indent_level,
             brace_on_own_line,
         );
-        print_block(self, block, indent_level, child_preserve_blank_lines);
+        print_block(
+            self,
+            block,
+            indent_level,
+            child_preserve_blank_lines,
+            brace_on_own_line,
+        );
     }
 
     fn print_brace_after_header(
@@ -135,12 +144,12 @@ impl<'a, 'b> Printer<'a, 'b> {
         if self.write_original_if_commented(pat.span()) {
             return;
         }
-        let line = self.buf.rsplit('\n').next().unwrap_or_default();
+        let place = self.place();
         let place = PatPlace {
-            column: self.line_len(),
-            line_indent: line.len() - line.trim_start().len(),
+            column: place.column,
+            line_indent: place.indent,
             trailing,
-            line_length: self.options.line_length,
+            line_length: place.line_length,
         };
         self.write(&unparse_pat(pat, place).join("\n"));
     }
@@ -162,7 +171,7 @@ impl<'a, 'b> Printer<'a, 'b> {
         child_preserve_blank_lines: bool,
         mut print_node: impl FnMut(&mut Self, N, usize, bool),
         node_end: fn(&N) -> LineColumn,
-        mut print_block: impl FnMut(&mut Self, ControlBlock<N>, usize, bool),
+        mut print_block: impl FnMut(&mut Self, ControlBlock<N>, usize, bool, bool),
     ) {
         self.print_leading_comments(control.at_token.span().start(), indent_level);
         let end = control_kind_end(&control.kind);
@@ -183,19 +192,11 @@ impl<'a, 'b> Printer<'a, 'b> {
                 self.print_pat(&for_.pat, " in".len());
                 self.write(" in");
                 self.print_space_or_leading_comments(for_.expr.span().start(), indent_level);
-                match for_.expr {
-                    // handle range separately, to avoid prettyplease adding unnecessary parentheses
-                    Expr::Range(range_expr) => {
-                        self.print_range(range_expr, indent_level);
-                    }
-                    _ => {
-                        self.print_expr(for_.expr, indent_level);
-                    }
-                }
+                let brace_on_own_line = self.print_condition_expr(for_.expr, indent_level);
                 self.print_control_block_after_header(
                     for_.block,
                     indent_level,
-                    false,
+                    brace_on_own_line,
                     child_preserve_blank_lines,
                     &mut print_block,
                 );
@@ -254,7 +255,7 @@ impl<'a, 'b> Printer<'a, 'b> {
                     self.print_leading_comments(arm_start, indent_level + 1);
                     let trailing = match arm.guard {
                         Some(_) => " if".len(),
-                        None => " => {".len(),
+                        None => ARM_ARROW.len(),
                     };
                     self.print_pat(&arm.pat, trailing);
                     if let Some((if_token, guard_cond)) = arm.guard {
@@ -267,7 +268,7 @@ impl<'a, 'b> Printer<'a, 'b> {
                             guard_cond.span().start(),
                             indent_level + 1,
                         );
-                        self.print_expr(guard_cond, indent_level);
+                        self.print_guard(guard_cond, ARM_ARROW, indent_level);
                     }
                     self.print_space_or_leading_comments(fat_arrow_span.start(), indent_level + 1);
                     self.write("=> ");
@@ -283,6 +284,7 @@ impl<'a, 'b> Printer<'a, 'b> {
                                 control,
                                 indent_level + 1,
                                 child_preserve_blank_lines,
+                                false,
                             );
                         }
                         MatchNodeArmBody::Node(node) => {
@@ -318,7 +320,7 @@ impl<'a, 'b> Printer<'a, 'b> {
                     async_expr.async_block.brace_token.span.open().start(),
                     indent_level,
                 );
-                self.print_control_block(async_expr.async_block, indent_level);
+                self.print_control_block(async_expr.async_block, indent_level, false);
                 let else_on_new_line = self.print_leading_comments_after_line_break(
                     async_expr.else_at_token.span().start(),
                     indent_level,
@@ -332,7 +334,7 @@ impl<'a, 'b> Printer<'a, 'b> {
                     async_expr.else_block.brace_token.span.open().start(),
                     indent_level,
                 );
-                self.print_control_block(async_expr.else_block, indent_level);
+                self.print_control_block(async_expr.else_block, indent_level, false);
             }
         }
 
@@ -344,7 +346,7 @@ impl<'a, 'b> Printer<'a, 'b> {
         if_: If<N>,
         indent_level: usize,
         child_preserve_blank_lines: bool,
-        print_block: &mut impl FnMut(&mut Self, ControlBlock<N>, usize, bool),
+        print_block: &mut impl FnMut(&mut Self, ControlBlock<N>, usize, bool, bool),
     ) {
         self.write("if");
         self.print_space_or_leading_comments(if_.cond.span().start(), indent_level);
@@ -384,19 +386,6 @@ impl<'a, 'b> Printer<'a, 'b> {
                     );
                 }
             }
-        }
-    }
-
-    fn print_range(&mut self, range_expr: syn::ExprRange, indent_level: usize) {
-        if let Some(ref start) = range_expr.start {
-            self.print_expr(*start.clone(), indent_level);
-        }
-        match range_expr.limits {
-            syn::RangeLimits::HalfOpen(_) => self.write(".."),
-            syn::RangeLimits::Closed(_) => self.write("..="),
-        }
-        if let Some(ref end) = range_expr.end {
-            self.print_expr(*end.clone(), indent_level);
         }
     }
 }
@@ -734,6 +723,101 @@ mod test {
         r#"
         html! {
             @if let A(v) | B(v) = x { (v) }
+        }
+        "#
+    );
+
+    test_default!(
+        control_if_condition_breaks_where_it_is_printed,
+        r#"
+        html! { div { div { @if top_level_location_count_for_the_whole_world == total_location_count_for_the_whole_world { "all" } } } }
+        "#,
+        r#"
+        html! {
+            div {
+                div {
+                    @if top_level_location_count_for_the_whole_world
+                        == total_location_count_for_the_whole_world
+                    {
+                        "all"
+                    }
+                }
+            }
+        }
+        "#
+    );
+
+    test_default!(
+        control_if_condition_fills_the_configured_width,
+        r#"
+        html! { div { @if self.first_condition_named_at_length.is_some() && self.other_settled.is_some() { "x" } } }
+        "#,
+        r#"
+        html! {
+            div {
+                @if self.first_condition_named_at_length.is_some() && self.other_settled.is_some() {
+                    "x"
+                }
+            }
+        }
+        "#
+    );
+
+    test_default!(
+        control_match_guard_breaks_where_it_is_printed,
+        r#"
+        html! { div { div { @match x { Some(v) if v.has_a_rather_long_predicate_name() && another_condition_holds_for(v) => { "a" } None => {} } } } }
+        "#,
+        r#"
+        html! {
+            div {
+                div {
+                    @match x {
+                        Some(v) if v.has_a_rather_long_predicate_name()
+                            && another_condition_holds_for(v) => { "a" }
+                        None => {}
+                    }
+                }
+            }
+        }
+        "#
+    );
+
+    test_default!(
+        control_for_iterable_breaks_where_it_is_printed,
+        r#"
+        html! { div { div { @for item in self.items_with_a_rather_long_name.iter().filter(|v| v.is_visible_to(reader)) { (item) } } } }
+        "#,
+        r#"
+        html! {
+            div {
+                div {
+                    @for item in self.items_with_a_rather_long_name
+                        .iter()
+                        .filter(|v| v.is_visible_to(reader))
+                    {
+                        (item)
+                    }
+                }
+            }
+        }
+        "#
+    );
+
+    test_small_line!(
+        control_if_condition_fits_the_configured_width,
+        r#"
+        html! { div { @if first_value == second_value { "a" } } }
+        "#,
+        r#"
+        html! {
+            div {
+                @if first_value
+                    == second_value
+                {
+                    "a"
+                }
+            }
         }
         "#
     );

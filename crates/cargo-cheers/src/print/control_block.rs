@@ -23,6 +23,7 @@ impl<'a, 'b> Printer<'a, 'b> {
         block: ControlBlock<N>,
         indent_level: usize,
         expanded_preserve_blank_lines: bool,
+        after_broken_header: bool,
         node_printer: ControlBlockNodePrinter<N, F>,
     ) where
         F: FnMut(&mut Self, N, usize, bool),
@@ -35,7 +36,7 @@ impl<'a, 'b> Printer<'a, 'b> {
         } = node_printer;
 
         let contains_comments = self.delim_contains_comments(block.brace_token.span);
-        let expand = contains_comments || {
+        let expand = contains_comments || after_broken_header || {
             if let Some(blk_len) = control_block_len_with(&block, len) {
                 (self.line_len() + blk_len) > self.options.line_length
             } else {
@@ -69,11 +70,19 @@ impl<'a, 'b> Printer<'a, 'b> {
         }
     }
 
-    pub fn print_control_block(&mut self, block: ControlBlock<ElementNode>, indent_level: usize) {
+    /// Prints `block`, broken over lines when it does not fit or `after_broken_header`, whose
+    /// `{` sits on a line of its own as in rustfmt.
+    pub fn print_control_block(
+        &mut self,
+        block: ControlBlock<ElementNode>,
+        indent_level: usize,
+        after_broken_header: bool,
+    ) {
         self.print_control_block_with(
             block,
             indent_level,
             true,
+            after_broken_header,
             ControlBlockNodePrinter {
                 len: node_len,
                 start: element_node_start,
@@ -90,11 +99,13 @@ impl<'a, 'b> Printer<'a, 'b> {
         block: ControlBlock<AttributeValueNode>,
         indent_level: usize,
         preserve_blank_lines: bool,
+        after_broken_header: bool,
     ) {
         self.print_control_block_with(
             block,
             indent_level,
             preserve_blank_lines,
+            after_broken_header,
             ControlBlockNodePrinter {
                 len: attribute_value_len,
                 start: attribute_value_node_start,

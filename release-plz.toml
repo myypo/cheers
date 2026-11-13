@@ -32,7 +32,12 @@ name = "cheers"
 release = true
 changelog_update = true
 changelog_path = "./CHANGELOG.md"
-changelog_include = ["cheers-ast", "cheers-macros", "cargo-cheers"]
+changelog_include = [
+  "cheers-ast",
+  "cheers-macros",
+  "cheers-prettyplease",
+  "cargo-cheers",
+]
 git_tag_enable = true
 git_tag_name = "v{{ version }}"
 git_release_enable = true
@@ -47,6 +52,10 @@ release = true
 
 [[package]]
 name = "cheers-macros"
+release = true
+
+[[package]]
+name = "cheers-prettyplease"
 release = true
 
 [[package]]

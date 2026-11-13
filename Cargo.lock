@@ -424,12 +424,12 @@ dependencies = [
  "assert_cmd",
  "assert_fs",
  "cheers-ast",
+ "cheers-prettyplease",
  "clap",
  "crop",
  "glob",
  "predicates",
  "pretty_assertions",
- "prettyplease",
  "proc-macro2",
  "quote",
  "rustc_lexer",
@@ -600,6 +600,14 @@ dependencies = [
  "cheers-ast",
  "proc-macro2",
  "quote",
+ "syn 2.0.119",
+]
+
+[[package]]
+name = "cheers-prettyplease"
+version = "0.1.0-alpha.1"
+dependencies = [
+ "proc-macro2",
  "syn 2.0.119",
 ]
 
@@ -2435,16 +2443,6 @@ checksum = "3ae130e2f271fbc2ac3a40fb1d07180839cdbbe443c7a27e1e3c13c5cac0116d"
 dependencies = [
  "diff",
  "yansi",
-]
-
-[[package]]
-name = "prettyplease"
-version = "0.2.37"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "479ca8adacdd7ce8f1fb39ce9ecccbfe93a3f1344b3d0d97f20bc0196208f62b"
-dependencies = [
- "proc-macro2",
- "syn 2.0.119",
 ]
 
 [[package]]

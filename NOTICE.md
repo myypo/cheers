@@ -51,3 +51,16 @@ Templating implementation code is derived from Hypertext.
 - License: MIT
 - Local notice: [`crates/cargo-cheers/NOTICE.md`](crates/cargo-cheers/NOTICE.md)
 - License text: [`crates/cargo-cheers/LICENSES/maudfmt-MIT.txt`](crates/cargo-cheers/LICENSES/maudfmt-MIT.txt)
+
+## prettyplease
+
+`crates/prettyplease` is a fork of prettyplease.
+
+- Original work: <https://github.com/dtolnay/prettyplease>
+- Upstream sync/base: `prettyplease` 0.2.37
+- Copyright: David Tolnay
+- License: MIT OR Apache-2.0
+- Local notice: [`crates/prettyplease/NOTICE.md`](crates/prettyplease/NOTICE.md)
+- License texts:
+  - [`crates/prettyplease/LICENSES/prettyplease-MIT.txt`](crates/prettyplease/LICENSES/prettyplease-MIT.txt)
+  - [`crates/prettyplease/LICENSES/prettyplease-Apache-2.0.txt`](crates/prettyplease/LICENSES/prettyplease-Apache-2.0.txt)
