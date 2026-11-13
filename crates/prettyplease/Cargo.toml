@@ -1,0 +1,29 @@
+[package]
+name = "cheers-prettyplease"
+version.workspace = true
+authors = [
+  "David Tolnay <dtolnay@gmail.com>",
+  "Mykyta Polchanov <nikirsmcgl@gmail.com>",
+]
+edition = "2021"
+rust-version.workspace = true
+description = "prettyplease, the `syn` syntax tree pretty-printer, printing expressions at a given column against a given line length for cargo-cheers."
+readme = "NOTICE.md"
+homepage.workspace = true
+repository.workspace = true
+license = "MIT OR Apache-2.0"
+categories = ["development-tools"]
+
+[features]
+verbatim = ["syn/parsing"]
+
+[dependencies]
+proc-macro2 = { version = "1.0.80", default-features = false }
+syn = { version = "2.0.105", default-features = false, features = ["full"] }
+
+[lints.rust]
+unexpected_cfgs = { level = "warn", check-cfg = [
+  "cfg(exhaustive)",
+  "cfg(prettyplease_debug)",
+  "cfg(prettyplease_debug_indent)",
+] }

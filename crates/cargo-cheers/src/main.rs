@@ -2,8 +2,9 @@ mod collect;
 mod fmt;
 mod format;
 #[cfg(test)]
+mod header_properties;
+#[cfg(test)]
 mod invariants;
-mod line_length;
 mod print;
 mod subsecond;
 #[cfg(test)]

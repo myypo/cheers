@@ -100,6 +100,14 @@ impl<'a, 'b> Printer<'a, 'b> {
         self.trivia.has_comments_in_span(self.source, span)
     }
 
+    pub fn has_comments_between(&self, start: LineColumn, end: LineColumn) -> bool {
+        let start = Trivia::line_column_to_byte(self.source, start);
+        let end = Trivia::line_column_to_byte(self.source, end);
+        start
+            .zip(end)
+            .is_none_or(|(start, end)| self.trivia.has_comments_in_range(start..end))
+    }
+
     pub fn consume_comments_in_span(&mut self, span: Span) {
         self.trivia.consume_comments_in_span(self.source, span);
     }
@@ -333,7 +341,9 @@ mod test {
         html! {
             @if cond
             // header
-            { "x" }
+            {
+                "x"
+            }
             p { "y" }
         }
         "#
@@ -426,7 +436,10 @@ mod test {
         html! {
             @if
             /* why */
-            cond { "x" }
+            cond
+            {
+                "x"
+            }
         }
         "#
     );
@@ -444,15 +457,22 @@ mod test {
         html! {
             @while
             /* why */
-            cond { "x" }
+            cond
+            {
+                "x"
+            }
             @match
             /* why */
-            value {
+            value
+            {
                 _ => { "x" }
             }
             @for item in
             /* why */
-            items { "x" }
+            items
+            {
+                "x"
+            }
         }
         "#
     );
@@ -469,10 +489,16 @@ mod test {
         html! {
             @if let Some(x) =
             /* why */
-            maybe { "x" }
+            maybe
+            {
+                "x"
+            }
             @while let
             /* pat */
-            Some(x) = maybe { "x" }
+            Some(x) = maybe
+            {
+                "x"
+            }
         }
         "#
     );

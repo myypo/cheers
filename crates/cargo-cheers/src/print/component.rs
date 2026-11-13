@@ -2,7 +2,7 @@ use ast::component::{Component, ComponentAttribute, ComponentAttributeValue};
 use proc_macro2::LineColumn;
 use syn::spanned::Spanned as _;
 
-use crate::{line_length::component_len, print::Printer};
+use crate::print::Printer;
 
 fn component_attr_end(attr: &ComponentAttribute) -> LineColumn {
     match &attr.value {
@@ -57,7 +57,7 @@ impl<'a, 'b> Printer<'a, 'b> {
         let opening = self.element_opening_layout(
             name.span().end(),
             &body,
-            component_len(
+            self.component_len(
                 &name,
                 &attrs,
                 default_attrs.as_ref(),

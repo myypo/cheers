@@ -32,7 +32,7 @@ struct Source {
     bodies: Vec<Range<usize>>,
 }
 
-struct Failure {
+pub(crate) struct Failure {
     case: String,
     invariant: &'static str,
     input: String,
@@ -81,7 +81,7 @@ fn formatting_keeps_invariants() {
 }
 
 /// Every check that fails for `source` formatted at `line_length`.
-fn check(case: &str, source: &str, line_length: usize) -> Vec<Failure> {
+pub(crate) fn check(case: &str, source: &str, line_length: usize) -> Vec<Failure> {
     let failure = |invariant, output: String| Failure {
         case: case.to_owned(),
         invariant,
@@ -120,7 +120,7 @@ fn check(case: &str, source: &str, line_length: usize) -> Vec<Failure> {
     failures
 }
 
-fn format(source: &str, line_length: usize) -> Result<String, String> {
+pub(crate) fn format(source: &str, line_length: usize) -> Result<String, String> {
     let options = FormatOptions {
         line_length,
         ..Default::default()
@@ -273,12 +273,56 @@ fn comment_insertions(source: &Source, all_positions: bool) -> Vec<(usize, &'sta
 
 /// The tokens of `source`, ignoring whitespace, comments and spans, whether a `,` or `;` is
 /// directly followed by punctuation, and the differences the formatter may make: it drops `r#`
-/// from element names, adds or drops trailing commas, and drops the optional commas after
-/// `@match` arms.
+/// from element names, adds or drops trailing commas, drops the optional commas after `@match`
+/// arms, and puts a closure body that is a single expression, followed by nothing but a `,` or `;`,
+/// in braces when it does not fit on its line.
 fn token_shape(source: &str) -> Vec<String> {
+    /// Whether `out` ends with a closure's parameters: a `|`, and an earlier `|` at the same depth
+    /// that does not follow an operand, as the `|` of a binary or would.
+    fn ends_closure_params(out: &[String]) -> bool {
+        let Some((last, rest)) = out.split_last() else {
+            return false;
+        };
+        if last != "|" {
+            return false;
+        }
+        let mut depth = 0_usize;
+        for (i, token) in rest.iter().enumerate().rev() {
+            match token.as_str() {
+                ")" | "]" | "}" | "⟧" => depth += 1,
+                "(" | "[" | "{" | "⟦" if depth > 0 => depth -= 1,
+                "(" | "[" | "{" | "⟦" => return false,
+                "|" | "|+" if depth == 0 => {
+                    let follows_operand = i.checked_sub(1).is_some_and(|before| {
+                        let before = rest[before].as_str();
+                        matches!(before, ")" | "]" | "}" | "⟧")
+                            || !matches!(before, "move" | "async" | "return" | "in" | "else")
+                                && before.starts_with(|c: char| {
+                                    c.is_alphanumeric() || matches!(c, '_' | '"' | '\'')
+                                })
+                    });
+                    return !follows_operand;
+                }
+                _ => {}
+            }
+        }
+        false
+    }
+
     fn walk(stream: TokenStream, out: &mut Vec<String>) {
-        for tree in stream {
+        let mut trees = stream.into_iter().peekable();
+        while let Some(tree) = trees.next() {
             match tree {
+                TokenTree::Group(group)
+                    if group.delimiter() == Delimiter::Brace
+                        && ends_closure_params(out)
+                        && trees.peek().is_none_or(|next| {
+                            matches!(next, TokenTree::Punct(p) if matches!(p.as_char(), ',' | ';'))
+                        })
+                        && syn::parse2::<syn::Expr>(group.stream()).is_ok() =>
+                {
+                    walk(group.stream(), out);
+                }
                 TokenTree::Group(group) => {
                     let (open, close) = match group.delimiter() {
                         Delimiter::Parenthesis => ("(", ")"),
@@ -361,7 +405,7 @@ fn comments(source: &str) -> Vec<String> {
     comments
 }
 
-fn report(failures: &[Failure], cases: usize) -> String {
+pub(crate) fn report(failures: &[Failure], cases: usize) -> String {
     let mut by_invariant = BTreeMap::<&str, usize>::new();
     for failure in failures {
         *by_invariant.entry(failure.invariant).or_default() += 1;
