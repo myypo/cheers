@@ -55,6 +55,8 @@ pub struct Printer {
     margin: isize,
     // Space every line is allowed, however indented
     min_space: isize,
+    // Whether what comes before a break is measured with its `pre_break`
+    measure_pre_break: bool,
     // Ring-buffer of tokens and calculated sizes
     buf: RingBuffer<BufEntry>,
     // Total size of tokens already printed
@@ -90,6 +92,7 @@ impl Printer {
             space: MARGIN,
             margin: MARGIN,
             min_space: MIN_SPACE,
+            measure_pre_break: false,
             buf: RingBuffer::new(),
             left_total: 0,
             right_total: 0,
@@ -102,12 +105,14 @@ impl Printer {
     }
 
     /// Prints from `column` on a line indented by `indent`, with lines up to `margin` long however
-    /// indented. The output's first line has no indentation of its own.
+    /// indented, counting the `,` or `{` a break leaves at the end of its line. The output's first
+    /// line has no indentation of its own.
     pub fn at(column: usize, indent: usize, margin: usize) -> Self {
         Printer {
             space: margin as isize - column as isize,
             margin: margin as isize,
             min_space: 0,
+            measure_pre_break: true,
             indent,
             ..Printer::new()
         }
@@ -176,7 +181,15 @@ impl Printer {
             self.right_total = 1;
             self.buf.clear();
         } else {
+            // Taken, the break ends its line with `pre_break`, so what comes before it is
+            // measured with it.
+            let pre_break = match token.pre_break {
+                Some(ch) if self.measure_pre_break => ch.len_utf8() as isize,
+                _ => 0,
+            };
+            self.right_total += pre_break;
             self.check_stack(0);
+            self.right_total -= pre_break;
         }
         let right = self.buf.push(BufEntry {
             token: Token::Break(token),

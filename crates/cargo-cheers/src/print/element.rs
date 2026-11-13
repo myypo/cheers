@@ -568,7 +568,7 @@ impl<'a, 'b> Printer<'a, 'b> {
                     let prefix_len = if should_wrap {
                         self.indent_str.len() * (self.base_indent + indent_level)
                     } else {
-                        self.line_len()
+                        self.line_len() + " ".len()
                     };
 
                     can_inline && (prefix_len + body_len) <= self.options.line_length
@@ -1038,7 +1038,9 @@ mod test {
                     && self.other_settled.is_some()
                 {
                     "on"
-                } @else { "off" } {}
+                } @else {
+                    "off"
+                } {}
         }
         "#
     );

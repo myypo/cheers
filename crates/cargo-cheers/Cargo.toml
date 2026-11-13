@@ -34,6 +34,7 @@ pretty_assertions.workspace = true
 predicates.workspace = true
 assert_fs.workspace = true
 assert_cmd.workspace = true
+proptest.workspace = true
 
 [lints]
 workspace = true

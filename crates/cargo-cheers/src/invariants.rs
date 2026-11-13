@@ -32,7 +32,7 @@ struct Source {
     bodies: Vec<Range<usize>>,
 }
 
-struct Failure {
+pub(crate) struct Failure {
     case: String,
     invariant: &'static str,
     input: String,
@@ -81,7 +81,7 @@ fn formatting_keeps_invariants() {
 }
 
 /// Every check that fails for `source` formatted at `line_length`.
-fn check(case: &str, source: &str, line_length: usize) -> Vec<Failure> {
+pub(crate) fn check(case: &str, source: &str, line_length: usize) -> Vec<Failure> {
     let failure = |invariant, output: String| Failure {
         case: case.to_owned(),
         invariant,
@@ -120,7 +120,7 @@ fn check(case: &str, source: &str, line_length: usize) -> Vec<Failure> {
     failures
 }
 
-fn format(source: &str, line_length: usize) -> Result<String, String> {
+pub(crate) fn format(source: &str, line_length: usize) -> Result<String, String> {
     let options = FormatOptions {
         line_length,
         ..Default::default()
@@ -403,7 +403,7 @@ fn comments(source: &str) -> Vec<String> {
     comments
 }
 
-fn report(failures: &[Failure], cases: usize) -> String {
+pub(crate) fn report(failures: &[Failure], cases: usize) -> String {
     let mut by_invariant = BTreeMap::<&str, usize>::new();
     for failure in failures {
         *by_invariant.entry(failure.invariant).or_default() += 1;

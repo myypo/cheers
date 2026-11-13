@@ -431,6 +431,7 @@ dependencies = [
  "predicates",
  "pretty_assertions",
  "proc-macro2",
+ "proptest",
  "quote",
  "rustc_lexer",
  "syn 2.0.119",

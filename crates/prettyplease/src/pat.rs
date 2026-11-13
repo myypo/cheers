@@ -103,10 +103,14 @@ impl Printer {
     fn pat_slice(&mut self, pat: &PatSlice) {
         self.outer_attrs(&pat.attrs);
         self.word("[");
+        self.cbox(INDENT);
+        self.zerobreak();
         for elem in pat.elems.iter().delimited() {
             self.pat(&elem);
             self.trailing_comma(elem.is_last);
         }
+        self.offset(-INDENT);
+        self.end();
         self.word("]");
     }
 

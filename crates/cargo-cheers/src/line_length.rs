@@ -5,17 +5,40 @@ use ast::{
     component::{ComponentAttribute, ComponentAttributeValue, ComponentDefaultAttributes},
     control::{self, ControlBlock},
 };
-use syn::{Expr, Ident, Token, punctuated::Punctuated, spanned::Spanned};
+use syn::{
+    Expr, Ident, MacroDelimiter, Token, punctuated::Punctuated, spanned::Spanned, visit::Visit,
+};
+
+/// Whether `expr` holds a macro with a non-empty body in braces, which is printed over lines.
+fn has_braced_macro(expr: &Expr) -> bool {
+    struct Finder(bool);
+    impl<'ast> Visit<'ast> for Finder {
+        fn visit_macro(&mut self, mac: &'ast syn::Macro) {
+            self.0 |= matches!(mac.delimiter, MacroDelimiter::Brace(_)) && !mac.tokens.is_empty();
+        }
+    }
+    let mut finder = Finder(false);
+    finder.visit_expr(expr);
+    finder.0
+}
+
+/// The length of `expr` on one line, if it is printed on one.
+fn expr_len(expr: &Expr) -> Option<usize> {
+    if has_braced_macro(expr) {
+        return None;
+    }
+    span_len(expr)
+}
 
 fn paren_expr_len<N: Node>(paren_expr: &ParenExpr<N>) -> Option<usize> {
     let body_len = match &paren_expr.body {
         ParenExprBody::Unit => 0,
-        ParenExprBody::Expr(expr) => span_len(expr)?,
+        ParenExprBody::Expr(expr) => expr_len(expr)?,
         ParenExprBody::Tuple(elems) => {
             let mut len = 0;
 
             for (idx, expr) in elems.iter().enumerate() {
-                len += span_len(expr)?;
+                len += expr_len(expr)?;
 
                 if idx + 1 < elems.len() {
                     // `, `
@@ -36,7 +59,7 @@ fn paren_expr_len<N: Node>(paren_expr: &ParenExpr<N>) -> Option<usize> {
 }
 
 fn data_expr_len(expr: &DataExpr) -> Option<usize> {
-    span_len(&expr.expr)
+    expr_len(&expr.expr)
         .map(|len| len + expr.mode.prefix_len() + if expr.paren_token.is_some() { 2 } else { 0 })
 }
 
@@ -216,10 +239,12 @@ pub fn element_len(ident: &Ident, attrs: &[Attribute], body: &ElementBody) -> Op
             // `;`
             element_len += 1;
         }
+        // An empty body closes on the same line.
+        ElementBody::Normal { children, .. } if children.0.is_empty() => {
+            element_len += " {}".len();
+        }
         ElementBody::Normal { .. } => {
-            // always add open body brace at minimum
-            // ` ` + `{`
-            element_len += 2;
+            element_len += " {".len();
         }
     }
 
@@ -270,10 +295,12 @@ pub fn component_len(
             // `;`
             element_len += 1;
         }
+        // An empty body closes on the same line.
+        ElementBody::Normal { children, .. } if children.0.is_empty() => {
+            element_len += " {}".len();
+        }
         ElementBody::Normal { .. } => {
-            // always add open body brace at minimum
-            // ` ` + `{`
-            element_len += 2;
+            element_len += " {".len();
         }
     }
 
@@ -311,7 +338,7 @@ fn attribute_name_len(attr_name: &AttributeName) -> Option<usize> {
 
 fn toggle_len(toggle: &Toggle) -> Option<usize> {
     // add 2 for `[` + `]`
-    span_len(&toggle.expr).map(|len| len + 2)
+    expr_len(&toggle.expr).map(|len| len + 2)
 }
 
 pub fn control_block_len_with<N: Node>(
@@ -336,35 +363,13 @@ pub fn control_block_len_with<N: Node>(
 }
 
 fn control_attribute_value_len(control: &control::Control<AttributeValueNode>) -> Option<usize> {
-    use control::{ControlIfOrBlock, ControlKind};
+    use control::ControlKind;
 
     let mut len = 1; // `@`
 
     match &control.kind {
         ControlKind::If(if_) => {
-            // `if `
-            len += 3;
-            len += span_len(&if_.cond)?;
-            // ` `
-            len += 1;
-
-            len += control_block_len_with(&if_.then_block, attribute_value_len)?;
-
-            if let Some((_, _, if_or_block)) = &if_.else_branch {
-                // ` @else `
-                len += 7;
-
-                match &**if_or_block {
-                    ControlIfOrBlock::If(else_if) => {
-                        // Recursively calculate the else-if length (without the leading @)
-                        len += if_attribute_value_len(else_if)?;
-                    }
-                    ControlIfOrBlock::Block(block) => {
-                        len += control_block_len_with(block, attribute_value_len)?;
-                    }
-                }
-            }
-
+            len += if_len_with(if_, attribute_value_len)?;
             Some(len)
         }
         ControlKind::For(for_) => {
@@ -373,7 +378,7 @@ fn control_attribute_value_len(control: &control::Control<AttributeValueNode>) -
             len += span_len(&for_.pat)?;
             // ` in `
             len += 4;
-            len += span_len(&for_.expr)?;
+            len += expr_len(&for_.expr)?;
             // ` `
             len += 1;
 
@@ -384,7 +389,7 @@ fn control_attribute_value_len(control: &control::Control<AttributeValueNode>) -
         ControlKind::While(while_) => {
             // `while `
             len += 6;
-            len += span_len(&while_.cond)?;
+            len += expr_len(&while_.cond)?;
             // ` `
             len += 1;
 
@@ -399,32 +404,31 @@ fn control_attribute_value_len(control: &control::Control<AttributeValueNode>) -
     }
 }
 
-fn if_attribute_value_len(if_: &control::If<AttributeValueNode>) -> Option<usize> {
-    let mut len = 0;
+/// The length of `if cond { .. }` and its `@else` branches on one line, without the leading `@`.
+fn if_len_with<N: Node>(
+    if_: &control::If<N>,
+    node_len: impl Fn(&N) -> Option<usize> + Copy,
+) -> Option<usize> {
+    let cond = expr_len(&if_.cond)?;
+    Some("if ".len() + cond + " ".len() + if_blocks_len_with(if_, node_len)?)
+}
 
-    // `if `
-    len += 3;
-    len += span_len(&if_.cond)?;
-    // ` `
-    len += 1;
-
-    len += control_block_len_with(&if_.then_block, attribute_value_len)?;
-
-    if let Some((_, _, if_or_block)) = &if_.else_branch {
-        // ` @else `
-        len += 7;
-
-        match &**if_or_block {
-            control::ControlIfOrBlock::If(else_if) => {
-                len += if_attribute_value_len(else_if)?;
-            }
-            control::ControlIfOrBlock::Block(block) => {
-                len += control_block_len_with(block, attribute_value_len)?;
-            }
+/// The length of an `@if`'s block and its `@else` branches on one line.
+pub fn if_blocks_len_with<N: Node>(
+    if_: &control::If<N>,
+    node_len: impl Fn(&N) -> Option<usize> + Copy,
+) -> Option<usize> {
+    let then_block = control_block_len_with(&if_.then_block, node_len)?;
+    let else_branch = match if_.else_branch.as_ref().map(|(_, _, v)| &**v) {
+        None => 0,
+        Some(control::ControlIfOrBlock::If(else_if)) => {
+            " @else ".len() + if_len_with(else_if, node_len)?
         }
-    }
-
-    Some(len)
+        Some(control::ControlIfOrBlock::Block(block)) => {
+            " @else ".len() + control_block_len_with(block, node_len)?
+        }
+    };
+    Some(then_block + else_branch)
 }
 
 pub fn attribute_value_len(value: &AttributeValueNode) -> Option<usize> {
@@ -470,7 +474,7 @@ fn comma_separated_len<T>(
 pub fn data_decl_len_expr(decls: &Punctuated<DataExprValue<Expr>, Token![,]>) -> Option<usize> {
     comma_separated_len(decls, |d| {
         // `: `
-        Some(data_expr_len(&d.ident)? + 2 + span_len(&d.value)?)
+        Some(data_expr_len(&d.ident)? + 2 + expr_len(&d.value)?)
     })
 }
 

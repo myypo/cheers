@@ -7,7 +7,7 @@ use proc_macro2::LineColumn;
 use syn::{Expr, spanned::Spanned as _};
 
 use crate::{
-    line_length::{attribute_value_len, node_len},
+    line_length::{attribute_value_len, element_len, if_blocks_len_with, node_len},
     print::{
         Printer, attribute_value_node::attribute_value_node_end, element_node::element_node_end,
     },
@@ -35,7 +35,7 @@ fn if_end<N: Node>(if_: &If<N>) -> LineColumn {
 /// A node a match arm's `=>` can be followed by.
 trait ArmNode: Node {
     fn end(&self) -> LineColumn;
-    /// The node's length on one line, if it can be printed on one.
+    /// The columns the node needs on the line it starts on, if known.
     fn flat_len(&self) -> Option<usize>;
 }
 
@@ -45,7 +45,10 @@ impl ArmNode for ElementNode {
     }
 
     fn flat_len(&self) -> Option<usize> {
-        node_len(self)
+        match self {
+            ElementNode::Element(v) => element_len(&v.name.0, &v.attrs, &v.body),
+            node => node_len(node),
+        }
     }
 }
 
@@ -88,7 +91,7 @@ impl<'a, 'b> Printer<'a, 'b> {
             indent_level,
             true,
             |p, node, i, pb| p.print_element_node(node, i, pb),
-            |p, block, i, _, broken| p.print_control_block(block, i, broken),
+            |p, block, i, _, trailing| p.print_control_block(block, i, trailing),
         );
     }
 
@@ -103,7 +106,9 @@ impl<'a, 'b> Printer<'a, 'b> {
             indent_level,
             preserve_blank_lines,
             |p, node, i, pb| p.print_attribute_value_node(node, i, pb),
-            |p, block, i, pb, broken| p.print_control_block_attribute_value(block, i, pb, broken),
+            |p, block, i, pb, trailing| {
+                p.print_control_block_attribute_value(block, i, pb, trailing)
+            },
         );
     }
 
@@ -113,13 +118,16 @@ impl<'a, 'b> Printer<'a, 'b> {
         }
     }
 
+    /// Prints `block` after its header, followed on its line by `trailing` columns, and broken
+    /// when `trailing` is `None` or its `{` goes on a line of its own.
     fn print_control_block_after_header<N: Node>(
         &mut self,
         block: ControlBlock<N>,
         indent_level: usize,
         header_broken: bool,
+        trailing: Option<usize>,
         child_preserve_blank_lines: bool,
-        print_block: &mut impl FnMut(&mut Self, ControlBlock<N>, usize, bool, bool),
+        print_block: &mut impl FnMut(&mut Self, ControlBlock<N>, usize, bool, Option<usize>),
     ) {
         let brace_on_own_line = self.print_brace_after_header(
             block.brace_token.span.open().start(),
@@ -131,7 +139,7 @@ impl<'a, 'b> Printer<'a, 'b> {
             block,
             indent_level,
             child_preserve_blank_lines,
-            brace_on_own_line,
+            trailing.filter(|_| !brace_on_own_line),
         );
     }
 
@@ -208,7 +216,7 @@ impl<'a, 'b> Printer<'a, 'b> {
         indent_level: usize,
         child_preserve_blank_lines: bool,
         mut print_node: impl FnMut(&mut Self, N, usize, bool),
-        mut print_block: impl FnMut(&mut Self, ControlBlock<N>, usize, bool, bool),
+        mut print_block: impl FnMut(&mut Self, ControlBlock<N>, usize, bool, Option<usize>),
     ) {
         self.print_leading_comments(control.at_token.span().start(), indent_level);
         let end = control_kind_end(&control.kind);
@@ -219,6 +227,7 @@ impl<'a, 'b> Printer<'a, 'b> {
                 self.print_if_with(
                     if_,
                     indent_level,
+                    None,
                     child_preserve_blank_lines,
                     &mut print_block,
                 );
@@ -233,6 +242,7 @@ impl<'a, 'b> Printer<'a, 'b> {
                     for_.block,
                     indent_level,
                     header_broken,
+                    Some(0),
                     child_preserve_blank_lines,
                     &mut print_block,
                 );
@@ -291,13 +301,13 @@ impl<'a, 'b> Printer<'a, 'b> {
                     self.print_leading_comments(arm_start, indent_level + 1);
                     // What follows the pattern and guard on their last line: a block body can
                     // break after its `{`, and a node body cannot break at all, so it counts
-                    // whole unless it could not fit after the arm's indentation anyway.
+                    // whole unless it could not fit even after a broken pattern's closing `)`.
                     let arm_indent = self.place(indent_level + 1).indent;
                     let arrow = match &arm.body {
                         MatchNodeArmBody::Block(_) => " => {".len(),
                         MatchNodeArmBody::Node(node) => match node.flat_len() {
                             Some(len)
-                                if arm_indent + " => ".len() + len <= self.options.line_length =>
+                                if arm_indent + ") => ".len() + len <= self.options.line_length =>
                             {
                                 " => ".len() + len
                             }
@@ -310,16 +320,24 @@ impl<'a, 'b> Printer<'a, 'b> {
                     };
                     self.print_pat(&arm.pat, trailing, indent_level + 1);
                     if let Some((if_token, guard_cond)) = arm.guard {
-                        self.print_space_or_leading_comments(
-                            if_token.span().start(),
-                            indent_level + 1,
-                        );
-                        self.write("if");
-                        self.print_space_or_leading_comments(
-                            guard_cond.span().start(),
-                            indent_level + 1,
-                        );
-                        self.print_guard(guard_cond, arrow, indent_level + 1);
+                        if !self
+                            .has_comments_between(arm.pat.span().end(), guard_cond.span().start())
+                            && !self.span_contains_comments(guard_cond.span())
+                            && !matches!(guard_cond, Expr::Macro(_))
+                        {
+                            self.print_guard(guard_cond, arrow, indent_level + 1);
+                        } else {
+                            self.print_space_or_leading_comments(
+                                if_token.span().start(),
+                                indent_level + 1,
+                            );
+                            self.write("if");
+                            self.print_space_or_leading_comments(
+                                guard_cond.span().start(),
+                                indent_level + 1,
+                            );
+                            self.print_guard_expr(guard_cond, arrow, indent_level + 1);
+                        }
                     }
                     self.print_space_or_leading_comments(fat_arrow_span.start(), indent_level + 1);
                     self.write("=> ");
@@ -335,7 +353,7 @@ impl<'a, 'b> Printer<'a, 'b> {
                                 control,
                                 indent_level + 1,
                                 child_preserve_blank_lines,
-                                false,
+                                Some(0),
                             );
                         }
                         MatchNodeArmBody::Node(node) => {
@@ -361,6 +379,7 @@ impl<'a, 'b> Printer<'a, 'b> {
                     while_expr.block,
                     indent_level,
                     header_broken,
+                    Some(0),
                     child_preserve_blank_lines,
                     &mut print_block,
                 );
@@ -371,7 +390,7 @@ impl<'a, 'b> Printer<'a, 'b> {
                     async_expr.async_block.brace_token.span.open().start(),
                     indent_level,
                 );
-                self.print_control_block(async_expr.async_block, indent_level, false);
+                self.print_control_block(async_expr.async_block, indent_level, Some(0));
                 let else_on_new_line = self.print_leading_comments_after_line_break(
                     async_expr.else_at_token.span().start(),
                     indent_level,
@@ -385,27 +404,39 @@ impl<'a, 'b> Printer<'a, 'b> {
                     async_expr.else_block.brace_token.span.open().start(),
                     indent_level,
                 );
-                self.print_control_block(async_expr.else_block, indent_level, false);
+                self.print_control_block(async_expr.else_block, indent_level, Some(0));
             }
         }
 
         self.print_trailing_comment(end);
     }
 
-    fn print_if_with<N: Node>(
+    fn print_if_with<N: ArmNode>(
         &mut self,
         if_: If<N>,
         indent_level: usize,
+        inline: Option<bool>,
         child_preserve_blank_lines: bool,
-        print_block: &mut impl FnMut(&mut Self, ControlBlock<N>, usize, bool, bool),
+        print_block: &mut impl FnMut(&mut Self, ControlBlock<N>, usize, bool, Option<usize>),
     ) {
         self.write("if");
         self.print_space_or_leading_comments(if_.cond.span().start(), indent_level);
+        let blocks_len = if_blocks_len_with(&if_, N::flat_len);
         let header_broken = self.print_condition(if_.cond, indent_level);
+        // As rustfmt lays out `if`/`else`, the blocks stay on one line only when the first
+        // header did not break and the whole chain after it fits on its line.
+        let inline = inline.unwrap_or_else(|| {
+            !header_broken
+                && blocks_len.is_some_and(|len| {
+                    self.line_len() + " ".len() + len <= self.options.line_length
+                })
+        });
+        let trailing = inline.then_some(0);
         self.print_control_block_after_header(
             if_.then_block,
             indent_level,
             header_broken,
+            trailing,
             child_preserve_blank_lines,
             print_block,
         );
@@ -425,13 +456,20 @@ impl<'a, 'b> Printer<'a, 'b> {
                         if_.if_token().span().start(),
                         indent_level,
                     );
-                    self.print_if_with(if_, indent_level, child_preserve_blank_lines, print_block);
+                    self.print_if_with(
+                        if_,
+                        indent_level,
+                        Some(inline),
+                        child_preserve_blank_lines,
+                        print_block,
+                    );
                 }
                 ControlIfOrBlock::Block(block) => {
                     self.print_control_block_after_header(
                         block,
                         indent_level,
                         false,
+                        trailing,
                         child_preserve_blank_lines,
                         print_block,
                     );
@@ -816,7 +854,7 @@ mod test {
     );
 
     test_default!(
-        control_match_guard_breaks_where_it_is_printed,
+        control_match_guard_moves_to_the_next_line_and_breaks_there,
         r#"
         html! { div { div { @match x { Some(v) if v.has_a_rather_long_predicate_name() && another_condition_holds_for(v) => { "a" } None => {} } } } }
         "#,
@@ -825,8 +863,9 @@ mod test {
             div {
                 div {
                     @match x {
-                        Some(v) if v.has_a_rather_long_predicate_name()
-                            && another_condition_holds_for(v) => { "a" }
+                        Some(v)
+                            if v.has_a_rather_long_predicate_name()
+                                && another_condition_holds_for(v) => { "a" }
                         None => {}
                     }
                 }
@@ -1254,7 +1293,7 @@ line two" => { "a" }
     );
 
     test_default!(
-        control_match_guard_leaves_room_for_a_node_body,
+        control_match_guard_moves_to_the_next_line_with_room_for_a_node_body,
         r#"
         html! { div { @match x { Some(value) if value.is_visible_to(reader) && value.is_published() => "a short body" None => {} } } }
         "#,
@@ -1262,8 +1301,8 @@ line two" => { "a" }
         html! {
             div {
                 @match x {
-                    Some(value) if value.is_visible_to(reader)
-                        && value.is_published() => "a short body"
+                    Some(value)
+                        if value.is_visible_to(reader) && value.is_published() => "a short body"
                     None => {}
                 }
             }
@@ -1281,7 +1320,9 @@ line two" => { "a" }
             @if check(
                 first_value,
                 second,
-            ) { "d" }
+            ) {
+                "d"
+            }
         }
         "#
     );
@@ -1352,6 +1393,84 @@ second line" { "g" }
                         }
                     }
                 )
+            }
+        }
+        "#
+    );
+
+    test_default!(
+        control_if_chain_breaks_every_block_when_it_does_not_fit_on_one_line,
+        r#"
+        html! { div { @if self.first_condition_is_set { "first text" } @else if self.second_condition_is_set_as_well { "second" } } }
+        "#,
+        r#"
+        html! {
+            div {
+                @if self.first_condition_is_set {
+                    "first text"
+                } @else if self.second_condition_is_set_as_well {
+                    "second"
+                }
+            }
+        }
+        "#
+    );
+
+    test_default!(
+        control_block_breaks_around_a_splice_holding_markup,
+        r#"
+        html! { @if a { (render(html! { p { "x" } })) } }
+        "#,
+        r#"
+        html! {
+            @if a {
+                (
+                    render(
+                        html! {
+                            p { "x" }
+                        },
+                    )
+                )
+            }
+        }
+        "#
+    );
+
+    test_default!(
+        control_if_let_chain_moves_its_expression_to_the_next_line,
+        r#"
+        html! { div { div { div { @if ready && let Some(value) = self.lookup_table.get(&the_key).map(|v| v.name.clone()) { "text" } } } } }
+        "#,
+        r#"
+        html! {
+            div {
+                div {
+                    div {
+                        @if ready
+                            && let Some(value) =
+                                self.lookup_table.get(&the_key).map(|v| v.name.clone())
+                        {
+                            "text"
+                        }
+                    }
+                }
+            }
+        }
+        "#
+    );
+
+    test_small_line!(
+        control_match_slice_pattern_breaks_like_a_tuple,
+        r#"
+        html! { @match x { [first_element, second_element] => { "a" } } }
+        "#,
+        r#"
+        html! {
+            @match x {
+                [
+                    first_element,
+                    second_element,
+                ] => { "a" }
             }
         }
         "#

@@ -1,8 +1,10 @@
 # NOTICE
 
 This crate is a fork of prettyplease that can print an expression or pattern from a given column
-against a given line length, keeps an or-pattern's leading `|`, and prints a closure body it puts
-in braces as the statement it becomes, so that formatting its output again leaves it unchanged.
+against a given line length. It also keeps an or-pattern's leading `|`, breaks a slice pattern
+like a tuple pattern, lets the expression of a `let` in a condition move to the next line, and
+prints a closure body it puts in braces as the statement it becomes, so that formatting its output
+again leaves it unchanged.
 
 - Original work: <https://github.com/dtolnay/prettyplease>
 - Upstream sync/base: `prettyplease` 0.2.37

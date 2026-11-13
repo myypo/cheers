@@ -315,7 +315,7 @@ impl<'a, 'b> Printer<'a, 'b> {
 
     /// Prints a match arm's guard from the current column, followed on its last line by
     /// `trailing` columns, its later lines one level deeper than the arm at `indent_level`.
-    pub(super) fn print_guard(&mut self, expr: Expr, trailing: usize, indent_level: usize) {
+    pub(super) fn print_guard_expr(&mut self, expr: Expr, trailing: usize, indent_level: usize) {
         if self.write_original_if_commented(expr.span()) {
             return;
         }
@@ -327,6 +327,50 @@ impl<'a, 'b> Printer<'a, 'b> {
         match self.unparse_or_warn(expr.span(), || unparse_guard(&expr, place, trailing)) {
             Some(v) => self.write(&v.text),
             None => self.write(self.source_text(expr.span()).trim()),
+        }
+    }
+
+    /// Prints ` if` and a match arm's guard after its pattern, followed on its last line by
+    /// `trailing` columns. As rustfmt places it, the guard stays on the pattern's line when it fits
+    /// there on one line, or after a pattern ending in at most 4 columns, and otherwise goes on the
+    /// next line one level deeper than the arm at `indent_level`.
+    pub(super) fn print_guard(&mut self, expr: Expr, trailing: usize, indent_level: usize) {
+        let same = Place {
+            column: self.column() + " if ".len(),
+            ..self.place(indent_level)
+        };
+        let next = self.place(indent_level + 1);
+        let next = Place {
+            column: next.indent + "if ".len(),
+            ..next
+        };
+        let Some((on_same, on_next)) = self.unparse_or_warn(expr.span(), || {
+            (
+                unparse_guard(&expr, same, trailing),
+                unparse_guard(&expr, next, trailing),
+            )
+        }) else {
+            self.write(" if ");
+            self.write(self.source_text(expr.span()).trim());
+            return;
+        };
+        let short_pattern = self
+            .buf
+            .rsplit('\n')
+            .next()
+            .unwrap_or_default()
+            .trim()
+            .len()
+            <= 4;
+        if (!on_same.broken || short_pattern)
+            && fits(&on_same.text, same.column, trailing, same.line_length)
+        {
+            self.write(" if ");
+            self.write(&on_same.text);
+        } else {
+            self.new_line(indent_level + 1);
+            self.write("if ");
+            self.write(&on_next.text);
         }
     }
 
