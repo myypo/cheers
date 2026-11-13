@@ -606,6 +606,22 @@ mod test {
     );
 
     test_default!(
+        control_match_struct_pattern_near_the_width,
+        r#"
+        html! { div { @match target { RepairTarget::CharacterObject { character_id, object_id, field } => { (field) } } } }
+        "#,
+        r#"
+        html! {
+            div {
+                @match target {
+                    RepairTarget::CharacterObject { character_id, object_id, field } => { (field) }
+                }
+            }
+        }
+        "#
+    );
+
+    test_default!(
         if_let_or_pattern,
         r#"
         html! { @if let A(v) | B(v) = x { (v) } }

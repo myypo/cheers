@@ -3,20 +3,24 @@ use quote::quote;
 use syn::{Expr, File, Item, Local, Pat, Stmt};
 
 pub fn unparse_pat(pat: &Pat, total_indent_size: usize) -> Vec<String> {
-    // `let` takes no top-level `|`, so unparse in `if let`, which takes any pattern.
-    let tokens = quote!(if let #pat = x {});
+    // `let` takes no top-level `|`. Other patterns stay in `let`, whose shorter wrapper leaves
+    // them the width they have always been formatted to.
+    let (tokens, prefix, suffix) = match pat {
+        Pat::Or(_) => (quote!(if let #pat = x {}), "if let ", " = x {}"),
+        _ => (quote!(let #pat;), "let ", ";"),
+    };
     let mut unparsed = unparse(tokens, total_indent_size);
     if let Some(first) = unparsed.first_mut() {
         *first = first
             .trim()
-            .strip_prefix("if let ")
-            .expect("if let prefix")
+            .strip_prefix(prefix)
+            .expect("pattern prefix")
             .to_string();
     }
     if let Some(last) = unparsed.last_mut() {
         *last = last
-            .strip_suffix(" = x {}")
-            .expect("= x {} suffix")
+            .strip_suffix(suffix)
+            .expect("pattern suffix")
             .to_string();
     }
     unparsed
