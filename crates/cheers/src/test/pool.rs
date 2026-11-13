@@ -11,7 +11,7 @@ use std::{
     fs::{self, File, TryLockError},
     io::{self, Read as _, Seek as _, Write as _},
     os::unix::process::CommandExt as _,
-    path::Path,
+    path::{Path, PathBuf},
     process::{Command, Stdio},
     sync::Arc,
     time::{Duration, SystemTime},
@@ -62,6 +62,8 @@ const CHROMEDRIVER_SWITCHES: &[&str] = &[
 /// reaches the next test that uses the same browser.
 pub(super) struct Lease {
     slot: File,
+    dir: PathBuf,
+    name: String,
     cdp: Cdp,
     context: Arc<str>,
     target: String,
@@ -70,55 +72,63 @@ pub(super) struct Lease {
 impl Lease {
     /// Claim the first browser slot in `dir` no other `App` is using, with a running browser that
     /// has no pages and no browser contexts but a new one.
+    ///
+    /// A browser that fails to get there is killed and the slot gets a new one, so a hung browser
+    /// cannot fail every later `App` that claims its slot.
     pub(super) async fn take(dir: &Path, chromium: &str, args: &[&str]) -> io::Result<Self> {
         fs::create_dir_all(dir)?;
         let (index, mut slot) = claim_slot(dir)?;
 
         let mut current = String::new();
         slot.read_to_string(&mut current)?;
-        let mut cdp = match current.trim() {
-            "" => None,
-            name => match Cdp::connect(&dir.join(name)).await {
-                Ok(cdp) => Some(cdp),
-                Err(err) => {
-                    eprintln!("replacing pooled Chromium {name}, which did not answer: {err}");
-                    kill_browser(dir, name);
-                    None
+        let current = current.trim();
+        if !current.is_empty() {
+            let reused = async {
+                let mut cdp = Cdp::connect(&dir.join(current)).await?;
+                if !cdp.dispose_contexts_and_check_empty().await? {
+                    return Err(io::Error::other(
+                        "it has pages outside a test's browser context",
+                    ));
                 }
-            },
-        };
-        if let Some(mut browser) = cdp.take() {
-            if browser.dispose_contexts_and_check_empty().await? {
-                cdp = Some(browser);
-            } else {
-                eprintln!(
-                    "replacing pooled Chromium {}, which has pages outside a test's browser context",
-                    current.trim()
-                );
-                browser.close().await;
+                let (context, target) = open_context(&mut cdp).await?;
+                Ok((cdp, context, target))
+            }
+            .await;
+            match reused {
+                Ok((cdp, context, target)) => {
+                    return Ok(Self {
+                        name: current.to_owned(),
+                        slot,
+                        dir: dir.to_owned(),
+                        cdp,
+                        context,
+                        target,
+                    });
+                }
+                Err(err) => {
+                    eprintln!("replacing pooled Chromium {current}: {err}");
+                    kill_browser(dir, current);
+                    slot.set_len(0)?;
+                }
             }
         }
-        let mut cdp = match cdp {
-            Some(cdp) => cdp,
-            None => launch(dir, index, &mut slot, chromium, args).await?,
-        };
 
-        let context: Arc<str> = cdp
-            .call("Target.createBrowserContext", json!({}))
-            .await?
-            .get("browserContextId")
-            .and_then(Value::as_str)
-            .ok_or_else(|| io::Error::other("Target.createBrowserContext returned no id"))?
-            .into();
-        let target = create_target(&mut cdp, &context).await?;
-        cdp.watch_for_pages_outside(Arc::clone(&context)).await?;
-
-        Ok(Self {
-            slot,
-            cdp,
-            context,
-            target,
-        })
+        let (name, mut cdp) = launch(dir, index, &mut slot, chromium, args).await?;
+        match open_context(&mut cdp).await {
+            Ok((context, target)) => Ok(Self {
+                slot,
+                dir: dir.to_owned(),
+                name,
+                cdp,
+                context,
+                target,
+            }),
+            Err(err) => {
+                kill_browser(dir, &name);
+                slot.set_len(0)?;
+                Err(err)
+            }
+        }
     }
 
     /// Open a WebDriver session on the leased page.
@@ -138,20 +148,38 @@ impl Lease {
     ///
     /// Windows opened through WebDriver's new-window command land in the browser's default
     /// context, where they would share cookies and storage with later tests, so a browser that
-    /// had any is closed and the slot gets a new one.
+    /// had any, or that fails to close the context, is killed and the slot gets a new one.
     pub(super) async fn release(mut self) -> io::Result<()> {
-        self.cdp
-            .call(
-                "Target.disposeBrowserContext",
-                json!({ "browserContextId": &*self.context }),
-            )
-            .await?;
-        if self.cdp.saw_page_outside || !self.cdp.pages().await?.is_empty() {
-            self.slot.set_len(0)?;
-            self.cdp.close().await;
+        let reusable = async {
+            self.cdp
+                .call(
+                    "Target.disposeBrowserContext",
+                    json!({ "browserContextId": &*self.context }),
+                )
+                .await?;
+            Ok(!self.cdp.saw_page_outside && self.cdp.pages().await?.is_empty())
         }
-        Ok(())
+        .await;
+        if !matches!(reusable, Ok(true)) {
+            kill_browser(&self.dir, &self.name);
+            self.slot.set_len(0)?;
+        }
+        reusable.map(drop)
     }
+}
+
+/// Open a browser context with a single page in it and watch for pages opened outside it.
+async fn open_context(cdp: &mut Cdp) -> io::Result<(Arc<str>, String)> {
+    let context: Arc<str> = cdp
+        .call("Target.createBrowserContext", json!({}))
+        .await?
+        .get("browserContextId")
+        .and_then(Value::as_str)
+        .ok_or_else(|| io::Error::other("Target.createBrowserContext returned no id"))?
+        .into();
+    let target = create_target(cdp, &context).await?;
+    cdp.watch_for_pages_outside(Arc::clone(&context)).await?;
+    Ok((context, target))
 }
 
 async fn create_target(cdp: &mut Cdp, context: &str) -> io::Result<String> {
@@ -185,14 +213,14 @@ fn claim_slot(dir: &Path) -> io::Result<(usize, File)> {
 }
 
 /// Start a browser for slot `index` under a user data dir no earlier browser used, and record it
-/// as the slot's current one.
+/// as the slot's current one by its name.
 async fn launch(
     dir: &Path,
     index: usize,
     slot: &mut File,
     chromium: &str,
     args: &[&str],
-) -> io::Result<Cdp> {
+) -> io::Result<(String, Cdp)> {
     let stamp = SystemTime::now()
         .duration_since(SystemTime::UNIX_EPOCH)
         .unwrap_or_default()
@@ -234,7 +262,7 @@ async fn launch(
                 slot.set_len(0)?;
                 slot.rewind()?;
                 slot.write_all(name.as_bytes())?;
-                return Ok(cdp);
+                return Ok((name, cdp));
             }
             Err(err) if err.kind() == io::ErrorKind::NotFound => {}
             Err(err) => {
@@ -243,6 +271,7 @@ async fn launch(
             }
         }
         if let Some(status) = child.try_wait()? {
+            kill_browser(dir, &name);
             return Err(io::Error::other(format!(
                 "Chromium exited with {status} before opening its DevTools port; see {}",
                 dir.join(format!("{name}.log")).display()
@@ -259,13 +288,17 @@ async fn launch(
     }
 }
 
+/// Kill the browser `name` with its helpers, and forget its process id so nothing signals a
+/// process that is later given the same id.
 fn kill_browser(dir: &Path, name: &str) {
-    if let Ok(pid) = fs::read_to_string(dir.join(format!("{name}.pid")))
+    let pid_file = dir.join(format!("{name}.pid"));
+    if let Ok(pid) = fs::read_to_string(&pid_file)
         && let Ok(pid) = pid.trim().parse::<libc::pid_t>()
     {
         // SAFETY: `killpg` only sends a signal; the group is the one the browser was started in.
         unsafe { libc::killpg(pid, libc::SIGKILL) };
     }
+    let _ = fs::remove_file(pid_file);
 }
 
 /// A connection to a browser's own DevTools target, which can create and dispose browser
@@ -338,10 +371,6 @@ impl Cdp {
             .filter(|target| target["type"] == "page")
             .cloned()
             .collect())
-    }
-
-    async fn close(mut self) {
-        let _ = self.call("Browser.close", json!({})).await;
     }
 
     async fn call(&mut self, method: &str, params: Value) -> io::Result<Value> {

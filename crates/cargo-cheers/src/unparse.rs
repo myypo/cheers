@@ -3,36 +3,23 @@ use quote::quote;
 use syn::{Expr, File, Item, Local, Pat, Stmt};
 
 pub fn unparse_pat(pat: &Pat, total_indent_size: usize) -> Vec<String> {
-    let tokens = quote!(let #pat;);
-    let unparsed = unparse(tokens, total_indent_size);
-
-    match unparsed.len() {
-        0 => unparsed,
-        1 => vec![
-            unparsed[0]
-                .trim()
-                .strip_prefix("let ")
-                .expect("let prefix")
-                .strip_suffix(";")
-                .expect("; suffix")
-                .to_string(),
-        ],
-        _ => {
-            let mut unparsed = unparsed;
-            unparsed[0] = unparsed[0]
-                .trim()
-                .strip_prefix("let ")
-                .expect("let prefix")
-                .to_string();
-            let last_idx = unparsed.len() - 1;
-            unparsed[last_idx] = unparsed[last_idx]
-                .strip_suffix(";")
-                .expect("; suffix")
-                .to_string();
-
-            unparsed
-        }
+    // `let` takes no top-level `|`, so unparse in `if let`, which takes any pattern.
+    let tokens = quote!(if let #pat = x {});
+    let mut unparsed = unparse(tokens, total_indent_size);
+    if let Some(first) = unparsed.first_mut() {
+        *first = first
+            .trim()
+            .strip_prefix("if let ")
+            .expect("if let prefix")
+            .to_string();
     }
+    if let Some(last) = unparsed.last_mut() {
+        *last = last
+            .strip_suffix(" = x {}")
+            .expect("= x {} suffix")
+            .to_string();
+    }
+    unparsed
 }
 
 pub fn unparse_local(local: &Local, total_indent_size: usize) -> Vec<String> {

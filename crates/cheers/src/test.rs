@@ -20,7 +20,38 @@ use thirtyfour::{
 };
 use tokio::{net::TcpListener, sync::oneshot, task::JoinHandle};
 
+#[cfg(unix)]
 mod pool;
+
+#[cfg(not(unix))]
+mod pool {
+    use std::{io, path::Path, sync::Arc};
+
+    use thirtyfour::{WebDriver, error::WebDriverResult};
+
+    pub(super) enum Lease {}
+
+    impl Lease {
+        pub(super) async fn take(_: &Path, _: &str, _: &[&str]) -> io::Result<Self> {
+            Err(io::Error::new(
+                io::ErrorKind::Unsupported,
+                format!("{} is only supported on Unix", super::BROWSER_POOL_ENV),
+            ))
+        }
+
+        pub(super) async fn attach(&self, _: String) -> WebDriverResult<WebDriver> {
+            match *self {}
+        }
+
+        pub(super) fn context(&self) -> Arc<str> {
+            match *self {}
+        }
+
+        pub(super) async fn release(self) -> io::Result<()> {
+            match self {}
+        }
+    }
+}
 
 /// A running test server and browser session.
 ///
@@ -69,21 +100,14 @@ const CHROMIUM_ARGS: &[&str] = &[
     "--disable-dev-shm-usage",
 ];
 
-fn chromium_binary() -> Option<String> {
-    const NAMES: &[&str] = &[
-        "chromium",
-        "chromium-browser",
-        "google-chrome-stable",
-        "google-chrome",
-        "chrome",
-    ];
-
+/// The first of `names` on `PATH`, unless [`CHROME_BIN_ENV`] names the binary.
+fn chromium_binary(names: &[&str]) -> Option<String> {
     if let Ok(path) = std::env::var(CHROME_BIN_ENV) {
         return Some(path);
     }
 
     let paths: Vec<_> = std::env::split_paths(&std::env::var_os("PATH")?).collect();
-    NAMES
+    names
         .iter()
         .flat_map(|name| paths.iter().map(move |dir| dir.join(name)))
         .find(|p| p.is_file())
@@ -113,7 +137,7 @@ async fn chrome() -> WebDriverResult<(thirtyfour::WebDriver, Option<pool::Lease>
 
     let Some(dir) = pool_dir()? else {
         let mut caps = DesiredCapabilities::chrome();
-        if let Some(path) = chromium_binary() {
+        if let Some(path) = chromium_binary(&["chromium"]) {
             caps.set_binary(&path)?;
         }
         for arg in CHROMIUM_ARGS {
@@ -129,7 +153,15 @@ async fn chrome() -> WebDriverResult<(thirtyfour::WebDriver, Option<pool::Lease>
         };
     };
 
-    let chromium = chromium_binary().ok_or_else(|| {
+    // ChromeDriver is not there to find a browser for a pooled one.
+    let chromium = chromium_binary(&[
+        "chromium",
+        "chromium-browser",
+        "google-chrome-stable",
+        "google-chrome",
+        "chrome",
+    ])
+    .ok_or_else(|| {
         io::Error::other(format!(
             "{BROWSER_POOL_ENV} is set but no browser was found to start; set {CHROME_BIN_ENV}"
         ))
