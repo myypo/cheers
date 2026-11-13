@@ -573,6 +573,51 @@ mod test {
     );
 
     test_default!(
+        control_match_or_pattern,
+        r#"
+        html! { @match x { A | B => { "ab" } C => { "c" } } }
+        "#,
+        r#"
+        html! {
+            @match x {
+                A | B => { "ab" }
+                C => { "c" }
+            }
+        }
+        "#
+    );
+
+    test_default!(
+        control_match_multiline_or_pattern,
+        r#"
+        html! { @match x { Availability::SomeVeryLongVariantName { free: false } | Availability::AnotherVeryLongVariantName { free } => { "ab" } C => { "c" } } }
+        "#,
+        r#"
+        html! {
+            @match x {
+                Availability::SomeVeryLongVariantName { free: false }
+                | Availability::AnotherVeryLongVariantName { free } => {
+                    "ab"
+                }
+                C => { "c" }
+            }
+        }
+        "#
+    );
+
+    test_default!(
+        if_let_or_pattern,
+        r#"
+        html! { @if let A(v) | B(v) = x { (v) } }
+        "#,
+        r#"
+        html! {
+            @if let A(v) | B(v) = x { (v) }
+        }
+        "#
+    );
+
+    test_default!(
         control_while,
         r#"
         html! { @while flag {p{"flag is true"}}}
