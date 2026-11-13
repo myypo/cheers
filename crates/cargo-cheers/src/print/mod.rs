@@ -394,8 +394,9 @@ impl<'a, 'b> Printer<'a, 'b> {
         self.buf += content;
     }
 
+    /// The columns taken on the current line, which follows any lines already written into `buf`.
     fn line_len(&self) -> usize {
-        self.buf.len()
+        self.buf.rsplit('\n').next().map_or(0, str::len)
     }
 
     fn finish(mut self) -> String {

@@ -191,7 +191,7 @@ impl<'a, 'b> Printer<'a, 'b> {
     }
 
     /// Writes `span` verbatim when it holds comments, since reformatting would lose them.
-    fn write_original_if_commented(&mut self, span: Span) -> bool {
+    pub(super) fn write_original_if_commented(&mut self, span: Span) -> bool {
         if !self.span_contains_comments(span) {
             return false;
         }

@@ -9,7 +9,7 @@ use crate::{
     print::{
         Printer, attribute_value_node::attribute_value_node_end, element_node::element_node_end,
     },
-    unparse::{unparse_local, unparse_pat},
+    unparse::{PatPlace, unparse_local, unparse_pat},
 };
 
 fn control_block_end<N: Node>(block: &ControlBlock<N>) -> LineColumn {
@@ -127,11 +127,29 @@ impl<'a, 'b> Printer<'a, 'b> {
         }
     }
 
+    /// Prints `pat` from the current column, followed on its last line by `trailing` columns.
+    ///
+    /// Only the text that cannot leave the pattern's last line counts, as with rustfmt: an
+    /// expression after it that does not fit breaks itself rather than the pattern.
+    fn print_pat(&mut self, pat: &syn::Pat, trailing: usize) {
+        if self.write_original_if_commented(pat.span()) {
+            return;
+        }
+        let line = self.buf.rsplit('\n').next().unwrap_or_default();
+        let place = PatPlace {
+            column: self.line_len(),
+            line_indent: line.len() - line.trim_start().len(),
+            trailing,
+            line_length: self.options.line_length,
+        };
+        self.write(&unparse_pat(pat, place).join("\n"));
+    }
+
     fn print_let_condition(&mut self, expr_let: syn::ExprLet, indent_level: usize) -> bool {
         // prettyplease/syn cannot unparse `if let` / `while let` conditions as expressions.
         self.write("let");
         self.print_space_or_leading_comments(expr_let.pat.span().start(), indent_level);
-        self.write(&unparse_pat(&expr_let.pat, self.base_indent + indent_level).join("\n"));
+        self.print_pat(&expr_let.pat, " =".len());
         self.write(" =");
         self.print_space_or_leading_comments(expr_let.expr.span().start(), indent_level);
         self.print_condition_expr(*expr_let.expr, indent_level)
@@ -162,7 +180,7 @@ impl<'a, 'b> Printer<'a, 'b> {
             ControlKind::For(for_) => {
                 self.write("@for");
                 self.print_space_or_leading_comments(for_.pat.span().start(), indent_level);
-                self.write(&unparse_pat(&for_.pat, self.base_indent + indent_level).join("\n"));
+                self.print_pat(&for_.pat, " in".len());
                 self.write(" in");
                 self.print_space_or_leading_comments(for_.expr.span().start(), indent_level);
                 match for_.expr {
@@ -234,7 +252,11 @@ impl<'a, 'b> Printer<'a, 'b> {
                     );
                     let fat_arrow_span = arm.fat_arrow_span();
                     self.print_leading_comments(arm_start, indent_level + 1);
-                    self.write(&unparse_pat(&arm.pat, self.base_indent + indent_level).join("\n"));
+                    let trailing = match arm.guard {
+                        Some(_) => " if".len(),
+                        None => " => {".len(),
+                    };
+                    self.print_pat(&arm.pat, trailing);
                     if let Some((if_token, guard_cond)) = arm.guard {
                         self.print_space_or_leading_comments(
                             if_token.span().start(),
@@ -476,10 +498,10 @@ mod test {
         r#"
         html! {
             @if let some::very::very::very::very::very::very::PatternName {
-                    field_one,
-                    field_two,
-                    field_three,
-                } = expr {
+                field_one,
+                field_two,
+                field_three,
+            } = expr {
                 p { "x" }
             }
         }
@@ -596,9 +618,7 @@ mod test {
         html! {
             @match x {
                 Availability::SomeVeryLongVariantName { free: false }
-                | Availability::AnotherVeryLongVariantName { free } => {
-                    "ab"
-                }
+                | Availability::AnotherVeryLongVariantName { free } => { "ab" }
                 C => { "c" }
             }
         }
@@ -615,6 +635,91 @@ mod test {
             div {
                 @match target {
                     RepairTarget::CharacterObject { character_id, object_id, field } => { (field) }
+                }
+            }
+        }
+        "#
+    );
+
+    test_default!(
+        control_match_or_pattern_as_wide_as_any_other,
+        r#"
+        html! { @match target { RepairTarget::CharObj(character_id) | RepairTarget::Other(character_id) => { (character_id) } } }
+        "#,
+        r#"
+        html! {
+            @match target {
+                RepairTarget::CharObj(character_id) | RepairTarget::Other(character_id) => {
+                    (character_id)
+                }
+            }
+        }
+        "#
+    );
+
+    test_default!(
+        control_match_leading_vert,
+        r#"
+        html! { @match x { | A | B => { "a" } C => { "b" } } }
+        "#,
+        r#"
+        html! {
+            @match x {
+                | A | B => { "a" }
+                C => { "b" }
+            }
+        }
+        "#
+    );
+
+    test_default!(
+        control_match_pattern_with_comment,
+        r#"
+        html! { @match x { Foo { a, /* keep */ b } => { "a" } C => { "b" } } }
+        "#,
+        r#"
+        html! {
+            @match x {
+                Foo { a, /* keep */ b } => { "a" }
+                C => { "b" }
+            }
+        }
+        "#
+    );
+
+    test_small_line!(
+        control_match_pattern_fits_the_configured_width,
+        r#"
+        html! { @match x { Target::Object { character_id, field } => { "a" } } }
+        "#,
+        r#"
+        html! {
+            @match x {
+                Target::Object {
+                    character_id,
+                    field,
+                } => { "a" }
+            }
+        }
+        "#
+    );
+
+    test_default!(
+        if_let_pattern_stays_whole_before_a_long_expression,
+        r#"
+        html! { div { div { div { div { @if let Some(issue) = self.result.issues.get(queued_issue.issue_index) { (issue) } } } } } }
+        "#,
+        r#"
+        html! {
+            div {
+                div {
+                    div {
+                        div {
+                            @if let Some(issue) = self.result.issues.get(queued_issue.issue_index) {
+                                (issue)
+                            }
+                        }
+                    }
                 }
             }
         }
