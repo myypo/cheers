@@ -203,7 +203,7 @@ impl Printer {
         if self.scan_stack.is_empty() {
             self.print_string(string);
         } else {
-            let len = string.len() as isize;
+            let len = string.chars().count() as isize;
             self.buf.push(BufEntry {
                 token: Token::String(string),
                 size: len,
@@ -414,7 +414,7 @@ impl Printer {
     fn print_string(&mut self, string: Cow<'static, str>) {
         self.print_indent();
         self.out.push_str(&string);
-        self.space -= string.len() as isize;
+        self.space -= string.chars().count() as isize;
     }
 
     fn print_indent(&mut self) {

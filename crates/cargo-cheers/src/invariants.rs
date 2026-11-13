@@ -274,8 +274,8 @@ fn comment_insertions(source: &Source, all_positions: bool) -> Vec<(usize, &'sta
 /// The tokens of `source`, ignoring whitespace, comments and spans, whether a `,` or `;` is
 /// directly followed by punctuation, and the differences the formatter may make: it drops `r#`
 /// from element names, adds or drops trailing commas, drops the optional commas after `@match`
-/// arms, and puts a closure body that is a single expression in braces when it does not fit on its
-/// line.
+/// arms, and puts a closure body that is a single expression, followed by nothing but a `,` or `;`,
+/// in braces when it does not fit on its line.
 fn token_shape(source: &str) -> Vec<String> {
     /// Whether `out` ends with a closure's parameters: a `|`, and an earlier `|` at the same depth
     /// that does not follow an operand, as the `|` of a binary or would.
@@ -310,14 +310,16 @@ fn token_shape(source: &str) -> Vec<String> {
     }
 
     fn walk(stream: TokenStream, out: &mut Vec<String>) {
-        for tree in stream {
+        let mut trees = stream.into_iter().peekable();
+        while let Some(tree) = trees.next() {
             match tree {
                 TokenTree::Group(group)
                     if group.delimiter() == Delimiter::Brace
                         && ends_closure_params(out)
-                        && !group.stream().into_iter().any(|tree| {
-                            matches!(&tree, TokenTree::Punct(punct) if punct.as_char() == ';')
-                        }) =>
+                        && trees.peek().is_none_or(|next| {
+                            matches!(next, TokenTree::Punct(p) if matches!(p.as_char(), ',' | ';'))
+                        })
+                        && syn::parse2::<syn::Expr>(group.stream()).is_ok() =>
                 {
                     walk(group.stream(), out);
                 }

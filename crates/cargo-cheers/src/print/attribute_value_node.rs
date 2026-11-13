@@ -2,10 +2,7 @@ use ast::AttributeValueNode;
 use proc_macro2::LineColumn;
 use syn::spanned::Spanned as _;
 
-use crate::{
-    line_length::attribute_value_len,
-    print::{NodePrinter, Printer, control::control_end},
-};
+use crate::print::{NodePrinter, Printer, control::control_end};
 
 pub(super) fn attribute_value_node_start(node: &AttributeValueNode) -> LineColumn {
     match node {
@@ -49,7 +46,7 @@ impl<'a, 'b> Printer<'a, 'b> {
                     .0
                     .iter()
                     .try_fold(0usize, |acc, node| {
-                        attribute_value_len(node).map(|len| acc + len)
+                        self.attribute_value_len(node).map(|len| acc + len)
                     })
                     // `{` + ` ` + `}`
                     .map(|sum| sum + group.nodes.0.len() + 3);

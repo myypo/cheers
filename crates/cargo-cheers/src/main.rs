@@ -5,7 +5,6 @@ mod format;
 mod header_properties;
 #[cfg(test)]
 mod invariants;
-mod line_length;
 mod print;
 mod subsecond;
 #[cfg(test)]

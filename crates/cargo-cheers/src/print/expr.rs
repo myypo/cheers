@@ -18,16 +18,16 @@ use crate::{
 };
 
 /// Columns a header's ` {` takes after it on its line.
-const BRACE: usize = " {".len();
+pub(super) const BRACE: usize = " {".len();
 
 /// Whether `text`, written from `column` and followed on its last line by `trailing` columns,
 /// keeps every line within `line_length`.
-fn fits(text: &str, column: usize, trailing: usize, line_length: usize) -> bool {
+pub(super) fn fits(text: &str, column: usize, trailing: usize, line_length: usize) -> bool {
     let mut lines = text.split('\n').peekable();
     let mut start = column;
     while let Some(line) = lines.next() {
         let end = if lines.peek().is_none() { trailing } else { 0 };
-        if start + line.len() + end > line_length {
+        if start + line.chars().count() + end > line_length {
             return false;
         }
         start = 0;
@@ -97,6 +97,23 @@ impl<'a, 'b> Printer<'a, 'b> {
         expr_macro: &ExprMacro,
         depth: usize,
     ) -> Option<Vec<String>> {
+        let formatted =
+            self.format_nested_macro(expr_macro, self.indent_str.len() * depth, self.column())?;
+        let mut lines: Vec<_> = formatted.lines().map(str::to_owned).collect();
+        if let Some(first) = lines.first_mut() {
+            first.insert_str(0, &self.indent_str.repeat(depth));
+        }
+        Some(lines)
+    }
+
+    /// `expr_macro` formatted as the markup it holds from `column`, with lines after the first
+    /// indented by `spaces`, or `None` when it is not markup or does not parse as such.
+    pub(super) fn format_nested_macro(
+        &self,
+        expr_macro: &ExprMacro,
+        spaces: usize,
+        column: usize,
+    ) -> Option<String> {
         let macro_name = expr_macro
             .mac
             .path
@@ -117,15 +134,12 @@ impl<'a, 'b> Printer<'a, 'b> {
 
         let macro_ = MaudMacro {
             macro_: &expr_macro.mac,
-            indent: Indent {
-                tabs: 0,
-                spaces: self.indent_str.len() * depth,
-            },
+            indent: Indent { tabs: 0, spaces },
             macro_name: macro_name.clone(),
-            column: self.column(),
+            column,
         };
 
-        let formatted = if macro_name == "datastar_source" {
+        Some(if macro_name == "datastar_source" {
             let document: DatastarSourceNodes = Parser::parse2(
                 |input: ParseStream| DatastarSourceNodes::parse(input),
                 expr_macro.mac.tokens.clone(),
@@ -153,12 +167,7 @@ impl<'a, 'b> Printer<'a, 'b> {
             )
             .ok()?;
             crate::print::print(document, &macro_, self.source, self.options)
-        };
-        let mut lines: Vec<_> = formatted.lines().map(str::to_owned).collect();
-        if let Some(first) = lines.first_mut() {
-            first.insert_str(0, &self.indent_str.repeat(depth));
-        }
-        Some(lines)
+        })
     }
 
     /// The lines of `expr` when it is a macro, each indented by `depth` levels.
@@ -252,16 +261,26 @@ impl<'a, 'b> Printer<'a, 'b> {
             return false;
         }
         if let Some(lines) = self.macro_expr_lines(&expr, self.base_indent + indent_level) {
-            return self.write_condition_lines(&lines);
+            return self.write_expr_lines(&lines);
         }
         let place = self.place(indent_level);
-        match self.unparse_or_warn(expr.span(), || unparse_condition(&expr, place, BRACE)) {
+        self.write_unparsed(expr.span(), || unparse_condition(&expr, place, BRACE))
+    }
+
+    /// Writes what `unparse` lays out for the Rust at `span`, or the Rust as written when
+    /// prettyplease panics, and returns whether it broke a line.
+    pub(super) fn write_unparsed(
+        &mut self,
+        span: Span,
+        unparse: impl FnOnce() -> Unparsed + std::panic::UnwindSafe,
+    ) -> bool {
+        match self.unparse_or_warn(span, unparse) {
             Some(v) => {
                 self.write(&v.text);
                 v.broken
             }
             None => {
-                self.write(self.source_text(expr.span()).trim());
+                self.write(self.source_text(span).trim());
                 false
             }
         }
@@ -272,45 +291,48 @@ impl<'a, 'b> Printer<'a, 'b> {
     /// was broken.
     pub(super) fn print_condition_rhs(&mut self, expr: Expr, indent_level: usize) -> bool {
         if self.print_leading_comments_after_line_break(expr.span().start(), indent_level) {
-            return self.print_condition_expr(expr, indent_level);
+            self.print_condition_expr(expr, indent_level);
+            return true;
         }
         if self.span_contains_comments(expr.span()) || matches!(expr, Expr::Macro(_)) {
             self.write(" ");
             return self.print_condition_expr(expr, indent_level);
         }
         let same = Place {
-            column: self.column() + 1,
+            column: self.column() + " ".len(),
             ..self.place(indent_level)
         };
+        let Some(on_same) =
+            self.unparse_or_warn(expr.span(), || unparse_condition(&expr, same, BRACE))
+        else {
+            self.write(" ");
+            self.write(self.source_text(expr.span()).trim());
+            return false;
+        };
+        let fits_line = |v: &Unparsed, column| fits(&v.text, column, BRACE, same.line_length);
+        let fits_on_same = fits_line(&on_same, same.column);
+        if !on_same.broken && fits_on_same {
+            self.write(" ");
+            self.write(&on_same.text);
+            return false;
+        }
         let next = self.place(indent_level + 1);
         let next = Place {
             column: next.indent,
             ..next
         };
-        let Some((on_same, on_next)) = self.unparse_or_warn(expr.span(), || {
-            (
-                unparse_condition(&expr, same, BRACE),
-                unparse_condition(&expr, next, BRACE),
-            )
-        }) else {
-            self.write(" ");
-            self.write(self.source_text(expr.span()).trim());
-            return false;
-        };
-        let fits = |v: &Unparsed, column| fits(&v.text, column, BRACE, same.line_length);
-        let fits_on_same = fits(&on_same, same.column);
-        let moves = (on_same.broken || !fits_on_same)
-            && fits(&on_next, next.column)
-            && (!fits_on_same || fits_better_on_next_line(&on_same, &on_next));
-        if moves {
+        if let Some(on_next) =
+            self.unparse_or_warn(expr.span(), || unparse_condition(&expr, next, BRACE))
+            && fits_line(&on_next, next.column)
+            && (!fits_on_same || fits_better_on_next_line(&on_same, &on_next))
+        {
             self.new_line(indent_level + 1);
             self.write(&on_next.text);
-            true
-        } else {
-            self.write(" ");
-            self.write(&on_same.text);
-            on_same.broken
+            return true;
         }
+        self.write(" ");
+        self.write(&on_same.text);
+        on_same.broken
     }
 
     /// Prints a match arm's guard from the current column, followed on its last line by
@@ -319,59 +341,53 @@ impl<'a, 'b> Printer<'a, 'b> {
         if self.write_original_if_commented(expr.span()) {
             return;
         }
-        if matches!(expr, Expr::Macro(_)) {
-            self.print_expr(expr, indent_level);
+        if let Some(lines) = self.macro_expr_lines(&expr, self.expr_depth(indent_level)) {
+            self.write_expr_lines(&lines);
             return;
         }
         let place = self.place(indent_level);
-        match self.unparse_or_warn(expr.span(), || unparse_guard(&expr, place, trailing)) {
-            Some(v) => self.write(&v.text),
-            None => self.write(self.source_text(expr.span()).trim()),
-        }
+        self.write_unparsed(expr.span(), || unparse_guard(&expr, place, trailing));
     }
 
     /// Prints ` if` and a match arm's guard after its pattern, followed on its last line by
     /// `trailing` columns. As rustfmt places it, the guard stays on the pattern's line when it fits
     /// there on one line, or after a pattern ending in at most 4 columns, and otherwise goes on the
-    /// next line one level deeper than the arm at `indent_level`.
+    /// next line one level deeper than the arm at `indent_level`, when it fits there.
     pub(super) fn print_guard(&mut self, expr: Expr, trailing: usize, indent_level: usize) {
+        let short_pattern = self.current_line().trim().chars().count() <= 4;
         let same = Place {
             column: self.column() + " if ".len(),
             ..self.place(indent_level)
         };
+        let Some(on_same) =
+            self.unparse_or_warn(expr.span(), || unparse_guard(&expr, same, trailing))
+        else {
+            self.write(" if ");
+            self.write(self.source_text(expr.span()).trim());
+            return;
+        };
+        let fits_line = |v: &Unparsed, column| fits(&v.text, column, trailing, same.line_length);
+        if (!on_same.broken || short_pattern) && fits_line(&on_same, same.column) {
+            self.write(" if ");
+            self.write(&on_same.text);
+            return;
+        }
         let next = self.place(indent_level + 1);
         let next = Place {
             column: next.indent + "if ".len(),
             ..next
         };
-        let Some((on_same, on_next)) = self.unparse_or_warn(expr.span(), || {
-            (
-                unparse_guard(&expr, same, trailing),
-                unparse_guard(&expr, next, trailing),
-            )
-        }) else {
-            self.write(" if ");
-            self.write(self.source_text(expr.span()).trim());
-            return;
-        };
-        let short_pattern = self
-            .buf
-            .rsplit('\n')
-            .next()
-            .unwrap_or_default()
-            .trim()
-            .len()
-            <= 4;
-        if (!on_same.broken || short_pattern)
-            && fits(&on_same.text, same.column, trailing, same.line_length)
+        if let Some(on_next) =
+            self.unparse_or_warn(expr.span(), || unparse_guard(&expr, next, trailing))
+            && fits_line(&on_next, next.column)
         {
-            self.write(" if ");
-            self.write(&on_same.text);
-        } else {
             self.new_line(indent_level + 1);
             self.write("if ");
             self.write(&on_next.text);
+            return;
         }
+        self.write(" if ");
+        self.write(&on_same.text);
     }
 
     /// The column the current line continues from, counting the text before the macro on its
@@ -407,8 +423,9 @@ impl<'a, 'b> Printer<'a, 'b> {
         unparsed.ok()
     }
 
-    /// Writes a condition's `lines`, already indented, and returns whether there is more than one.
-    fn write_condition_lines(&mut self, lines: &[String]) -> bool {
+    /// Writes an expression's `lines`, already indented, from the current column, and returns
+    /// whether there is more than one.
+    fn write_expr_lines(&mut self, lines: &[String]) -> bool {
         let Some((first, rest)) = lines.split_first() else {
             return false;
         };

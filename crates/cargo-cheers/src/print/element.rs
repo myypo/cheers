@@ -6,13 +6,10 @@ use proc_macro2::{LineColumn, extra::DelimSpan};
 use quote::ToTokens;
 use syn::{Expr, Token, punctuated::Punctuated, spanned::Spanned as _};
 
-use crate::{
-    line_length::{data_decl_len_expr, element_len, kv_entries_len, node_len},
-    print::{
-        NodePrinter, Printer,
-        attribute_value_node::attribute_value_node_end,
-        element_node::{element_node_end, element_node_start},
-    },
+use crate::print::{
+    NodePrinter, Printer,
+    attribute_value_node::attribute_value_node_end,
+    element_node::{element_node_end, element_node_start},
 };
 
 fn attribute_name_start(name: &AttributeName) -> LineColumn {
@@ -117,7 +114,7 @@ impl<'a, 'b> Printer<'a, 'b> {
         let opening = self.element_opening_layout(
             name.span().end(),
             &body,
-            element_len(&name.0, &attrs, &body),
+            self.element_len(&name.0, &attrs, &body),
             preserve_blank_lines,
         );
         let should_wrap = opening.should_wrap;
@@ -328,7 +325,7 @@ impl<'a, 'b> Printer<'a, 'b> {
         indent_level: usize,
     ) {
         let should_wrap_decls = {
-            let decl_len = data_decl_len_expr(&decls);
+            let decl_len = self.data_decl_len_expr(&decls);
             if let Some(decl_len) = decl_len {
                 (self.line_len() + decl_len) > self.options.line_length
             } else {
@@ -374,7 +371,8 @@ impl<'a, 'b> Printer<'a, 'b> {
         let contains_comments =
             paren_span.is_some_and(|paren_span| self.delim_contains_comments(paren_span));
         let should_wrap = contains_comments
-            || kv_entries_len(&entries)
+            || self
+                .kv_entries_len(&entries)
                 .is_none_or(|len| (self.line_len() + len) > self.options.line_length);
 
         if entries.is_empty() {
@@ -488,7 +486,7 @@ impl<'a, 'b> Printer<'a, 'b> {
                 let mut total_len = 0usize;
                 let mut count = 0usize;
                 for node in children.0.iter() {
-                    if let Some(node_len) = node_len(node) {
+                    if let Some(node_len) = self.node_len(node) {
                         total_len += node_len;
                         count += 1;
                     } else {
@@ -555,7 +553,7 @@ impl<'a, 'b> Printer<'a, 'b> {
                     let mut can_inline = true;
 
                     for child in &children.0 {
-                        if let Some(len) = node_len(child) {
+                        if let Some(len) = self.node_len(child) {
                             total_len += len;
                             count += 1;
                         } else {
@@ -1475,6 +1473,26 @@ mod test {
                 !effect("a"  // c
                 )
             { "text" }
+        }
+        "#
+    );
+
+    test_default!(
+        element_with_a_splice_of_a_one_line_braced_macro_stays_on_one_line,
+        r#"
+        html! {
+            div class=(attribute! { "a " (x) }) { "t" }
+            div id="main" x=(datastar_object! { "a": "b" }) class="c" { "text" }
+            p { (datastar_object! { "a": "b" }) }
+            p { (format!{"a{}", b}) }
+        }
+        "#,
+        r#"
+        html! {
+            div class=(attribute! { "a " (x) }) { "t" }
+            div id="main" x=(datastar_object! { "a": "b" }) class="c" { "text" }
+            p { (datastar_object! { "a": "b" }) }
+            p { (format!{"a{}", b}) }
         }
         "#
     );

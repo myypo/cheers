@@ -1,35 +1,31 @@
-use ast::{AttributeValueNode, ElementNode, Node, control::ControlBlock};
+use ast::{AttributeValueNode, ElementNode, control::ControlBlock};
 use proc_macro2::LineColumn;
 
-use crate::{
-    line_length::{attribute_value_len, control_block_len_with, node_len},
-    print::{
-        NodePrinter, Printer,
-        attribute_value_node::{attribute_value_node_end, attribute_value_node_start},
-        element_node::{element_node_end, element_node_start},
-    },
+use crate::print::{
+    NodePrinter, Printer,
+    attribute_value_node::{attribute_value_node_end, attribute_value_node_start},
+    element_node::{element_node_end, element_node_start},
+    line_length::BlockNode,
 };
 
-struct ControlBlockNodePrinter<N: Node, F> {
-    len: fn(&N) -> Option<usize>,
+struct ControlBlockNodePrinter<N, F> {
     start: fn(&N) -> LineColumn,
     end: fn(&N) -> LineColumn,
     print: F,
 }
 
 impl<'a, 'b> Printer<'a, 'b> {
-    fn print_control_block_with<N: Node, F>(
+    fn print_control_block_with<N: BlockNode, F>(
         &mut self,
         block: ControlBlock<N>,
         indent_level: usize,
         expanded_preserve_blank_lines: bool,
-        trailing: Option<usize>,
+        may_inline: bool,
         node_printer: ControlBlockNodePrinter<N, F>,
     ) where
         F: FnMut(&mut Self, N, usize, bool),
     {
         let ControlBlockNodePrinter {
-            len,
             start,
             end,
             mut print,
@@ -37,11 +33,10 @@ impl<'a, 'b> Printer<'a, 'b> {
 
         let contains_comments = self.delim_contains_comments(block.brace_token.span);
         let expand = contains_comments
-            || trailing
-                .zip(control_block_len_with(&block, len))
-                .is_none_or(|(trailing, blk_len)| {
-                    self.line_len() + blk_len + trailing > self.options.line_length
-                });
+            || !may_inline
+            || self
+                .control_block_len(&block)
+                .is_none_or(|len| self.line_len() + len > self.options.line_length);
 
         if block.nodes.0.is_empty() && !contains_comments {
             self.write("{}");
@@ -69,21 +64,20 @@ impl<'a, 'b> Printer<'a, 'b> {
         }
     }
 
-    /// Prints `block` on one line when it fits there followed by `trailing` columns, and broken
-    /// over lines otherwise or when `trailing` is `None`.
+    /// Prints `block` on one line when `may_inline` and it fits there, and broken over lines
+    /// otherwise.
     pub fn print_control_block(
         &mut self,
         block: ControlBlock<ElementNode>,
         indent_level: usize,
-        trailing: Option<usize>,
+        may_inline: bool,
     ) {
         self.print_control_block_with(
             block,
             indent_level,
             true,
-            trailing,
+            may_inline,
             ControlBlockNodePrinter {
-                len: node_len,
                 start: element_node_start,
                 end: element_node_end,
                 print: |p: &mut Self, node, i, pb| {
@@ -98,15 +92,14 @@ impl<'a, 'b> Printer<'a, 'b> {
         block: ControlBlock<AttributeValueNode>,
         indent_level: usize,
         preserve_blank_lines: bool,
-        trailing: Option<usize>,
+        may_inline: bool,
     ) {
         self.print_control_block_with(
             block,
             indent_level,
             preserve_blank_lines,
-            trailing,
+            may_inline,
             ControlBlockNodePrinter {
-                len: attribute_value_len,
                 start: attribute_value_node_start,
                 end: attribute_value_node_end,
                 print: |p: &mut Self, node, i, pb| {

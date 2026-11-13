@@ -1,9 +1,8 @@
 //! A fork of [prettyplease](https://github.com/dtolnay/prettyplease) 0.2.37 that can also print
 //! an expression or pattern from a given column against a given line length, for cargo-cheers to
 //! lay out the Rust inside markup where it sits. Beyond that, [`unparse`] keeps an or-pattern's
-//! leading `|`, breaks a slice pattern like a tuple pattern, lets the expression of a `let` in a
-//! condition move to the next line, and prints a braced closure body as a statement, as it prints
-//! when formatted again.
+//! leading `|`, breaks a slice pattern like a tuple pattern, measures text in characters rather
+//! than bytes, and prints a braced closure body as a statement, as it prints when formatted again.
 
 #![allow(
     clippy::bool_to_int_with_if,

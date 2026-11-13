@@ -682,10 +682,9 @@ impl Printer {
         self.ibox(0);
         self.pat(&expr.pat);
         self.end();
-        self.word(" =");
-        self.space();
-        self.offset(INDENT);
-        self.ibox(INDENT);
+        self.word(" = ");
+        self.neverbreak();
+        self.ibox(0);
         self.subexpr(&expr.expr, right_prec < Precedence::Let, right_fixup);
         self.end();
         self.end();

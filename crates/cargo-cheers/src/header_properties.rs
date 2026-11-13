@@ -113,6 +113,7 @@ enum Prec {
     Postfix,
     Unary,
     Binary,
+    Range,
 }
 
 fn wrapped((text, prec): (String, Prec), unless: &[Prec]) -> String {
@@ -122,8 +123,9 @@ fn wrapped((text, prec): (String, Prec), unless: &[Prec]) -> String {
     }
 }
 
-/// An expression with no struct literal, as an `@if`, `@while`, `@match` or `@for` header takes.
-fn expr(parts: Parts) -> impl Strategy<Value = String> {
+/// An expression with no struct literal, as an `@if`, `@while`, `@match` or `@for` header takes,
+/// with the precedence of its outermost operator.
+fn expr_prec(parts: Parts) -> impl Strategy<Value = (String, Prec)> + Clone {
     let leaf = prop_oneof![
         4 => select(parts.names),
         2 => select(parts.names).prop_map(|v| format!("self.{v}")),
@@ -160,15 +162,55 @@ fn expr(parts: Parts) -> impl Strategy<Value = String> {
                     (format!("{} {op} {}", operand(l), operand(r)), Prec::Binary)
                 })
                 .boxed(),
-            (prop_oneof![Just("!"), Just("&")], inner)
+            (prop_oneof![Just("!"), Just("&")], inner.clone())
                 .prop_map(|(op, v)| {
                     let operand = wrapped(v, &[Prec::Postfix, Prec::Unary]);
                     (format!("{op}{operand}"), Prec::Unary)
                 })
                 .boxed(),
+            (inner.clone(), prop_oneof![Just(".."), Just("..=")], inner)
+                .prop_map(|(l, op, r)| {
+                    let operand = |v| wrapped(v, &[Prec::Postfix, Prec::Unary, Prec::Binary]);
+                    (format!("{}{op}{}", operand(l), operand(r)), Prec::Range)
+                })
+                .boxed(),
         ])
     })
-    .prop_map(|v| v.0)
+}
+
+fn expr(parts: Parts) -> impl Strategy<Value = String> + Clone {
+    expr_prec(parts).prop_map(|v| v.0)
+}
+
+/// An operand of `&&`, or the expression of a `let`, which binds tighter than syn parses a range
+/// or a binary `||` or `&&`.
+fn operand(parts: Parts) -> impl Strategy<Value = String> + Clone {
+    expr_prec(parts).prop_map(|v| wrapped(v, &[Prec::Postfix, Prec::Unary]))
+}
+
+fn let_(parts: Parts) -> impl Strategy<Value = String> + Clone {
+    (pat(parts), operand(parts)).prop_map(|(p, e)| format!("let {p} = {e}"))
+}
+
+/// An `@if` or `@while` condition: an expression, or a let chain.
+fn cond(parts: Parts) -> impl Strategy<Value = String> {
+    let let_ = let_(parts);
+    let conjunct = prop_oneof![2 => operand(parts), 1 => let_.clone()];
+    let chain = (
+        prop::collection::vec(conjunct.clone(), 0..3),
+        let_,
+        prop::collection::vec(conjunct, 0..3),
+    )
+        .prop_filter("a let chain has two operands", |(before, _, after)| {
+            before.len() + after.len() > 0
+        })
+        .prop_map(|(before, let_, after)| {
+            let mut conjuncts = before;
+            conjuncts.push(let_);
+            conjuncts.extend(after);
+            conjuncts.join(" && ")
+        });
+    prop_oneof![3 => expr(parts), 1 => chain]
 }
 
 /// The contents of a block or a match arm's node body.
@@ -196,7 +238,7 @@ fn header(parts: Parts) -> BoxedStrategy<String> {
     let else_ = prop_oneof![
         Just(String::new()),
         block().prop_map(|v| format!(" @else {v}")),
-        (expr(parts), block()).prop_map(|(c, b)| format!(" @else if {c} {b}")),
+        (cond(parts), block()).prop_map(|(c, b)| format!(" @else if {c} {b}")),
     ];
     let arm = (
         pat(parts),
@@ -208,11 +250,10 @@ fn header(parts: Parts) -> BoxedStrategy<String> {
             None => format!("{p} => {body}"),
         });
     let headers = prop_oneof![
-        (expr(parts), block(), else_).prop_map(|(c, b, e)| format!("@if {c} {b}{e}")),
-        (pat(parts), expr(parts), block()).prop_map(|(p, e, b)| format!("@if let {p} = {e} {b}")),
-        (expr(parts), block()).prop_map(|(c, b)| format!("@while {c} {b}")),
-        (pat(parts), expr(parts), block())
-            .prop_map(|(p, e, b)| format!("@while let {p} = {e} {b}")),
+        (cond(parts), block(), else_).prop_map(|(c, b, e)| format!("@if {c} {b}{e}")),
+        (let_(parts), block()).prop_map(|(l, b)| format!("@if {l} {b}")),
+        (cond(parts), block()).prop_map(|(c, b)| format!("@while {c} {b}")),
+        (let_(parts), block()).prop_map(|(l, b)| format!("@while {l} {b}")),
         (single_pat(parts), expr(parts), block())
             .prop_map(|(p, e, b)| format!("@for {p} in {e} {b}")),
         (expr(parts), prop::collection::vec(arm, 1..4))

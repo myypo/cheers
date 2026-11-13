@@ -341,7 +341,9 @@ mod test {
         html! {
             @if cond
             // header
-            { "x" }
+            {
+                "x"
+            }
             p { "y" }
         }
         "#
@@ -434,7 +436,10 @@ mod test {
         html! {
             @if
             /* why */
-            cond { "x" }
+            cond
+            {
+                "x"
+            }
         }
         "#
     );
@@ -452,15 +457,22 @@ mod test {
         html! {
             @while
             /* why */
-            cond { "x" }
+            cond
+            {
+                "x"
+            }
             @match
             /* why */
-            value {
+            value
+            {
                 _ => { "x" }
             }
             @for item in
             /* why */
-            items { "x" }
+            items
+            {
+                "x"
+            }
         }
         "#
     );
@@ -477,10 +489,16 @@ mod test {
         html! {
             @if let Some(x) =
             /* why */
-            maybe { "x" }
+            maybe
+            {
+                "x"
+            }
             @while let
             /* pat */
-            Some(x) = maybe { "x" }
+            Some(x) = maybe
+            {
+                "x"
+            }
         }
         "#
     );

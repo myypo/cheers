@@ -8,7 +8,6 @@ use syn::spanned::Spanned as _;
 use crate::{
     collect::MaudMacro,
     format::{FormatOptions, line_column_to_byte},
-    line_length::kv_entries_len,
     print::{
         attribute_value_node::{attribute_value_node_end, attribute_value_node_start},
         element_node::{element_node_end, element_node_start},
@@ -24,6 +23,7 @@ mod control_block;
 mod element;
 mod element_node;
 mod expr;
+mod line_length;
 mod lit;
 
 pub fn print<'b>(
@@ -264,7 +264,7 @@ impl<'a, 'b> Printer<'a, 'b> {
 
         // `{ ` + ` }` + a trailing `;`, `,` or `)`
         let fits = !contains_comments
-            && kv_entries_len(&entries).is_some_and(|len| {
+            && self.kv_entries_len(&entries).is_some_and(|len| {
                 self.mac.column + self.line_len() + len + 5 <= self.options.line_length
             });
         if fits {
@@ -384,7 +384,7 @@ impl<'a, 'b> Printer<'a, 'b> {
             self.line_comment_open = false;
             if !content.trim_start_matches(' ').starts_with('\n') {
                 // Anything written after a `//` comment would become part of it.
-                let line = self.buf.rsplit('\n').next().unwrap_or_default();
+                let line = self.current_line();
                 let indent = &line[..line.len() - line.trim_start().len()];
                 let indent = indent.to_owned();
                 self.lines.push(std::mem::replace(&mut self.buf, indent));
@@ -395,8 +395,13 @@ impl<'a, 'b> Printer<'a, 'b> {
     }
 
     /// The columns taken on the current line, which follows any lines already written into `buf`.
+    fn current_line(&self) -> &str {
+        self.buf.rsplit('\n').next().unwrap_or_default()
+    }
+
+    /// The columns the current line takes.
     fn line_len(&self) -> usize {
-        self.buf.rsplit('\n').next().map_or(0, str::len)
+        self.current_line().chars().count()
     }
 
     fn finish(mut self) -> String {
