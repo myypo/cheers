@@ -2,14 +2,16 @@ use ast::{
     AttributeValueNode, ElementNode, Node,
     control::{Control, ControlBlock, ControlIfOrBlock, ControlKind, If, Let, MatchNodeArmBody},
 };
+use prettyplease::unparse_pat;
 use proc_macro2::LineColumn;
 use syn::{Expr, spanned::Spanned as _};
 
 use crate::{
+    line_length::{attribute_value_len, node_len},
     print::{
         Printer, attribute_value_node::attribute_value_node_end, element_node::element_node_end,
     },
-    unparse::{PatPlace, unparse_local, unparse_pat},
+    unparse::unparse_local,
 };
 
 fn control_block_end<N: Node>(block: &ControlBlock<N>) -> LineColumn {
@@ -30,13 +32,37 @@ fn if_end<N: Node>(if_: &If<N>) -> LineColumn {
         .unwrap_or_else(|| control_block_end(&if_.then_block))
 }
 
-fn match_arm_body_end<N: Node>(
-    body: &MatchNodeArmBody<N>,
-    node_end: fn(&N) -> LineColumn,
-) -> LineColumn {
+/// A node a match arm's `=>` can be followed by.
+trait ArmNode: Node {
+    fn end(&self) -> LineColumn;
+    /// The node's length on one line, if it can be printed on one.
+    fn flat_len(&self) -> Option<usize>;
+}
+
+impl ArmNode for ElementNode {
+    fn end(&self) -> LineColumn {
+        element_node_end(self)
+    }
+
+    fn flat_len(&self) -> Option<usize> {
+        node_len(self)
+    }
+}
+
+impl ArmNode for AttributeValueNode {
+    fn end(&self) -> LineColumn {
+        attribute_value_node_end(self)
+    }
+
+    fn flat_len(&self) -> Option<usize> {
+        attribute_value_len(self)
+    }
+}
+
+fn match_arm_body_end<N: ArmNode>(body: &MatchNodeArmBody<N>) -> LineColumn {
     match body {
         MatchNodeArmBody::Block(block) => control_block_end(block),
-        MatchNodeArmBody::Node(node) => node_end(node),
+        MatchNodeArmBody::Node(node) => node.end(),
     }
 }
 
@@ -51,9 +77,6 @@ fn control_kind_end<N: Node>(kind: &ControlKind<N>) -> LineColumn {
     }
 }
 
-/// What follows a match arm's pattern and guard on their last line, when its body is a block.
-const ARM_ARROW: &str = " => {";
-
 pub(super) fn control_end<N: Node>(control: &Control<N>) -> LineColumn {
     control_kind_end(&control.kind)
 }
@@ -65,7 +88,6 @@ impl<'a, 'b> Printer<'a, 'b> {
             indent_level,
             true,
             |p, node, i, pb| p.print_element_node(node, i, pb),
-            element_node_end,
             |p, block, i, _, broken| p.print_control_block(block, i, broken),
         );
     }
@@ -81,7 +103,6 @@ impl<'a, 'b> Printer<'a, 'b> {
             indent_level,
             preserve_blank_lines,
             |p, node, i, pb| p.print_attribute_value_node(node, i, pb),
-            attribute_value_node_end,
             |p, block, i, pb, broken| p.print_control_block_attribute_value(block, i, pb, broken),
         );
     }
@@ -96,14 +117,14 @@ impl<'a, 'b> Printer<'a, 'b> {
         &mut self,
         block: ControlBlock<N>,
         indent_level: usize,
-        brace_on_own_line: bool,
+        header_broken: bool,
         child_preserve_blank_lines: bool,
         print_block: &mut impl FnMut(&mut Self, ControlBlock<N>, usize, bool, bool),
     ) {
-        self.print_brace_after_header(
+        let brace_on_own_line = self.print_brace_after_header(
             block.brace_token.span.open().start(),
             indent_level,
-            brace_on_own_line,
+            header_broken,
         );
         print_block(
             self,
@@ -114,21 +135,35 @@ impl<'a, 'b> Printer<'a, 'b> {
         );
     }
 
+    /// Writes the `{` after a header at `indent_level`, and returns whether it went on a line of
+    /// its own. rustfmt puts it there after a header `broken` over lines, unless the header's last
+    /// line only closes what it opened, at the header's own indentation.
     fn print_brace_after_header(
         &mut self,
         brace_start: LineColumn,
         indent_level: usize,
-        brace_on_own_line: bool,
-    ) {
-        if !self.print_leading_comments_after_line_break(brace_start, indent_level) {
-            if brace_on_own_line {
-                self.new_line(indent_level);
-            } else {
-                self.write(" ");
-            }
+        header_broken: bool,
+    ) -> bool {
+        let last_line = self.buf.rsplit('\n').next().unwrap_or_default();
+        let last_indent = last_line.len() - last_line.trim_start().len();
+        let only_closes = last_line
+            .trim()
+            .chars()
+            .all(|c| matches!(c, ')' | ']' | '}' | '?' | '>'));
+        let header_indent = self.indent_str.len() * (self.base_indent + indent_level);
+        let own_line = header_broken && (!only_closes || last_indent > header_indent);
+        if self.print_leading_comments_after_line_break(brace_start, indent_level) {
+            return false;
         }
+        if own_line {
+            self.new_line(indent_level);
+        } else {
+            self.write(" ");
+        }
+        own_line
     }
 
+    /// Prints an `if` or `while` condition and returns whether it broke a line.
     fn print_condition(&mut self, cond: Expr, indent_level: usize) -> bool {
         match cond {
             Expr::Let(expr_let) => self.print_let_condition(expr_let, indent_level),
@@ -136,41 +171,43 @@ impl<'a, 'b> Printer<'a, 'b> {
         }
     }
 
-    /// Prints `pat` from the current column, followed on its last line by `trailing` columns.
+    /// Prints `pat` from the current column, followed on its last line by `trailing` columns,
+    /// its later lines indented from `indent_level`, and returns whether it broke a line.
     ///
     /// Only the text that cannot leave the pattern's last line counts, as with rustfmt: an
-    /// expression after it that does not fit breaks itself rather than the pattern.
-    fn print_pat(&mut self, pat: &syn::Pat, trailing: usize) {
+    /// expression after it that does not fit moves or breaks itself rather than the pattern.
+    fn print_pat(&mut self, pat: &syn::Pat, trailing: usize, indent_level: usize) -> bool {
         if self.write_original_if_commented(pat.span()) {
-            return;
+            return false;
         }
-        let place = self.place();
-        let place = PatPlace {
-            column: place.column,
-            line_indent: place.indent,
-            trailing,
-            line_length: place.line_length,
-        };
-        self.write(&unparse_pat(pat, place).join("\n"));
+        let place = self.place(indent_level);
+        match self.unparse_or_warn(pat.span(), || unparse_pat(pat, place, trailing)) {
+            Some(v) => {
+                self.write(&v.text);
+                v.broken
+            }
+            None => {
+                self.write(self.source_text(pat.span()).trim());
+                false
+            }
+        }
     }
 
     fn print_let_condition(&mut self, expr_let: syn::ExprLet, indent_level: usize) -> bool {
         // prettyplease/syn cannot unparse `if let` / `while let` conditions as expressions.
         self.write("let");
         self.print_space_or_leading_comments(expr_let.pat.span().start(), indent_level);
-        self.print_pat(&expr_let.pat, " =".len());
+        let pat_broken = self.print_pat(&expr_let.pat, " =".len(), indent_level);
         self.write(" =");
-        self.print_space_or_leading_comments(expr_let.expr.span().start(), indent_level);
-        self.print_condition_expr(*expr_let.expr, indent_level)
+        self.print_condition_rhs(*expr_let.expr, indent_level) || pat_broken
     }
 
-    fn print_control_with<N: Node>(
+    fn print_control_with<N: ArmNode>(
         &mut self,
         control: Control<N>,
         indent_level: usize,
         child_preserve_blank_lines: bool,
         mut print_node: impl FnMut(&mut Self, N, usize, bool),
-        node_end: fn(&N) -> LineColumn,
         mut print_block: impl FnMut(&mut Self, ControlBlock<N>, usize, bool, bool),
     ) {
         self.print_leading_comments(control.at_token.span().start(), indent_level);
@@ -189,14 +226,13 @@ impl<'a, 'b> Printer<'a, 'b> {
             ControlKind::For(for_) => {
                 self.write("@for");
                 self.print_space_or_leading_comments(for_.pat.span().start(), indent_level);
-                self.print_pat(&for_.pat, " in".len());
+                let pat_broken = self.print_pat(&for_.pat, " in".len(), indent_level);
                 self.write(" in");
-                self.print_space_or_leading_comments(for_.expr.span().start(), indent_level);
-                let brace_on_own_line = self.print_condition_expr(for_.expr, indent_level);
+                let header_broken = self.print_condition_rhs(for_.expr, indent_level) || pat_broken;
                 self.print_control_block_after_header(
                     for_.block,
                     indent_level,
-                    brace_on_own_line,
+                    header_broken,
                     child_preserve_blank_lines,
                     &mut print_block,
                 );
@@ -233,18 +269,18 @@ impl<'a, 'b> Printer<'a, 'b> {
             ControlKind::Match(match_) => {
                 self.write("@match");
                 self.print_space_or_leading_comments(match_.expr.span().start(), indent_level);
-                let brace_on_own_line = self.print_condition_expr(match_.expr, indent_level);
+                let header_broken = self.print_condition_expr(match_.expr, indent_level);
                 self.print_brace_after_header(
                     match_.brace_token.span.open().start(),
                     indent_level,
-                    brace_on_own_line,
+                    header_broken,
                 );
                 self.write("{");
                 self.print_trailing_comment(match_.brace_token.span.open().end());
                 let mut prev_arm_end = None;
                 for arm in match_.arms {
                     let arm_start = arm.pat.span().start();
-                    let arm_end = match_arm_body_end(&arm.body, node_end);
+                    let arm_end = match_arm_body_end(&arm.body);
                     self.print_inter_node_gap(
                         prev_arm_end,
                         arm_start,
@@ -253,11 +289,26 @@ impl<'a, 'b> Printer<'a, 'b> {
                     );
                     let fat_arrow_span = arm.fat_arrow_span();
                     self.print_leading_comments(arm_start, indent_level + 1);
+                    // What follows the pattern and guard on their last line: a block body can
+                    // break after its `{`, and a node body cannot break at all, so it counts
+                    // whole unless it could not fit after the arm's indentation anyway.
+                    let arm_indent = self.place(indent_level + 1).indent;
+                    let arrow = match &arm.body {
+                        MatchNodeArmBody::Block(_) => " => {".len(),
+                        MatchNodeArmBody::Node(node) => match node.flat_len() {
+                            Some(len)
+                                if arm_indent + " => ".len() + len <= self.options.line_length =>
+                            {
+                                " => ".len() + len
+                            }
+                            _ => " =>".len(),
+                        },
+                    };
                     let trailing = match arm.guard {
                         Some(_) => " if".len(),
-                        None => ARM_ARROW.len(),
+                        None => arrow,
                     };
-                    self.print_pat(&arm.pat, trailing);
+                    self.print_pat(&arm.pat, trailing, indent_level + 1);
                     if let Some((if_token, guard_cond)) = arm.guard {
                         self.print_space_or_leading_comments(
                             if_token.span().start(),
@@ -268,7 +319,7 @@ impl<'a, 'b> Printer<'a, 'b> {
                             guard_cond.span().start(),
                             indent_level + 1,
                         );
-                        self.print_guard(guard_cond, ARM_ARROW, indent_level);
+                        self.print_guard(guard_cond, arrow, indent_level + 1);
                     }
                     self.print_space_or_leading_comments(fat_arrow_span.start(), indent_level + 1);
                     self.write("=> ");
@@ -305,11 +356,11 @@ impl<'a, 'b> Printer<'a, 'b> {
             ControlKind::While(while_expr) => {
                 self.write("@while");
                 self.print_space_or_leading_comments(while_expr.cond.span().start(), indent_level);
-                let brace_on_own_line = self.print_condition(while_expr.cond, indent_level);
+                let header_broken = self.print_condition(while_expr.cond, indent_level);
                 self.print_control_block_after_header(
                     while_expr.block,
                     indent_level,
-                    brace_on_own_line,
+                    header_broken,
                     child_preserve_blank_lines,
                     &mut print_block,
                 );
@@ -350,11 +401,11 @@ impl<'a, 'b> Printer<'a, 'b> {
     ) {
         self.write("if");
         self.print_space_or_leading_comments(if_.cond.span().start(), indent_level);
-        let brace_on_own_line = self.print_condition(if_.cond, indent_level);
+        let header_broken = self.print_condition(if_.cond, indent_level);
         self.print_control_block_after_header(
             if_.then_block,
             indent_level,
-            brace_on_own_line,
+            header_broken,
             child_preserve_blank_lines,
             print_block,
         );
@@ -490,7 +541,8 @@ mod test {
                 field_one,
                 field_two,
                 field_three,
-            } = expr {
+            } = expr
+            {
                 p { "x" }
             }
         }
@@ -1144,6 +1196,162 @@ mod test {
                         p { "ok" }
                     }
                 }
+            }
+        }
+        "#
+    );
+
+    test_default!(
+        control_match_pattern_with_a_line_break_in_a_literal,
+        r#"
+        html! { @match x { r"line one
+line two" => { "a" } _ => { "b" } } }
+        "#,
+        r#"
+        html! {
+            @match x {
+                r"line one
+line two" => { "a" }
+                _ => { "b" }
+            }
+        }
+        "#
+    );
+
+    test_small_line!(
+        control_match_broken_struct_pattern_keeps_rest_attributes,
+        r#"
+        html! { @match x { Foo { alpha, #[cfg(x)] .. } => { "b" } } }
+        "#,
+        r#"
+        html! {
+            @match x {
+                Foo {
+                    alpha,
+                    #[cfg(x)]
+                    ..
+                } => { "b" }
+            }
+        }
+        "#
+    );
+
+    test_small_line!(
+        control_match_parenthesized_or_pattern_breaks_where_it_is_printed,
+        r#"
+        html! { @match x { (First(value) | Second(value)) => { "c" } } }
+        "#,
+        r#"
+        html! {
+            @match x {
+                (First(value)
+                | Second(value)) => {
+                    "c"
+                }
+            }
+        }
+        "#
+    );
+
+    test_default!(
+        control_match_guard_leaves_room_for_a_node_body,
+        r#"
+        html! { div { @match x { Some(value) if value.is_visible_to(reader) && value.is_published() => "a short body" None => {} } } }
+        "#,
+        r#"
+        html! {
+            div {
+                @match x {
+                    Some(value) if value.is_visible_to(reader)
+                        && value.is_published() => "a short body"
+                    None => {}
+                }
+            }
+        }
+        "#
+    );
+
+    test_small_line!(
+        control_if_call_broken_in_its_arguments_keeps_brace_on_line,
+        r#"
+        html! { @if check(first_value, second) { "d" } }
+        "#,
+        r#"
+        html! {
+            @if check(
+                first_value,
+                second,
+            ) { "d" }
+        }
+        "#
+    );
+
+    test_default!(
+        control_if_condition_with_a_line_break_in_a_literal_keeps_brace_on_line,
+        r#"
+        html! { @if text == "first line
+second line" { "g" } }
+        "#,
+        r#"
+        html! {
+            @if text == "first line
+second line" { "g" }
+        }
+        "#
+    );
+
+    test_default!(
+        if_let_scrutinee_moves_to_the_next_line_when_it_does_not_fit,
+        r#"
+        html! { div { @if let Some(the_value_we_want) = self.lookup_table_with_a_long_name.get(&the_key_name) { "e" } } }
+        "#,
+        r#"
+        html! {
+            div {
+                @if let Some(the_value_we_want) =
+                    self.lookup_table_with_a_long_name.get(&the_key_name)
+                {
+                    "e"
+                }
+            }
+        }
+        "#
+    );
+
+    test_default!(
+        control_for_iterable_moves_to_the_next_line_when_it_does_not_fit,
+        r#"
+        html! { div { @for (index, element_with_long_name) in self.collection_with_a_really_long_name.iter() { "f" } } }
+        "#,
+        r#"
+        html! {
+            div {
+                @for (index, element_with_long_name) in
+                    self.collection_with_a_really_long_name.iter()
+                {
+                    "f"
+                }
+            }
+        }
+        "#
+    );
+
+    test_default!(
+        control_in_a_nested_macro_fills_the_configured_width,
+        r#"
+        html! { div { div {} (html! { @if self.first_condition_named_at_length.is_some() && self.other.is_some() { "x" } }) } }
+        "#,
+        r#"
+        html! {
+            div {
+                div {}
+                (
+                    html! {
+                        @if self.first_condition_named_at_length.is_some() && self.other.is_some() {
+                            "x"
+                        }
+                    }
+                )
             }
         }
         "#

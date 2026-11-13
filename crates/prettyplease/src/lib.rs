@@ -1,6 +1,7 @@
 //! A fork of [prettyplease](https://github.com/dtolnay/prettyplease) 0.2.37 that can also print
-//! an expression from a given column against a given line length, for cargo-cheers to lay out
-//! the Rust inside markup where it sits. [`unparse`] prints as prettyplease does.
+//! an expression or pattern from a given column against a given line length, for cargo-cheers to
+//! lay out the Rust inside markup where it sits. Beyond that, [`unparse`] keeps an or-pattern's
+//! leading `|` and prints a braced closure body as a statement, as it prints when formatted again.
 
 #![allow(
     clippy::bool_to_int_with_if,
@@ -52,7 +53,7 @@ mod ty;
 
 use crate::algorithm::Printer;
 use crate::fixup::FixupContext;
-use syn::{Expr, File};
+use syn::{Expr, File, Pat};
 
 // Target line width.
 const MARGIN: isize = 89;
@@ -69,7 +70,7 @@ pub fn unparse(file: &File) -> String {
     p.eof()
 }
 
-/// Where an expression is printed: from `column` on a line indented by `indent`, in lines up to
+/// Where Rust is printed: from `column` on a line indented by `indent`, in lines up to
 /// `line_length` long however deeply indented.
 #[derive(Clone, Copy, Debug)]
 pub struct Place {
@@ -78,32 +79,50 @@ pub struct Place {
     pub line_length: usize,
 }
 
+/// Rust printed at a [`Place`], its later lines indented.
+#[derive(Clone, Debug)]
+pub struct Unparsed {
+    pub text: String,
+    /// Whether a line was broken to fit, as opposed to the text holding a line break of its own
+    /// inside a literal.
+    pub broken: bool,
+}
+
 /// `expr` as the condition of an `if` or `while`, the scrutinee of a `match` or `if let`, or the
-/// iterable of a `for`, printed at `place` before its block's ` {`. Returns the expression, with
-/// its later lines indented, and whether the `{` goes on a line of its own, as it does after a
-/// condition broken over lines unless the condition ends in a block, closure or the like.
-pub fn unparse_condition(expr: &Expr, place: Place) -> (String, bool) {
-    let text = unparse_before(expr, place, FixupContext::new_condition(), " {");
-    let brace_on_own_line = text.contains('\n') && expr::needs_newline_if_wrap(expr);
-    (text, brace_on_own_line)
+/// iterable of a `for`, printed at `place` and followed on its last line by `trailing` columns.
+pub fn unparse_condition(expr: &Expr, place: Place, trailing: usize) -> Unparsed {
+    unparse_before(place, trailing, |p| {
+        p.expr_beginning_of_line(expr, false, true, FixupContext::new_condition());
+    })
 }
 
-/// `expr` as a match arm's guard, printed at `place` and followed on its last line by `trailing`.
-/// Returns the expression, with its later lines indented.
-pub fn unparse_guard(expr: &Expr, place: Place, trailing: &str) -> String {
-    unparse_before(expr, place, FixupContext::NONE, trailing)
+/// `expr` as a match arm's guard, printed at `place` and followed on its last line by `trailing`
+/// columns.
+pub fn unparse_guard(expr: &Expr, place: Place, trailing: usize) -> Unparsed {
+    unparse_before(place, trailing, |p| {
+        p.expr_beginning_of_line(expr, false, true, FixupContext::NONE);
+    })
 }
 
-/// `expr` printed at `place` and followed on its last line by `trailing`, without it.
+/// `pat` printed at `place` and followed on its last line by `trailing` columns.
+pub fn unparse_pat(pat: &Pat, place: Place, trailing: usize) -> Unparsed {
+    unparse_before(place, trailing, |p| p.pat(pat))
+}
+
+/// What `print` prints at `place`, followed on its last line by `trailing` columns.
 ///
-/// A method chain keeps a short receiver such as `self` with its first call, as at the start of
-/// a statement, where an `if` condition would print it on a line of its own.
-fn unparse_before(expr: &Expr, place: Place, fixup: FixupContext, trailing: &str) -> String {
+/// An expression printed as at the start of a statement keeps a short receiver such as `self`
+/// with its first method call, where an `if` condition would print it on a line of its own.
+fn unparse_before(place: Place, trailing: usize, print: impl FnOnce(&mut Printer)) -> Unparsed {
+    let filler = "~".repeat(trailing);
     let mut p = Printer::at(place.column, place.indent, place.line_length);
     p.ibox(0);
-    p.expr_beginning_of_line(expr, false, true, fixup);
-    p.word(trailing.to_owned());
+    print(&mut p);
+    p.word(filler.clone());
     p.end();
-    let out = p.eof();
-    out.strip_suffix(trailing).unwrap_or(&out).to_owned()
+    let (out, broken) = p.finish();
+    Unparsed {
+        text: out.strip_suffix(&filler).unwrap_or(&out).to_owned(),
+        broken,
+    }
 }

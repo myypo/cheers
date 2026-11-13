@@ -1026,6 +1026,24 @@ mod test {
     );
 
     test_default!(
+        attribute_value_control_condition_breaks_below_its_block,
+        r#"
+        html! {
+            p class=@if self.first_condition_named_at_length.is_some() && self.other_settled.is_some() { "on" } @else { "off" } {}
+        }
+        "#,
+        r#"
+        html! {
+            p   class=@if self.first_condition_named_at_length.is_some()
+                    && self.other_settled.is_some()
+                {
+                    "on"
+                } @else { "off" } {}
+        }
+        "#
+    );
+
+    test_default!(
         multiline_attribute_toggle_expression,
         r#"
         html! {

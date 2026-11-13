@@ -274,14 +274,50 @@ fn comment_insertions(source: &Source, all_positions: bool) -> Vec<(usize, &'sta
 /// The tokens of `source`, ignoring whitespace, comments and spans, whether a `,` or `;` is
 /// directly followed by punctuation, and the differences the formatter may make: it drops `r#`
 /// from element names, adds or drops trailing commas, drops the optional commas after `@match`
-/// arms, and puts a closure body that does not fit on its line in braces.
+/// arms, and puts a closure body that is a single expression in braces when it does not fit on its
+/// line.
 fn token_shape(source: &str) -> Vec<String> {
+    /// Whether `out` ends with a closure's parameters: a `|`, and an earlier `|` at the same depth
+    /// that does not follow an operand, as the `|` of a binary or would.
+    fn ends_closure_params(out: &[String]) -> bool {
+        let Some((last, rest)) = out.split_last() else {
+            return false;
+        };
+        if last != "|" {
+            return false;
+        }
+        let mut depth = 0_usize;
+        for (i, token) in rest.iter().enumerate().rev() {
+            match token.as_str() {
+                ")" | "]" | "}" | "⟧" => depth += 1,
+                "(" | "[" | "{" | "⟦" if depth > 0 => depth -= 1,
+                "(" | "[" | "{" | "⟦" => return false,
+                "|" | "|+" if depth == 0 => {
+                    let follows_operand = i.checked_sub(1).is_some_and(|before| {
+                        let before = rest[before].as_str();
+                        matches!(before, ")" | "]" | "}" | "⟧")
+                            || !matches!(before, "move" | "async" | "return" | "in" | "else")
+                                && before.starts_with(|c: char| {
+                                    c.is_alphanumeric() || matches!(c, '_' | '"' | '\'')
+                                })
+                    });
+                    return !follows_operand;
+                }
+                _ => {}
+            }
+        }
+        false
+    }
+
     fn walk(stream: TokenStream, out: &mut Vec<String>) {
         for tree in stream {
             match tree {
                 TokenTree::Group(group)
                     if group.delimiter() == Delimiter::Brace
-                        && out.last().is_some_and(|previous| previous == "|") =>
+                        && ends_closure_params(out)
+                        && !group.stream().into_iter().any(|tree| {
+                            matches!(&tree, TokenTree::Punct(punct) if punct.as_char() == ';')
+                        }) =>
                 {
                     walk(group.stream(), out);
                 }

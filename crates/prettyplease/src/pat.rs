@@ -66,6 +66,9 @@ impl Printer {
         } else {
             self.ibox(0);
         }
+        if pat.leading_vert.is_some() {
+            self.word("| ");
+        }
         for case in pat.cases.iter().delimited() {
             if !case.is_first {
                 self.space();

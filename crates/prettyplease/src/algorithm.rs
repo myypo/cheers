@@ -73,6 +73,8 @@ pub struct Printer {
     indent: usize,
     // Buffered indentation to avoid writing trailing whitespace
     pending_indentation: usize,
+    // Whether a break has been taken
+    broken: bool,
 }
 
 #[derive(Clone)]
@@ -95,6 +97,7 @@ impl Printer {
             print_stack: Vec::new(),
             indent: 0,
             pending_indentation: 0,
+            broken: false,
         }
     }
 
@@ -110,12 +113,17 @@ impl Printer {
         }
     }
 
-    pub fn eof(mut self) -> String {
+    pub fn eof(self) -> String {
+        self.finish().0
+    }
+
+    /// The output, and whether a line was broken to lay it out.
+    pub fn finish(mut self) -> (String, bool) {
         if !self.scan_stack.is_empty() {
             self.check_stack(0);
             self.advance_left();
         }
-        self.out
+        (self.out, self.broken)
     }
 
     pub fn scan_begin(&mut self, token: BeginToken) {
@@ -378,6 +386,7 @@ impl Printer {
                 self.out.push('·');
             }
             self.out.push('\n');
+            self.broken = true;
             let indent = self.indent as isize + token.offset;
             self.pending_indentation = usize::try_from(indent).unwrap();
             self.space = cmp::max(self.margin - indent, self.min_space);

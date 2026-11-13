@@ -1301,7 +1301,7 @@ impl Printer {
     }
 }
 
-pub(crate) fn needs_newline_if_wrap(expr: &Expr) -> bool {
+fn needs_newline_if_wrap(expr: &Expr) -> bool {
     match expr {
         #![cfg_attr(all(test, exhaustive), deny(non_exhaustive_omitted_patterns))]
         Expr::Array(_)

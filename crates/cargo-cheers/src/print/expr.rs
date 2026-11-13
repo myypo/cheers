@@ -2,7 +2,7 @@ use ast::{
     DatastarObject, DatastarSourceNodes, Document, Node, ParenExpr, ParenExprBody,
     ScriptSourceNodes,
 };
-use prettyplease::{Place, unparse_condition, unparse_guard};
+use prettyplease::{Place, Unparsed, unparse_condition, unparse_guard};
 use proc_macro2::Span;
 use syn::{
     Expr, ExprMacro, ExprTuple,
@@ -17,6 +17,36 @@ use crate::{
     unparse::{unparse_expr, unparse_stmts},
 };
 
+/// Columns a header's ` {` takes after it on its line.
+const BRACE: usize = " {".len();
+
+/// Whether `text`, written from `column` and followed on its last line by `trailing` columns,
+/// keeps every line within `line_length`.
+fn fits(text: &str, column: usize, trailing: usize, line_length: usize) -> bool {
+    let mut lines = text.split('\n').peekable();
+    let mut start = column;
+    while let Some(line) = lines.next() {
+        let end = if lines.peek().is_none() { trailing } else { 0 };
+        if start + line.len() + end > line_length {
+            return false;
+        }
+        start = 0;
+    }
+    true
+}
+
+/// Whether an expression that fits both after its header's `=` or `in` and on the next line
+/// reads better on the next line, as rustfmt decides it: when it does not break there, breaks
+/// into fewer lines there, or does not open a delimiter at the end of its first line there.
+fn fits_better_on_next_line(same: &Unparsed, next: &Unparsed) -> bool {
+    let first_line_opens = |v: &Unparsed, c| v.text.lines().next().is_some_and(|l| l.ends_with(c));
+    !next.broken
+        || same.text.lines().count() > next.text.lines().count() + 1
+        || ['(', '{', '[']
+            .iter()
+            .any(|&c| first_line_opens(same, c) && !first_line_opens(next, c))
+}
+
 impl<'a, 'b> Printer<'a, 'b> {
     pub(super) fn source_text(&self, span: Span) -> String {
         let start_byte = line_column_to_byte(self.source, span.start());
@@ -24,11 +54,12 @@ impl<'a, 'b> Printer<'a, 'b> {
         self.source.byte_slice(start_byte..end_byte).to_string()
     }
 
-    fn expr_line_prefix(&self, indent_level: usize) -> String {
-        self.indent_str.repeat(self.base_indent + indent_level + 1)
+    /// The indentation of an expression's lines one level deeper than `indent_level`.
+    fn expr_depth(&self, indent_level: usize) -> usize {
+        self.base_indent + indent_level + 1
     }
 
-    fn original_expr_lines(&self, expr: &Expr, indent_level: usize) -> Vec<String> {
+    fn original_expr_lines(&self, expr: &Expr, depth: usize) -> Vec<String> {
         let original_text = self.source_text(expr.span());
         let original_lines = original_text.lines().collect::<Vec<_>>();
         let Some((first_line, rest_lines)) = original_lines.split_first() else {
@@ -46,7 +77,7 @@ impl<'a, 'b> Printer<'a, 'b> {
             .min()
             .unwrap_or(0);
 
-        let line_prefix = self.expr_line_prefix(indent_level);
+        let line_prefix = self.indent_str.repeat(depth);
 
         std::iter::once(first_line.trim_start())
             .chain(rest_lines.iter().map(|line| {
@@ -59,10 +90,12 @@ impl<'a, 'b> Printer<'a, 'b> {
             .collect()
     }
 
+    /// The lines of a nested markup macro written from the current column, each later line
+    /// indented by `depth` levels.
     fn nested_markup_macro_lines(
         &self,
         expr_macro: &ExprMacro,
-        indent_level: usize,
+        depth: usize,
     ) -> Option<Vec<String>> {
         let macro_name = expr_macro
             .mac
@@ -84,9 +117,12 @@ impl<'a, 'b> Printer<'a, 'b> {
 
         let macro_ = MaudMacro {
             macro_: &expr_macro.mac,
-            indent: Indent { tabs: 0, spaces: 0 },
+            indent: Indent {
+                tabs: 0,
+                spaces: self.indent_str.len() * depth,
+            },
             macro_name: macro_name.clone(),
-            column: self.line_len(),
+            column: self.column(),
         };
 
         let formatted = if macro_name == "datastar_source" {
@@ -118,21 +154,19 @@ impl<'a, 'b> Printer<'a, 'b> {
             .ok()?;
             crate::print::print(document, &macro_, self.source, self.options)
         };
-        let line_prefix = self.expr_line_prefix(indent_level);
-
-        Some(
-            formatted
-                .lines()
-                .map(|line| format!("{line_prefix}{line}"))
-                .collect(),
-        )
+        let mut lines: Vec<_> = formatted.lines().map(str::to_owned).collect();
+        if let Some(first) = lines.first_mut() {
+            first.insert_str(0, &self.indent_str.repeat(depth));
+        }
+        Some(lines)
     }
 
-    fn macro_expr_lines(&self, expr: &Expr, indent_level: usize) -> Option<Vec<String>> {
+    /// The lines of `expr` when it is a macro, each indented by `depth` levels.
+    fn macro_expr_lines(&self, expr: &Expr, depth: usize) -> Option<Vec<String>> {
         if let Expr::Macro(expr_macro) = expr {
             Some(
-                self.nested_markup_macro_lines(expr_macro, indent_level)
-                    .unwrap_or_else(|| self.original_expr_lines(expr, indent_level)),
+                self.nested_markup_macro_lines(expr_macro, depth)
+                    .unwrap_or_else(|| self.original_expr_lines(expr, depth)),
             )
         } else {
             None
@@ -140,27 +174,17 @@ impl<'a, 'b> Printer<'a, 'b> {
     }
 
     fn lines_from_expr(&self, expr: Expr, indent_level: usize) -> Vec<String> {
-        if let Some(lines) = self.macro_expr_lines(&expr, indent_level) {
+        if let Some(lines) = self.macro_expr_lines(&expr, self.expr_depth(indent_level)) {
             return lines;
         }
 
         let span = expr.span();
-        let lines: Vec<String> = match std::panic::catch_unwind(|| match expr {
-            Expr::Block(expr_block) => {
-                unparse_stmts(&expr_block.block.stmts, self.base_indent + indent_level)
-            }
-            _ => unparse_expr(&expr, self.base_indent + indent_level),
-        }) {
-            Ok(lines) => lines,
-            Err(_) => {
-                let original_text = self.source_text(span);
-                eprintln!(
-                    "Warning: prettyplease panicked formatting expression, leaving unchanged: {original_text}"
-                );
-                vec![original_text]
-            }
-        };
-        lines
+        let depth = self.base_indent + indent_level;
+        self.unparse_or_warn(span, || match expr {
+            Expr::Block(expr_block) => unparse_stmts(&expr_block.block.stmts, depth),
+            _ => unparse_expr(&expr, depth),
+        })
+        .unwrap_or_else(|| vec![self.source_text(span)])
     }
 
     fn lines_from_tuple_body(&self, tuple: ExprTuple, indent_level: usize) -> Vec<String> {
@@ -222,27 +246,76 @@ impl<'a, 'b> Printer<'a, 'b> {
     }
 
     /// Prints a control-flow condition, scrutinee or iterable from the current column, before its
-    /// block's `{`, and returns whether the `{` belongs on its own line, as rustfmt places it.
-    pub fn print_condition_expr(&mut self, expr: Expr, indent_level: usize) -> bool {
+    /// block's ` {`, and returns whether it broke a line to fit.
+    pub(super) fn print_condition_expr(&mut self, expr: Expr, indent_level: usize) -> bool {
         if self.write_original_if_commented(expr.span()) {
             return false;
         }
-        if let Some(lines) = self.macro_expr_lines(&expr, indent_level) {
-            return self.write_condition_lines(&lines, indent_level);
+        if let Some(lines) = self.macro_expr_lines(&expr, self.base_indent + indent_level) {
+            return self.write_condition_lines(&lines);
         }
-        let place = self.place();
-        match self.unparse_placed(&expr, |e| unparse_condition(e, place)) {
-            Some((text, brace_on_own_line)) => {
-                self.write(&text);
-                brace_on_own_line
+        let place = self.place(indent_level);
+        match self.unparse_or_warn(expr.span(), || unparse_condition(&expr, place, BRACE)) {
+            Some(v) => {
+                self.write(&v.text);
+                v.broken
             }
-            None => false,
+            None => {
+                self.write(self.source_text(expr.span()).trim());
+                false
+            }
+        }
+    }
+
+    /// Prints the expression after a header's `=` or `in`, after a space or, as rustfmt moves
+    /// it, on the next line one level deeper when it fits better there. Returns whether a line
+    /// was broken.
+    pub(super) fn print_condition_rhs(&mut self, expr: Expr, indent_level: usize) -> bool {
+        if self.print_leading_comments_after_line_break(expr.span().start(), indent_level) {
+            return self.print_condition_expr(expr, indent_level);
+        }
+        if self.span_contains_comments(expr.span()) || matches!(expr, Expr::Macro(_)) {
+            self.write(" ");
+            return self.print_condition_expr(expr, indent_level);
+        }
+        let same = Place {
+            column: self.column() + 1,
+            ..self.place(indent_level)
+        };
+        let next = self.place(indent_level + 1);
+        let next = Place {
+            column: next.indent,
+            ..next
+        };
+        let Some((on_same, on_next)) = self.unparse_or_warn(expr.span(), || {
+            (
+                unparse_condition(&expr, same, BRACE),
+                unparse_condition(&expr, next, BRACE),
+            )
+        }) else {
+            self.write(" ");
+            self.write(self.source_text(expr.span()).trim());
+            return false;
+        };
+        let fits = |v: &Unparsed, column| fits(&v.text, column, BRACE, same.line_length);
+        let fits_on_same = fits(&on_same, same.column);
+        let moves = (on_same.broken || !fits_on_same)
+            && fits(&on_next, next.column)
+            && (!fits_on_same || fits_better_on_next_line(&on_same, &on_next));
+        if moves {
+            self.new_line(indent_level + 1);
+            self.write(&on_next.text);
+            true
+        } else {
+            self.write(" ");
+            self.write(&on_same.text);
+            on_same.broken
         }
     }
 
     /// Prints a match arm's guard from the current column, followed on its last line by
-    /// `trailing`.
-    pub(super) fn print_guard(&mut self, expr: Expr, trailing: &str, indent_level: usize) {
+    /// `trailing` columns, its later lines one level deeper than the arm at `indent_level`.
+    pub(super) fn print_guard(&mut self, expr: Expr, trailing: usize, indent_level: usize) {
         if self.write_original_if_commented(expr.span()) {
             return;
         }
@@ -250,61 +323,57 @@ impl<'a, 'b> Printer<'a, 'b> {
             self.print_expr(expr, indent_level);
             return;
         }
-        let place = self.place();
-        if let Some(text) = self.unparse_placed(&expr, |e| unparse_guard(e, place, trailing)) {
-            self.write(&text);
+        let place = self.place(indent_level);
+        match self.unparse_or_warn(expr.span(), || unparse_guard(&expr, place, trailing)) {
+            Some(v) => self.write(&v.text),
+            None => self.write(self.source_text(expr.span()).trim()),
         }
     }
 
-    /// Where an expression written next starts.
-    pub(super) fn place(&self) -> Place {
-        let line = self.buf.rsplit('\n').next().unwrap_or_default();
+    /// The column the current line continues from, counting the text before the macro on its
+    /// first line.
+    pub(super) fn column(&self) -> usize {
+        let first_line = self.lines.is_empty() && !self.buf.contains('\n');
+        self.line_len() + if first_line { self.mac.column } else { 0 }
+    }
+
+    /// Where Rust written next starts, its later lines indented from the header at
+    /// `indent_level`.
+    pub(super) fn place(&self, indent_level: usize) -> Place {
         Place {
-            column: line.len(),
-            indent: line.len() - line.trim_start().len(),
+            column: self.column(),
+            indent: self.indent_str.len() * (self.base_indent + indent_level),
             line_length: self.options.line_length,
         }
     }
 
-    /// `unparse(expr)`, or `None` with `expr` written as it is when prettyplease panics on it.
-    fn unparse_placed<T>(
-        &mut self,
-        expr: &Expr,
-        unparse: impl FnOnce(&Expr) -> T + std::panic::UnwindSafe,
+    /// `unparse()` of the Rust at `span`, or `None` with a warning when prettyplease panics.
+    pub(super) fn unparse_or_warn<T>(
+        &self,
+        span: Span,
+        unparse: impl FnOnce() -> T + std::panic::UnwindSafe,
     ) -> Option<T> {
-        let unparsed = std::panic::catch_unwind(|| unparse(expr));
+        let unparsed = std::panic::catch_unwind(unparse);
         if unparsed.is_err() {
-            let original_text = self.source_text(expr.span());
             eprintln!(
-                "Warning: prettyplease panicked formatting expression, leaving unchanged: {original_text}"
+                "Warning: prettyplease panicked formatting Rust, leaving unchanged: {}",
+                self.source_text(span)
             );
-            self.write(original_text.trim());
         }
         unparsed.ok()
     }
 
-    /// Writes a condition's `lines`, the later ones one level deeper than the header as
-    /// unparsing leaves them, and returns whether the following `{` belongs on its own line.
-    fn write_condition_lines(&mut self, lines: &[String], indent_level: usize) -> bool {
+    /// Writes a condition's `lines`, already indented, and returns whether there is more than one.
+    fn write_condition_lines(&mut self, lines: &[String]) -> bool {
         let Some((first, rest)) = lines.split_first() else {
             return false;
         };
         self.write(first.trim());
-        let Some(last) = rest.last() else {
-            return false;
-        };
         for line in rest {
             self.new_line(0);
-            self.buf = line
-                .strip_prefix(self.indent_str)
-                .unwrap_or(line)
-                .to_string();
+            self.buf = line.clone();
         }
-
-        let header_indent = self.indent_str.len() * (self.base_indent + indent_level);
-        let last_indent =
-            (last.len() - last.trim_start().len()).saturating_sub(self.indent_str.len());
-        last_indent > header_indent
+        !rest.is_empty()
     }
 
     pub fn print_toggle_expr(&mut self, expr: Expr, indent_level: usize) {
@@ -312,7 +381,7 @@ impl<'a, 'b> Printer<'a, 'b> {
             return;
         }
 
-        if let Some(lines) = self.macro_expr_lines(&expr, indent_level + 1) {
+        if let Some(lines) = self.macro_expr_lines(&expr, self.expr_depth(indent_level + 1)) {
             match lines.len() {
                 0 => {}
                 1 => self.write(lines[0].trim()),
@@ -365,7 +434,7 @@ impl<'a, 'b> Printer<'a, 'b> {
             if let ParenExprBody::Expr(expr) = &paren_expr.body
                 && let Expr::Macro(expr_macro) = expr
                 && !self.has_comments_outside(paren_span, expr_macro.mac.delimiter.span().join())
-                && let Some(lines) = self.macro_expr_lines(expr, indent_level)
+                && let Some(lines) = self.macro_expr_lines(expr, self.expr_depth(indent_level))
             {
                 self.consume_comments_in_span(paren_span);
                 self.print_paren_expr_lines(is_ref, false, lines, indent_level);
