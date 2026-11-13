@@ -65,35 +65,34 @@ pub fn escape_script_source_literal(value: &str) -> std::borrow::Cow<'_, str> {
     }
 }
 
-/// Escapes `</style`, which would end the element. `\/` means `/` in CSS strings, identifiers
-/// and URLs alike, so the escape keeps the value of the CSS around it.
+/// Escapes every end tag opening, `</` before an ASCII letter, as `<\/`. `</style` would end the
+/// element, and any other end tag would end a raw text element around it, such as a `noscript`
+/// when scripting is enabled. `\/` means `/` in CSS strings, identifiers and URLs alike, so the
+/// escape keeps the value of the CSS around it.
 ///
 /// `cheers` runs the same escaping at runtime over style bodies with dynamic parts, and its
 /// tests check that the two agree.
 #[doc(hidden)]
 pub fn escape_style_source_literal(value: &str) -> std::borrow::Cow<'_, str> {
     let bytes = value.as_bytes();
-    let mut i = 0;
-    let mut start = 0;
     let mut escaped = None::<String>;
+    let mut start = 0;
 
-    while i + 7 <= bytes.len() {
-        if bytes[i..].starts_with(b"</") && bytes[i + 2..i + 7].eq_ignore_ascii_case(b"style") {
+    for i in 0..bytes.len().saturating_sub(2) {
+        if bytes[i] == b'<' && bytes[i + 1] == b'/' && bytes[i + 2].is_ascii_alphabetic() {
             let escaped = escaped.get_or_insert_with(|| String::with_capacity(value.len() + 4));
-            escaped.push_str(&value[start..i]);
-            escaped.push_str("<\\/");
-            i += 2;
-            start = i;
-        } else {
-            i += 1;
+            escaped.push_str(&value[start..=i]);
+            escaped.push('\\');
+            start = i + 1;
         }
     }
 
-    if let Some(mut escaped) = escaped {
-        escaped.push_str(&value[start..]);
-        std::borrow::Cow::Owned(escaped)
-    } else {
-        std::borrow::Cow::Borrowed(value)
+    match escaped {
+        Some(mut escaped) => {
+            escaped.push_str(&value[start..]);
+            std::borrow::Cow::Owned(escaped)
+        }
+        None => std::borrow::Cow::Borrowed(value),
     }
 }
 
@@ -507,8 +506,8 @@ impl<'a> Generator<'a> {
             .push(Part::Static(LitStr::new(&escape(&value), lit.span())));
     }
 
-    /// Runs `f`, then escapes everything it rendered once more at runtime: a `</script`,
-    /// `</style` or `<!--` can form across the literals and values of a dynamic body.
+    /// Runs `f`, then escapes everything it rendered once more at runtime: an end tag or `<!--`
+    /// can form across the literals and values of a dynamic body.
     pub fn push_runtime_escaped_raw_text(&mut self, kind: RawText, f: impl FnOnce(&mut Self)) {
         let buffer_ident = Self::buffer_ident();
         let start_ident = Ident::new("__cheers_raw_text_start", Span::mixed_site());
@@ -641,16 +640,16 @@ impl<'a> Generator<'a> {
         }
     }
 
-    pub fn push_markup_in_raw_text_error(&mut self, kind: RawText, span: Span, what: &str) {
+    pub fn push_markup_in_raw_text_error(&mut self, kind: RawText, span: Span) {
         let message = match kind {
-            RawText::Script => format!(
-                "{what} cannot appear in JavaScript source, such as a `script` body or \
+            RawText::Script => {
+                "HTML markup cannot appear in JavaScript source, such as a `script` body or \
                  `js_script!`. Write the JavaScript as string literals and `(values)`."
-            ),
-            RawText::Style => format!(
-                "{what} cannot appear in a `style` body. Write the CSS as string literals and \
-                 `(values)`."
-            ),
+            }
+            RawText::Style => {
+                "HTML markup cannot appear in a `style` body. Write the CSS as string literals \
+                 and `(values)`."
+            }
         };
         self.push_diagnostic(Error::new(span, message).to_compile_error());
     }
@@ -825,8 +824,8 @@ impl RawText {
 struct StaticRun {
     span: Option<Span>,
     text: String,
-    /// Raw text literals are escaped as one string so that a `</script`, `</style` or `<!--`
-    /// split across adjacent literals is still caught.
+    /// Raw text literals are escaped as one string so that an end tag or `<!--` split across
+    /// adjacent literals is still caught.
     raw_text: Option<(RawText, String)>,
 }
 
@@ -839,17 +838,9 @@ impl StaticRun {
 
     fn push_raw_text(&mut self, kind: RawText, lit: &LitStr) {
         self.span.get_or_insert_with(|| lit.span());
-        if self
-            .raw_text
-            .as_ref()
-            .is_some_and(|(current, _)| *current != kind)
-        {
-            self.flush_raw_text();
-        }
-        self.raw_text
-            .get_or_insert_with(|| (kind, String::new()))
-            .1
-            .push_str(&lit.value());
+        let (current, raw_text) = self.raw_text.get_or_insert_with(|| (kind, String::new()));
+        debug_assert_eq!(*current, kind, "a closing tag separates raw text bodies");
+        raw_text.push_str(&lit.value());
     }
 
     fn flush_raw_text(&mut self) {
@@ -1361,13 +1352,17 @@ mod tests {
             Just("yle".to_owned()),
             Just("StYlE".to_owned()),
             Just("</style".to_owned()),
+            Just("</noscript".to_owned()),
+            Just("</*".to_owned()),
             Just("\\".to_owned()),
         ];
         prop::collection::vec(fragment, 0..16).prop_map(|parts| parts.concat())
     }
 
     fn breaks_out_of_style(body: &str) -> bool {
-        body.to_ascii_lowercase().contains("</style")
+        body.as_bytes()
+            .windows(3)
+            .any(|w| w[0] == b'<' && w[1] == b'/' && w[2].is_ascii_alphabetic())
     }
 
     fn breaks_out_of_script(body: &str) -> bool {

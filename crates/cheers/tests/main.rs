@@ -3309,6 +3309,24 @@ fn style_body_literals_cannot_close_style_element() {
 }
 
 #[test]
+fn style_body_cannot_close_an_enclosing_raw_text_element() {
+    // XSS SAFETY: the test checks that the style body escapes this
+    let css = RawStyle::dangerously_create("a{}</noscript><img src=x onerror=alert(1)>");
+
+    let rendered = html! {
+        noscript { style { (css) "b{background:url(a</*c*/)}" } }
+    }
+    .render()
+    .into_inner();
+
+    assert_eq!(
+        rendered,
+        "<noscript><style>a{}<\\/noscript><img src=x onerror=alert(1)>\
+         b{background:url(a</*c*/)}</style></noscript>"
+    );
+}
+
+#[test]
 fn style_body_cannot_close_style_element_across_dynamic_parts() {
     let ready = true;
     // XSS SAFETY: the test checks that the style body escapes this
@@ -3335,7 +3353,7 @@ proptest::proptest! {
     #[test]
     fn style_body_cannot_close_style_element(
         pieces in proptest::collection::vec(
-            proptest::sample::select(vec!["<", "/", "style", "STYLE", "</", "</st", "x"]),
+            proptest::sample::select(vec!["<", "/", "style", "STYLE", "</", "</st", "noscript", "*", "x"]),
             0..16,
         ),
     ) {
@@ -3356,7 +3374,11 @@ proptest::proptest! {
             .and_then(|html| html.strip_suffix("</style>"))
             .expect("a style element")
             .to_ascii_lowercase();
-        proptest::prop_assert!(!body.contains("</style"), "{pieces:?} -> {rendered:?}");
+        let opens_end_tag = body
+            .as_bytes()
+            .windows(3)
+            .any(|w| w[0] == b'<' && w[1] == b'/' && w[2].is_ascii_alphabetic());
+        proptest::prop_assert!(!opens_end_tag, "{pieces:?} -> {rendered:?}");
     }
 }
 

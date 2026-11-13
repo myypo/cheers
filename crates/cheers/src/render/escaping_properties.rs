@@ -24,7 +24,7 @@ fn text() -> impl Strategy<Value = String> {
             "&", "<", ">", "\"", "'", "`", "\\", "/", "\n", "\r", "\t", "\0", "\u{7f}",
             "\u{85}", "\u{2028}", "\u{2029}", "\u{feff}", "</script", "</ScRiPt>", "<!--",
             "-->", "&amp;", "&lt;", "&#60;", "&#x3C;", "${", "*/", "\\u2028", "\\x3C",
-            "</style", "</StYlE>", "-", "--", "0", "\\3c ",
+            "</style", "</StYlE>", "</noscript", "</*", "-", "--", "0", "\\3c ",
         ])
         .prop_map(str::to_owned),
     ];
@@ -117,8 +117,12 @@ fn breaks_out_of_script(body: &str) -> bool {
     lower.contains("</script") || lower.contains("<!--")
 }
 
+/// Whether `body` holds an end tag opening, which could end the `style` or a raw text element
+/// around it.
 fn breaks_out_of_style(body: &str) -> bool {
-    body.to_ascii_lowercase().contains("</style")
+    body.as_bytes()
+        .windows(3)
+        .any(|w| w[0] == b'<' && w[1] == b'/' && w[2].is_ascii_alphabetic())
 }
 
 #[derive(Debug, PartialEq)]
@@ -128,7 +132,7 @@ enum CssToken {
     Other(String),
 }
 
-/// Parses `source` as one CSS token followed by nothing else.
+/// Parses `source` as one CSS token followed by nothing else, not even whitespace or a comment.
 fn parse_css_token(source: &str) -> Result<CssToken, String> {
     let mut input = cssparser::ParserInput::new(source);
     let mut parser = cssparser::Parser::new(&mut input);
@@ -138,8 +142,8 @@ fn parse_css_token(source: &str) -> Result<CssToken, String> {
         Ok(token) => CssToken::Other(format!("{token:?}")),
         Err(err) => return Err(format!("{err:?}")),
     };
-    if !parser.is_exhausted() {
-        return Err(format!("more than one token in {source:?}"));
+    if let Ok(rest) = parser.next_including_whitespace_and_comments() {
+        return Err(format!("{rest:?} after the token in {source:?}"));
     }
     Ok(token)
 }
@@ -147,7 +151,20 @@ fn parse_css_token(source: &str) -> Result<CssToken, String> {
 /// The inside of a double-quoted CSS string, built from pieces that keep it valid.
 fn css_string_body() -> impl Strategy<Value = String> {
     let fragment = prop::sample::select(vec![
-        "a", "<", "/", "style", "STYLE", "</style", "\\\\", "\\<", "\\/", "\\\"", "\\3c ", "'",
+        "a",
+        "<",
+        "/",
+        "style",
+        "STYLE",
+        "</style",
+        "</noscript",
+        "</*",
+        "\\\\",
+        "\\<",
+        "\\/",
+        "\\\"",
+        "\\3c ",
+        "'",
     ]);
     prop::collection::vec(fragment, 0..16).prop_map(|parts| parts.concat())
 }

@@ -119,8 +119,8 @@ pub type RawScript<T> = Raw<T, ScriptSource>;
 
 /// Raw CSS source for a `<style>` body.
 ///
-/// This is a type alias for [`Raw<T, StyleSource>`]. A `</style` in it is still escaped when it
-/// renders in an `html!` `style` body.
+/// This is a type alias for [`Raw<T, StyleSource>`]. An end tag such as `</style` in it is still
+/// escaped when it renders in an `html!` `style` body.
 pub type RawStyle<T> = Raw<T, StyleSource>;
 
 /// A rendered HTML string.
@@ -321,8 +321,8 @@ impl<C: Context> Buffer<C> {
     /// surrounding script element.
     ///
     /// For `Buffer<StyleSource>` writes, the caller must push CSS source intended for a `<style>`
-    /// body, and avoid raw `</style` sequences that would terminate the surrounding style
-    /// element.
+    /// body, and avoid raw end tags such as `</style` that would terminate the surrounding
+    /// style element.
     ///
     /// It is recommended to add a `// XSS SAFETY` comment above the usage of
     /// this method to indicate why it is safe to directly write to the
@@ -395,9 +395,10 @@ impl Debug for Buffer {
 /// element, and should keep it within the CSS token it renders.
 ///
 /// [`Option`] renders nothing for `None` as HTML or an attribute value, but implements neither
-/// JavaScript context, since no single expression suits both a value and an optional fragment.
-/// Convert it first: give a value a default or sentinel, as in `opt.unwrap_or_default()`, and
-/// render an optional fragment as `opt.ok_or(())`, which renders nothing for `None`.
+/// JavaScript context nor [`StyleSource`]: no single output suits both a value and an optional
+/// fragment, and an empty CSS value silently drops its declaration. Convert it first: give a value
+/// a default or sentinel, as in `opt.unwrap_or_default()`, and render an optional fragment as
+/// `opt.ok_or(())`, which renders nothing for `None`.
 ///
 /// # Example
 ///
@@ -729,33 +730,32 @@ pub fn __escape_script_body(buffer: &mut String, start: usize) {
     buffer.push_str(&escaped);
 }
 
-/// Escapes `</style`, which would end the element.
+/// Escapes every end tag opening, `</` before an ASCII letter, as `<\/`. `</style` would end the
+/// element, and any other end tag would end a raw text element around it, such as a `noscript`
+/// when scripting is enabled.
 ///
 /// Must match `escape_style_source_literal` in `cheers-ast`, which escapes static style
 /// literals at compile time.
 pub(crate) fn escape_style_source(value: &str) -> Cow<'_, str> {
     let bytes = value.as_bytes();
-    let mut i = 0;
-    let mut start = 0;
     let mut escaped = None::<String>;
+    let mut start = 0;
 
-    while i + 7 <= bytes.len() {
-        if bytes[i..].starts_with(b"</") && bytes[i + 2..i + 7].eq_ignore_ascii_case(b"style") {
+    for i in 0..bytes.len().saturating_sub(2) {
+        if bytes[i] == b'<' && bytes[i + 1] == b'/' && bytes[i + 2].is_ascii_alphabetic() {
             let escaped = escaped.get_or_insert_with(|| String::with_capacity(value.len() + 4));
-            escaped.push_str(&value[start..i]);
-            escaped.push_str("<\\/");
-            i += 2;
-            start = i;
-        } else {
-            i += 1;
+            escaped.push_str(&value[start..=i]);
+            escaped.push('\\');
+            start = i + 1;
         }
     }
 
-    if let Some(mut escaped) = escaped {
-        escaped.push_str(&value[start..]);
-        Cow::Owned(escaped)
-    } else {
-        Cow::Borrowed(value)
+    match escaped {
+        Some(mut escaped) => {
+            escaped.push_str(&value[start..]);
+            Cow::Owned(escaped)
+        }
+        None => Cow::Borrowed(value),
     }
 }
 

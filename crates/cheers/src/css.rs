@@ -3,6 +3,8 @@
 //! The body of an HTML `style` element in `html!` renders in the [`StyleSource`] context: string
 //! literals are raw CSS, and interpolated values must say which CSS token they render as.
 //!
+//! [`StyleSource`]: crate::prelude::StyleSource
+//!
 //! ```
 //! use cheers::prelude::*;
 //!
@@ -68,16 +70,14 @@ pub(crate) fn push_css_identifier(dst: &mut String, value: &str) {
 
 pub(crate) fn push_css_string(dst: &mut String, value: &str) {
     dst.push('"');
-    for ch in value.chars() {
-        match ch {
-            '"' => dst.push_str("\\\""),
-            '\\' => dst.push_str("\\\\"),
-            '\0' => dst.push('\u{FFFD}'),
+    for (index, chunk) in value.split('<').enumerate() {
+        if index != 0 {
             // A hex escape ends at the first space after it.
-            '<' => dst.push_str("\\3c "),
-            ch if ch.is_ascii_control() => _ = write!(dst, "\\{:x} ", u32::from(ch)),
-            ch => dst.push(ch),
+            dst.push_str("\\3c ");
         }
+        cssparser::CssStringWriter::new(dst)
+            .write_str(chunk)
+            .expect("writing a CSS string to a String does not fail");
     }
     dst.push('"');
 }

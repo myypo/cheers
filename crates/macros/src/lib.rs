@@ -164,7 +164,7 @@ pub fn cheers_derive(item: proc_macro::TokenStream) -> proc_macro::TokenStream {
 /// with any other `type` is a data block and renders its body as HTML text.
 ///
 /// The body of an HTML `style` element renders in the `StyleSource` context: string literals are
-/// raw CSS with `</style` escaped, and interpolated values must be CSS values such as numbers,
+/// raw CSS with end tags such as `</style` escaped, and interpolated values must be CSS values such as numbers,
 /// `CssString`, `CssIdent`, an `ElementId` (rendered as an identifier) or `RawStyle`. Rust strings
 /// don't render there. Elements, components and `@async` are rejected. An SVG `style` renders its
 /// body as text.

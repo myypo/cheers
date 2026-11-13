@@ -135,7 +135,7 @@ impl Generate for ElementNode {
 
     fn generate(&mut self, g: &mut Generator<'_>) {
         if let (Self::Element(_) | Self::Component(_), Some(kind)) = (&*self, g.raw_text()) {
-            g.push_markup_in_raw_text_error(kind, control::element_node_span(self), "HTML markup");
+            g.push_markup_in_raw_text_error(kind, control::element_node_span(self));
             return;
         }
 
