@@ -4095,6 +4095,122 @@ fn action_options_render_retry_timing_options() {
 }
 
 #[test]
+fn action_options_render_headers_visibility_and_cancellation() {
+    #[action(POST)]
+    async fn my_handler(_: Form<String>) {}
+
+    let result = MyHandlerAction {}
+        .options(
+            ActionOptions::new()
+                .retry(ActionRetry::Never)
+                .request_cancellation(ActionCancellation::Cleanup)
+                .open_when_hidden(false)
+                .header("X-Trigger", "it's \"here\"")
+                .header("X-Other", "1")
+                .header("x-trigger", "save"),
+        )
+        .render();
+
+    assert_eq!(
+        result.as_inner(),
+        r#"@post('/cheers/actions/my_handler',{contentType:'form',headers:{'X-Other':'1','x-trigger':'save'},openWhenHidden:false,requestCancellation:'cleanup',retry:'never'})"#
+    );
+}
+
+#[test]
+fn action_options_render_every_cancellation() {
+    #[action(GET)]
+    async fn my_handler() {}
+
+    for (cancellation, rendered) in [
+        (ActionCancellation::Auto, "auto"),
+        (ActionCancellation::Cleanup, "cleanup"),
+        (ActionCancellation::Disabled, "disabled"),
+    ] {
+        let result = MyHandlerAction {}
+            .options(
+                ActionOptions::new()
+                    .open_when_hidden(true)
+                    .request_cancellation(cancellation),
+            )
+            .render();
+        assert_eq!(
+            *result.as_inner(),
+            format!(
+                "@get('/cheers/actions/my_handler',{{openWhenHidden:true,requestCancellation:'{rendered}'}})"
+            )
+        );
+    }
+}
+
+#[test]
+fn action_option_header_values_are_escaped_for_the_attribute() {
+    #[action(GET)]
+    async fn my_handler() {}
+
+    let result = MyHandlerAction {}
+        .options(ActionOptions::new().header("X-Note", "</script>'\\"))
+        .render();
+
+    assert_eq!(
+        result.as_inner(),
+        r#"@get('/cheers/actions/my_handler',{headers:{'X-Note':'&lt;/script&gt;\'\\'}})"#
+    );
+}
+
+#[test]
+fn action_option_header_values_keep_datastar_action_syntax_literal() {
+    #[action(GET)]
+    async fn my_handler() {}
+
+    let result = MyHandlerAction {}
+        .options(ActionOptions::new().header("X-Tag", "user@team(eng)"))
+        .render();
+
+    assert_eq!(
+        result.as_inner(),
+        r#"@get('/cheers/actions/my_handler',{headers:{'X-Tag':'user\x40team(eng)'}})"#
+    );
+}
+
+#[test]
+#[should_panic(expected = "is set by Datastar")]
+fn action_option_header_rejects_datastar_headers() {
+    let _ = ActionOptions::new().header("Datastar-Request", "false");
+}
+
+#[test]
+fn action_option_header_rejects_headers_browsers_drop() {
+    for name in [
+        "Cookie",
+        "origin",
+        "Sec-Fetch-Site",
+        "Proxy-Authorization",
+        "X-HTTP-Method",
+    ] {
+        let result = std::panic::catch_unwind(|| ActionOptions::new().header(name, "1"));
+        assert!(result.is_err(), "{name} should be rejected");
+    }
+}
+
+#[test]
+fn action_option_header_rejects_invalid_names() {
+    for name in ["X Bad", "__proto__", ""] {
+        let result = std::panic::catch_unwind(|| ActionOptions::new().header(name, "1"));
+        assert!(result.is_err(), "{name:?} should be rejected");
+    }
+}
+
+#[test]
+fn action_option_header_rejects_values_browsers_change() {
+    for value in ["a\nb", "東京", "José", " padded", "padded ", "tab\there"] {
+        let result = std::panic::catch_unwind(|| ActionOptions::new().header("X-Value", value));
+        assert!(result.is_err(), "{value:?} should be rejected");
+    }
+    let _ = ActionOptions::new().header("X-Value", "inner space, \"quotes\" and <tags>");
+}
+
+#[test]
 fn action_options_render_content_type_selector_retry_order() {
     #[action(POST)]
     async fn my_handler(_: Form<String>) {}

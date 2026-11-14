@@ -624,6 +624,8 @@ pub(crate) fn push_js_single_quoted_string_to_html_attribute(dst: &mut String, v
         match ch {
             '\\' => dst.push_str("\\\\"),
             '\'' => dst.push_str("\\'"),
+            // Datastar rewrites `@name(` into an action call even inside string literals.
+            '@' => dst.push_str("\\x40"),
             '\n' => dst.push_str("\\n"),
             '\r' => dst.push_str("\\r"),
             '\t' => dst.push_str("\\t"),

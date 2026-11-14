@@ -65,10 +65,14 @@ pub mod prelude {
             RawStyle, Render, RenderExt as _,
         },
         response::{AsyncLazy, AsyncRender},
-        router::{Action, ActionDef, ActionOptions, ActionRetry, ActionRouterExt as _},
+        router::{
+            Action, ActionCancellation, ActionDef, ActionOptions, ActionRetry, ActionRouterExt as _,
+        },
         track::TrackAction,
     };
 }
 pub use custom_event::EventTarget;
 pub use render::{Raw, RawAttribute, RawDatastarSource, RawScript, RawStyle, Rendered};
-pub use router::{Action, ActionDef, ActionOptions, ActionRetry, ActionRouterExt};
+pub use router::{
+    Action, ActionCancellation, ActionDef, ActionOptions, ActionRetry, ActionRouterExt,
+};
