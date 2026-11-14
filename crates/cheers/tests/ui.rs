@@ -125,6 +125,12 @@ fn empty_js_object_value_is_rejected() {
 }
 
 #[test]
+fn data_attribute_nested_group_error_is_reported() {
+    let tests = trybuild::TestCases::new();
+    tests.compile_fail("tests/ui/data_attribute_nested_group_error.rs");
+}
+
+#[test]
 fn missing_data_name_is_reported() {
     let tests = trybuild::TestCases::new();
     tests.compile_fail("tests/ui/missing_data_name.rs");

@@ -650,6 +650,22 @@ mod test {
         "#
     );
 
+    test_default!(
+        data_attribute_with_invalid_nested_group_keeps_it,
+        r#"
+        html! {
+            div   !attr("k": { "a" ...x }) { "Panel" }
+            button !on:click({ "a" @@ }) {}
+        }
+        "#,
+        r#"
+        html! {
+            div !attr("k": { "a" ...x }) { "Panel" }
+            button !on:click({ "a" @@ }) {}
+        }
+        "#
+    );
+
     test_small_line!(
         long_data_attribute_with_invalid_payload_wraps,
         r#"

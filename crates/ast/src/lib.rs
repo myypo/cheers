@@ -9,13 +9,13 @@ mod validation;
 use std::marker::PhantomData;
 
 pub use basics::UnquotedName;
-use proc_macro2::{Span, TokenStream};
+use proc_macro2::{Delimiter, Span, TokenStream, TokenTree};
 use quote::{ToTokens, quote, quote_spanned};
 use syn::{
     Error, Expr, Ident, LitBool, LitChar, LitFloat, LitInt, LitStr, Token, braced, bracketed,
     ext::IdentExt,
     parenthesized,
-    parse::{Parse, ParseStream},
+    parse::{Parse, ParseStream, Parser},
     punctuated::Punctuated,
     token::{Brace, Bracket, Paren},
 };
@@ -1736,30 +1736,42 @@ impl Parse for Data {
             });
         }
 
-        let data;
-        let paren_token = parenthesized!(data in input);
+        let group = input.step(|cursor| {
+            // `peek(Paren)` looks through invisible groups (from `macro_rules!` fragments).
+            let mut rest = *cursor;
+            while let Some((inner, Delimiter::None, _, _)) = rest.any_group() {
+                rest = inner;
+            }
+            match rest.token_tree() {
+                Some((TokenTree::Group(group), rest))
+                    if group.delimiter() == Delimiter::Parenthesis =>
+                {
+                    Ok((group, rest))
+                }
+                _ => Err(cursor.error("expected parentheses")),
+            }
+        })?;
+        let paren_token = Paren {
+            span: group.delim_span(),
+        };
 
-        if recovery_error.is_some() {
-            // syn reports leftover tokens in `data` instead of `recovery_error` unless consumed.
-            data.parse::<TokenStream>()?;
-            return Ok(Self {
-                namespace,
-                name,
-                paren_token: Some(paren_token),
-                modifiers,
-                content: DataContent::Recovered,
-                recovery_error,
-            });
-        }
-
-        let parse_kind = DataParseKind::new(name.ident());
-        let content = match parse_kind.parse_content(&data) {
-            Ok(content) => content,
-            Err(err) => {
-                // syn reports leftover tokens in `data` instead of `err` unless they are consumed.
-                data.parse::<TokenStream>()?;
-                recovery_error = Some(err);
-                DataContent::Recovered
+        let content = if recovery_error.is_some() {
+            DataContent::Recovered
+        } else {
+            let parse_kind = DataParseKind::new(name.ident());
+            let parse_group = |input: ParseStream| {
+                let data;
+                parenthesized!(data in input);
+                parse_kind.parse_content(&data)
+            };
+            // syn shares one unexpected-token cell across all nested buffers of `input`, so a
+            // half-parsed inner group would fail the whole macro; `parse2` gets a fresh cell.
+            match parse_group.parse2(TokenTree::Group(group).into()) {
+                Ok(content) => content,
+                Err(err) => {
+                    recovery_error = Some(err);
+                    DataContent::Recovered
+                }
             }
         };
 
@@ -1928,6 +1940,8 @@ impl Generate for Data {
 
 #[cfg(test)]
 mod tests {
+    use proc_macro2::Delimiter;
+    use quote::quote;
     use syn::parse_str;
 
     use super::{
@@ -2029,6 +2043,50 @@ mod tests {
         assert!(matches!(data.content, DataContent::Recovered));
         assert!(data.recovery_error.is_some());
         assert!(data.has_parens());
+    }
+
+    #[test]
+    fn data_attribute_recovers_errors_in_nested_groups() {
+        for source in [
+            r#"!attr("k": { "a" ...x })"#,
+            r#"!on:click({ "a" @@ })"#,
+            r#"!signals(a: { 1 2 })"#,
+            r#"!computed(a: { "x" @@ })"#,
+            r#"!show({ "a" @@ }, initially: true)"#,
+        ] {
+            let attr = parse_str::<Attribute>(source)
+                .unwrap_or_else(|err| panic!("expected `{source}` to recover, got: {err}"));
+
+            let Attribute::Data { data, .. } = attr else {
+                panic!("expected data attribute");
+            };
+
+            assert!(matches!(data.content, DataContent::Recovered), "{source}");
+            let err = data.recovery_error.expect("expected a recovery error");
+            assert!(
+                !err.to_string().contains("expected `}`"),
+                "`{source}` reported the enclosing group instead of the error: {err}"
+            );
+        }
+    }
+
+    #[test]
+    fn data_attribute_parses_payload_in_invisible_group() {
+        for (payload, recovers) in [
+            (quote! { ("k": x) }, false),
+            (quote! { ("k": { "a" ...x }) }, true),
+        ] {
+            let invisible = proc_macro2::Group::new(Delimiter::None, payload);
+            let attr = syn::parse2::<Attribute>(quote! { !attr #invisible })
+                .expect("expected attribute to parse");
+
+            let Attribute::Data { data, .. } = attr else {
+                panic!("expected data attribute");
+            };
+
+            assert!(data.has_parens());
+            assert_eq!(data.recovery_error.is_some(), recovers);
+        }
     }
 
     #[test]
