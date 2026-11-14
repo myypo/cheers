@@ -14,7 +14,7 @@ use axum::{
 use thirtyfour::error::{WebDriverError, WebDriverResult};
 use tokio::sync::watch;
 
-use super::WAIT_TIMEOUT;
+use super::TEST_TIMEOUT;
 use crate::track::{Batch, Item};
 
 /// What a test app shares between its [`intercept`] layer, the [`capture_track`] layer of the
@@ -26,6 +26,8 @@ pub(crate) struct Hooks {
     tracked: watch::Sender<Vec<Item<serde_json::Value>>>,
     /// Track requests that were not recorded, reported when a wait for tracked items times out.
     track_problems: Mutex<Vec<String>>,
+    /// The endpoint of the [`capture_track`] layer any request has passed through.
+    capture_endpoint: Mutex<Option<Arc<str>>>,
 }
 
 fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
@@ -76,7 +78,7 @@ impl Hooks {
         mut f: impl FnMut(&[Item<serde_json::Value>]) -> Option<T>,
     ) -> WebDriverResult<T> {
         let mut rx = self.tracked.subscribe();
-        let deadline = tokio::time::Instant::now() + WAIT_TIMEOUT;
+        let deadline = tokio::time::Instant::now() + TEST_TIMEOUT;
         loop {
             let items = rx.borrow_and_update().clone();
             if let Some(found) = f(&items) {
@@ -88,8 +90,17 @@ impl Hooks {
             {
                 let items = self.tracked();
                 let problems = lock(&self.track_problems).join("\n");
+                let capture = match &*lock(&self.capture_endpoint) {
+                    Some(endpoint) => format!(
+                        "capture is active for POST {endpoint}, through the ingest route mounted \
+                         in the router passed to `cheers::router::new`"
+                    ),
+                    None => "capture is not active: no request went through a router from \
+                             `cheers::router::new` whose track endpoint is a path, such as `/_track`"
+                        .to_owned(),
+                };
                 return Err(WebDriverError::Timeout(format!(
-                    "the tracked items did not match within {WAIT_TIMEOUT:?}; \
+                    "the tracked items did not match within {TEST_TIMEOUT:?}; {capture}; \
                      tracked: {items:#?}; requests not recorded: [{problems}]"
                 )));
             }
@@ -115,7 +126,7 @@ pub(crate) async fn intercept(
         .get::<MatchedPath>()
         .and_then(|matched| hooks.take_hold(req.method(), matched.as_str()));
     match hold {
-        Some(hold) => hold.around(&hooks, next.run(req)).await,
+        Some(hold) => around(hold, &hooks, next.run(req)).await,
         None => next.run(req).await,
     }
 }
@@ -126,6 +137,7 @@ pub(crate) async fn capture_track(endpoint: Arc<str>, req: Request, next: Next) 
     let Some(hooks) = req.extensions().get::<Arc<Hooks>>().cloned() else {
         return next.run(req).await;
     };
+    lock(&hooks.capture_endpoint).get_or_insert_with(|| endpoint.clone());
     let path = match req.extensions().get::<OriginalUri>() {
         Some(original) => original.path(),
         None => req.uri().path(),
@@ -135,8 +147,14 @@ pub(crate) async fn capture_track(endpoint: Arc<str>, req: Request, next: Next) 
     }
 
     let (parts, body) = req.into_parts();
-    let Ok(bytes) = to_bytes(body, usize::MAX).await else {
-        return StatusCode::BAD_REQUEST.into_response();
+    let bytes = match to_bytes(body, usize::MAX).await {
+        Ok(bytes) => bytes,
+        Err(err) => {
+            hooks.track_problem(format!(
+                "a track batch posted to {endpoint} could not be read: {err}"
+            ));
+            return StatusCode::BAD_REQUEST.into_response();
+        }
     };
     let batch = serde_json::from_slice::<Batch<serde_json::Value>>(&bytes);
     let response = next
@@ -172,23 +190,55 @@ struct Hold {
     released: watch::Sender<bool>,
 }
 
-impl Hold {
-    async fn around(&self, hooks: &Hooks, response: impl Future<Output = Response>) -> Response {
-        match self.stage {
-            Stage::Request => {
-                self.reached.send_replace(true);
-                self.wait_released(hooks).await;
-                response.await
-            }
-            Stage::Response => {
-                let response = response.await;
-                self.reached.send_replace(true);
-                self.wait_released(hooks).await;
-                response
-            }
+async fn around(
+    hold: Arc<Hold>,
+    hooks: &Hooks,
+    response: impl Future<Output = Response>,
+) -> Response {
+    match hold.stage {
+        Stage::Request => {
+            hold.reached.send_replace(true);
+            hold.wait_released(hooks).await;
+            response.await
+        }
+        Stage::Response => {
+            let requeue = Requeue {
+                hooks,
+                hold: Some(hold.clone()),
+            };
+            let response = response.await;
+            requeue.disarm();
+            hold.reached.send_replace(true);
+            hold.wait_released(hooks).await;
+            response
         }
     }
+}
 
+/// Puts a hold back in the queue when its request is cancelled before the hold was reached, so
+/// the next request is held instead.
+struct Requeue<'a> {
+    hooks: &'a Hooks,
+    hold: Option<Arc<Hold>>,
+}
+
+impl Requeue<'_> {
+    fn disarm(mut self) {
+        self.hold = None;
+    }
+}
+
+impl Drop for Requeue<'_> {
+    fn drop(&mut self) {
+        if let Some(hold) = self.hold.take()
+            && !*hold.released.borrow()
+        {
+            lock(&self.hooks.holds).push_front(hold);
+        }
+    }
+}
+
+impl Hold {
     async fn wait_released(&self, hooks: &Hooks) {
         let mut released = self.released.subscribe();
         let mut closed = hooks.closed.subscribe();
@@ -211,16 +261,27 @@ pub struct HeldAction {
     hold: Arc<Hold>,
 }
 
+impl std::fmt::Debug for HeldAction {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("HeldAction")
+            .field("method", &self.hold.method)
+            .field("path", &self.hold.path)
+            .field("stage", &self.hold.stage)
+            .field("reached", &*self.hold.reached.borrow())
+            .finish()
+    }
+}
+
 impl HeldAction {
     /// Wait until a request to the action is being held.
     ///
     /// Fails with [`WebDriverError::Timeout`] when no request arrives within 20 seconds.
     pub async fn reached(&self) -> WebDriverResult<()> {
         let mut rx = self.hold.reached.subscribe();
-        match tokio::time::timeout(WAIT_TIMEOUT, rx.wait_for(|reached| *reached)).await {
+        match tokio::time::timeout(TEST_TIMEOUT, rx.wait_for(|reached| *reached)).await {
             Ok(_) => Ok(()),
             Err(_) => Err(WebDriverError::Timeout(format!(
-                "no {} request to {} was held within {WAIT_TIMEOUT:?}",
+                "no {} request to {} was held within {TEST_TIMEOUT:?}",
                 self.hold.method, self.hold.path
             ))),
         }
@@ -234,5 +295,40 @@ impl Drop for HeldAction {
     fn drop(&mut self) {
         lock(&self.hooks.holds).retain(|h| !Arc::ptr_eq(h, &self.hold));
         self.hold.released.send_replace(true);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::{future, pin::pin};
+
+    use super::*;
+
+    async fn drop_before_response(hooks: &Hooks, hold: Arc<Hold>) {
+        let mut response = pin!(around(hold, hooks, future::pending::<Response>()));
+        assert!(futures::poll!(response.as_mut()).is_pending());
+    }
+
+    #[tokio::test]
+    async fn a_response_hold_cancelled_before_its_response_holds_the_next_request() {
+        let hooks = Arc::new(Hooks::default());
+        let _held = hooks.hold(Method::POST, "/a", Stage::Response);
+        let hold = hooks.take_hold(&Method::POST, "/a").expect("a queued hold");
+
+        drop_before_response(&hooks, hold).await;
+
+        assert!(hooks.take_hold(&Method::POST, "/a").is_some());
+    }
+
+    #[tokio::test]
+    async fn a_released_hold_is_not_requeued() {
+        let hooks = Arc::new(Hooks::default());
+        let held = hooks.hold(Method::POST, "/a", Stage::Response);
+        let hold = hooks.take_hold(&Method::POST, "/a").expect("a queued hold");
+        held.release();
+
+        drop_before_response(&hooks, hold).await;
+
+        assert!(hooks.take_hold(&Method::POST, "/a").is_none());
     }
 }

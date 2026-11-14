@@ -427,7 +427,7 @@ impl Session {
             .driver
             .execute(
                 WAIT_FOR_DATASTAR_SCRIPT,
-                vec![serde_json::json!(DATASTAR_READY_TIMEOUT.as_millis() as u64)],
+                vec![serde_json::json!(TEST_TIMEOUT.as_millis() as u64)],
             )
             .await?
             .convert::<bool>()?;
@@ -436,7 +436,7 @@ impl Session {
             Ok(())
         } else {
             Err(WebDriverError::Timeout(format!(
-                "Datastar did not become ready within {DATASTAR_READY_TIMEOUT:?}"
+                "Datastar did not become ready within {TEST_TIMEOUT:?}"
             )))
         }
     }
@@ -478,10 +478,11 @@ impl Session {
     /// The items the page posted to the track endpoint, in the order the app answered their
     /// batches.
     ///
-    /// The endpoint is the one configured with [`crate::router::Config::track`], and the router has
-    /// to come from [`crate::router::new`]. Batches pass through to the app's ingest route as usual
-    /// and count once it answers them successfully. A test app needs such a route, for example
-    /// `.route("/_track", post(|| async { StatusCode::ACCEPTED }))`.
+    /// The endpoint is the one configured with [`crate::router::Config::track`], and has to be a
+    /// path such as `/_track`. Batches pass through to the app's ingest route as usual and count
+    /// once it answers them successfully. A test app needs such a route in the router passed to
+    /// [`crate::router::new`], for example `.route("/_track", post(|| async { StatusCode::ACCEPTED
+    /// }))`; a route added to the router it returns is not captured.
     ///
     /// The runtime sends items in batches up to half a second apart, so wait for the ones a test
     /// expects with [`wait_for_tracked`](Self::wait_for_tracked).
@@ -493,8 +494,9 @@ impl Session {
     /// it.
     ///
     /// `f` runs on every item received so far, each time a batch arrives. Fails with
-    /// [`WebDriverError::Timeout`] when it finds nothing within 20 seconds; the error lists the
-    /// items received and any track requests that were not recorded, such as ones the app failed.
+    /// [`WebDriverError::Timeout`] when it finds nothing within 20 seconds; the error says whether
+    /// capture is active and lists the items received and the track requests that were not
+    /// recorded, such as ones the app failed.
     ///
     /// ```ignore
     /// let opened = app
@@ -532,8 +534,7 @@ fn poll_catching_panics(
     }
 }
 
-const DATASTAR_READY_TIMEOUT: Duration = Duration::from_secs(20);
-const WAIT_TIMEOUT: Duration = Duration::from_secs(20);
+const TEST_TIMEOUT: Duration = Duration::from_secs(20);
 
 const WAIT_FOR_DATASTAR_SCRIPT: &str = r#"
 const timeoutMs = arguments[0];

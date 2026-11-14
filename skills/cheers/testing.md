@@ -103,7 +103,8 @@ before its body is produced, so the stream's own work hasn't run when `reached()
 `app.tracked()` returns the items the page posted to the endpoint set with
 `Config::track(TrackConfig::new(path))` once the app's ingest route accepted them, and
 `app.wait_for_tracked(|items| ..)` waits until a closure finds one. Mount an ingest route in the
-test router, such as `.route("/_track", post(|| async { StatusCode::ACCEPTED }))`.
+router passed to `cheers::router::new`, such as `.route("/_track", post(|| async {
+StatusCode::ACCEPTED }))`; a route added to the router it returns is not captured.
 
 ```rust
 let props = app

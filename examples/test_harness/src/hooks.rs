@@ -249,7 +249,12 @@ async fn tracked_items_are_captured_as_the_ingest_route_answers_them() {
                 })
                 .await?;
             assert_eq!(props, serde_json::json!({ "vault_id": 69 }));
-            assert_eq!(app.tracked().len(), 2);
+            let tracked = app.tracked();
+            let count = |kind: fn(&Item<serde_json::Value>) -> bool| {
+                tracked.iter().filter(|item| kind(item)).count()
+            };
+            assert_eq!(count(|item| matches!(item, Item::PageView(_))), 1);
+            assert_eq!(count(|item| matches!(item, Item::Analytics(_))), 1);
             assert!(ingested.load(Ordering::SeqCst) >= 1);
             Ok(())
         })
