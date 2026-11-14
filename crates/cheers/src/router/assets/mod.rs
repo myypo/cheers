@@ -70,6 +70,15 @@ fn runtime_entry(track: bool) -> String {
     entry
 }
 
+const DEBUG_PLACEHOLDER: &str = "const debug: boolean = true;";
+
+fn debug_module() -> String {
+    include_str!("debug.ts").replace(
+        DEBUG_PLACEHOLDER,
+        &format!("const debug: boolean = {};", cfg!(debug_assertions)),
+    )
+}
+
 fn datastar_modules(track: Option<&TrackConfig>) -> Result<Vec<bundle::VirtualModule>, Error> {
     let mut modules = vec![
         bundle::VirtualModule::new(RUNTIME_ENTRY_MODULE, runtime_entry(track.is_some())),
@@ -79,13 +88,7 @@ fn datastar_modules(track: Option<&TrackConfig>) -> Result<Vec<bundle::VirtualMo
             FORM_SUBMIT_GUARD_MODULE,
             include_str!("form-submit-guard.ts"),
         ),
-        bundle::VirtualModule::new(
-            DEBUG_MODULE,
-            format!(
-                "const debug = {};\nexport default debug;\n",
-                cfg!(debug_assertions)
-            ),
-        ),
+        bundle::VirtualModule::new(DEBUG_MODULE, debug_module()),
     ];
 
     if include_subsecond_stream_runtime() {
@@ -887,11 +890,10 @@ mod tests {
             .iter()
             .find(|module| module.specifier == DEBUG_MODULE)
             .expect("debug module should be present");
-        assert!(
-            debug
-                .content
-                .contains(&format!("const debug = {};", cfg!(debug_assertions)))
-        );
+        assert!(debug.content.contains(&format!(
+            "const debug: boolean = {};",
+            cfg!(debug_assertions)
+        )));
         assert!(!runtime_entry.content.contains("./track-plugin"));
         assert!(
             modules

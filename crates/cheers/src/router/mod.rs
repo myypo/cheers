@@ -153,7 +153,7 @@ impl ActionCancellation {
 const DATASTAR_HEADERS: [&str; 3] = ["accept", "content-type", "datastar-request"];
 
 /// Request headers browsers don't let `fetch` set, which they drop without an error.
-const FORBIDDEN_HEADERS: [&str; 24] = [
+const FORBIDDEN_HEADERS: [&str; 21] = [
     "accept-charset",
     "accept-encoding",
     "access-control-request-headers",
@@ -175,11 +175,15 @@ const FORBIDDEN_HEADERS: [&str; 24] = [
     "transfer-encoding",
     "upgrade",
     "via",
+];
+const FORBIDDEN_HEADER_PREFIXES: [&str; 2] = ["proxy-", "sec-"];
+/// Headers browsers drop when their value names one of [`FORBIDDEN_METHODS`].
+const METHOD_OVERRIDE_HEADERS: [&str; 3] = [
     "x-http-method",
     "x-http-method-override",
     "x-method-override",
 ];
-const FORBIDDEN_HEADER_PREFIXES: [&str; 2] = ["proxy-", "sec-"];
+const FORBIDDEN_METHODS: [&str; 3] = ["CONNECT", "TRACE", "TRACK"];
 
 /// Options rendered into a Datastar action call.
 #[derive(Debug, Clone, Default, PartialEq)]
@@ -226,7 +230,7 @@ impl ActionOptions {
     ///
     /// When `name` is not a valid header name, is one Datastar sets itself (`Accept`,
     /// `Content-Type`, `Datastar-Request`) or one browsers don't let scripts set (such as `Cookie`,
-    /// `Origin` or `Sec-*`), or when `value` has characters other than visible ASCII and inner
+    /// `Origin`, `Sec-*`, or `X-HTTP-Method-Override` naming `CONNECT`, `TRACE` or `TRACK`), or when `value` has characters other than visible ASCII and inner
     /// spaces, which browsers reject or change.
     #[must_use]
     pub fn header(mut self, name: impl Into<String>, value: impl Into<String>) -> Self {
@@ -240,12 +244,19 @@ impl ActionOptions {
             !DATASTAR_HEADERS.contains(&lowercase.as_str()),
             "action header {name:?} is set by Datastar"
         );
+        let overrides_forbidden_method = METHOD_OVERRIDE_HEADERS.contains(&lowercase.as_str())
+            && value.split(',').any(|method| {
+                FORBIDDEN_METHODS
+                    .iter()
+                    .any(|forbidden| method.trim().eq_ignore_ascii_case(forbidden))
+            });
         assert!(
             !FORBIDDEN_HEADERS.contains(&lowercase.as_str())
                 && !FORBIDDEN_HEADER_PREFIXES
                     .iter()
-                    .any(|prefix| lowercase.starts_with(prefix)),
-            "browsers don't send action header {name:?} set by a script"
+                    .any(|prefix| lowercase.starts_with(prefix))
+                && !overrides_forbidden_method,
+            "browsers don't send action header {name:?} with value {value:?} set by a script"
         );
         assert!(
             value.bytes().all(|b| matches!(b, b' '..=b'~')) && value.trim() == value,
@@ -267,6 +278,7 @@ impl ActionOptions {
         self
     }
 
+    /// Whether this request aborts or is aborted by other requests; see [`ActionCancellation`].
     #[must_use]
     pub fn request_cancellation(mut self, cancellation: ActionCancellation) -> Self {
         self.request_cancellation = Some(cancellation);

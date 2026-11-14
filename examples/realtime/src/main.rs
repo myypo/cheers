@@ -877,7 +877,36 @@ window.setTimeout = (callback, delay, ...args) =>
                         })
                     }),
                 )
-                .action::<SearchAction>(),
+                .route(
+                    "/unrelated",
+                    get(|| async {
+                        search_page(html! {
+                            Note id=3 text="waiting";
+                            form {
+                                input name="q" !on:input(TagRequestAction);
+                                button type="submit" { "Search" }
+                            }
+                        })
+                    }),
+                )
+                .route(
+                    "/second",
+                    get(|| async {
+                        let search = SearchAction
+                            .options(ActionOptions::new().form_selector("form.filters"));
+                        search_page(html! {
+                            form class="filters" {
+                                input name="tag";
+                            }
+                            form class="filters" {
+                                input name="q";
+                            }
+                            button type="button" !on:click(search) { "Search" }
+                        })
+                    }),
+                )
+                .action::<SearchAction>()
+                .action::<TagRequestAction>(),
             cheers::router::Config::default(),
         )
         .expect("create app")
@@ -941,23 +970,28 @@ window.setTimeout = (callback, delay, ...args) =>
     }
 
     #[tokio::test]
-    async fn a_form_with_an_action_attribute_submits_natively() {
+    async fn forms_not_submitted_by_an_action_submit_natively() {
         cheers::test::App::new(search_app())
             .await
             .unwrap()
             .run(|app| async move {
-                app.goto(app.url("/native")).await?;
-                submit_with_enter(&app).await?;
+                for path in ["/native", "/unrelated", "/second"] {
+                    app.goto(app.url(path)).await?;
+                    submit_with_enter(&app).await?;
 
-                for _ in 0..50 {
-                    if app.current_url().await?.query() == Some("q=ore") {
-                        return Ok(());
+                    let mut submitted = false;
+                    for _ in 0..50 {
+                        if app.current_url().await?.query() == Some("q=ore") {
+                            submitted = true;
+                            break;
+                        }
+                        tokio::time::sleep(Duration::from_millis(100)).await;
                     }
-                    tokio::time::sleep(Duration::from_millis(100)).await;
+                    assert!(submitted, "{path}: the form was not submitted natively");
                 }
-                panic!("the form was not submitted natively");
+                Ok(())
             })
             .await
-            .expect("submit a form with an action attribute natively");
+            .expect("submit forms natively");
     }
 }

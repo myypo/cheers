@@ -4181,16 +4181,18 @@ fn action_option_header_rejects_datastar_headers() {
 
 #[test]
 fn action_option_header_rejects_headers_browsers_drop() {
-    for name in [
-        "Cookie",
-        "origin",
-        "Sec-Fetch-Site",
-        "Proxy-Authorization",
-        "X-HTTP-Method",
+    for (name, value) in [
+        ("Cookie", "1"),
+        ("origin", "1"),
+        ("Sec-Fetch-Site", "1"),
+        ("Proxy-Authorization", "1"),
+        ("X-HTTP-Method", "trace"),
+        ("X-HTTP-Method-Override", "GET, CONNECT"),
     ] {
-        let result = std::panic::catch_unwind(|| ActionOptions::new().header(name, "1"));
-        assert!(result.is_err(), "{name} should be rejected");
+        let result = std::panic::catch_unwind(|| ActionOptions::new().header(name, value));
+        assert!(result.is_err(), "{name}: {value} should be rejected");
     }
+    let _ = ActionOptions::new().header("X-HTTP-Method-Override", "PATCH");
 }
 
 #[test]

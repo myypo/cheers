@@ -611,6 +611,9 @@ pub(crate) fn push_json_source_to_html_attribute(dst: &mut String, source: &str)
         match ch {
             '\u{2028}' => dst.push_str("\\u2028"),
             '\u{2029}' => dst.push_str("\\u2029"),
+            // Datastar rewrites `@name(` into an action call even inside string literals. JSON has
+            // `@` only inside strings, where `\u0040` is the same character.
+            '@' => dst.push_str("\\u0040"),
             ch => push_html_double_quoted_attribute_char(dst, ch),
         }
     }
