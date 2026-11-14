@@ -527,6 +527,8 @@ impl Generate for Element {
 
         // `initially` renders as an inline `display` and an element has only one `style`, so the
         // two are written together here — the only place that sees both.
+        self.merge_signal_object_attributes();
+
         let initially = self.show_initially();
         let mut merged_into_style = false;
 
@@ -629,6 +631,43 @@ impl Element {
                 if attr_name.literals().into_iter().map(|l| l.value()).collect::<String>() == name
             )
         })
+    }
+
+    /// Folds repeated `!signals(...)` / `!computed(...)` attributes with the same name into the
+    /// first one, since a browser keeps only the first of repeated HTML attributes.
+    fn merge_signal_object_attributes(&mut self) {
+        let mut first = 0;
+        while first < self.attrs.len() {
+            let Some(name) = self.attrs[first].signal_object_name() else {
+                first += 1;
+                continue;
+            };
+
+            let mut later = first + 1;
+            while later < self.attrs.len() {
+                if self.attrs[later].signal_object_name().as_ref() != Some(&name) {
+                    later += 1;
+                    continue;
+                }
+
+                let Attribute::Data { data: from, .. } = self.attrs.remove(later) else {
+                    continue;
+                };
+                if let Attribute::Data { data: into, .. } = &mut self.attrs[first] {
+                    match (&mut into.content, from.content) {
+                        (DataContent::Signals(into), DataContent::Signals(from)) => {
+                            into.extend(from);
+                        }
+                        (DataContent::Computed(into), DataContent::Computed(from)) => {
+                            into.extend(from);
+                        }
+                        _ => {}
+                    }
+                }
+            }
+
+            first += 1;
+        }
     }
 
     /// The `initially` expression of this element's `!show`, if it has one.
@@ -751,6 +790,22 @@ impl SyntaxStatic for Attribute {
 }
 
 impl Attribute {
+    /// The full attribute name of a `!signals(...)` / `!computed(...)` that parsed cleanly.
+    fn signal_object_name(&self) -> Option<String> {
+        let Self::Data { data, .. } = self else {
+            return None;
+        };
+        if data.recovery_error.is_some()
+            || !matches!(
+                data.content,
+                DataContent::Signals(_) | DataContent::Computed(_)
+            )
+        {
+            return None;
+        }
+        Some(data.name_literals().iter().map(LitStr::value).collect())
+    }
+
     /// The plain `style="..."` / `style=(expr)` that `!show` appends to. Conditional forms are
     /// rejected by [`Element::show_style_error`].
     fn style_value_mut(&mut self) -> Option<(&AttributeName, &mut AttributeValueNode)> {
@@ -1824,6 +1879,10 @@ impl Data {
     }
 }
 
+fn signal_object_ident() -> Ident {
+    Ident::new("__cheers_signal_object", Span::mixed_site())
+}
+
 impl Generate for Data {
     const CONTEXT: Context = Context::AttributeValue;
 
@@ -1839,31 +1898,31 @@ impl Generate for Data {
             DataContent::Signals(signals) => {
                 g.push_str(" data-");
                 g.push_literals(name_literals);
-                g.push_str("=\"");
-                g.push_str("{");
-                let mut first = true;
+                g.push_str("=\"{");
+
+                let buffer_ident = Generator::buffer_ident();
+                let object_ident = signal_object_ident();
+                g.push_stmt(quote! {
+                    let mut #object_ident = ::cheers::__internal::SignalObject::open(
+                        #buffer_ident.as_datastar_buffer(),
+                    );
+                });
                 for d in signals {
-                    if !first {
-                        g.push_str(",");
-                    } else {
-                        first = false;
-                    }
-
-                    let buffer_ident = Generator::buffer_ident();
-                    let buffer_expr = quote!(#buffer_ident.as_datastar_buffer());
-
                     let ident_ref = d.ident.borrowed_expr(g);
                     let expr = &d.value;
                     g.push_stmt(quote! {
-                        ::cheers::prelude::Signal::__assign(
+                        #object_ident.assign(
                             #ident_ref,
-                            #buffer_expr,
                             #expr,
+                            #buffer_ident.as_datastar_buffer(),
                         );
                     });
                 }
-                g.push_str("}");
-                g.push_str("\"");
+                g.push_stmt(quote! {
+                    #object_ident.close(#buffer_ident.as_datastar_buffer());
+                });
+
+                g.push_str("}\"");
             }
             DataContent::Kv(entries) => {
                 g.push_str(" data-");
@@ -1872,29 +1931,37 @@ impl Generate for Data {
                 generate_kv_object(g, entries);
                 g.push_str("\"");
             }
+            DataContent::Computed(d) if d.is_empty() => {}
             DataContent::Computed(d) => {
-                for d in d {
-                    g.push_str(" data-");
-                    g.push_literals(name_literals.clone());
-                    g.push_str("=\"");
-                    g.push_str("{");
+                g.push_str(" data-");
+                g.push_literals(name_literals);
+                g.push_str("=\"{");
 
-                    let buffer_ident = Generator::buffer_ident();
-                    let buffer_expr = quote!(#buffer_ident.as_datastar_buffer());
+                let buffer_ident = Generator::buffer_ident();
+                let object_ident = signal_object_ident();
+                g.push_stmt(quote! {
+                    let mut #object_ident = ::cheers::__internal::SignalObject::open(
+                        #buffer_ident.as_datastar_buffer(),
+                    );
+                });
+                for d in d {
                     let ident_ref = d.ident.borrowed_expr(g);
                     g.push_stmt(quote! {
-                        let count = ::cheers::prelude::Signal::__computed_open(
+                        #object_ident.computed_open(
                             #ident_ref,
-                            #buffer_expr
+                            #buffer_ident.as_datastar_buffer(),
                         );
                     });
                     g.push_js_value_node(&mut d.value);
                     g.push_stmt(quote! {
-                        ::cheers::prelude::Signal::__computed_close(count, #buffer_expr);
+                        #object_ident.computed_close(#buffer_ident.as_datastar_buffer());
                     });
-                    g.push_str("}");
-                    g.push_str("\"");
                 }
+                g.push_stmt(quote! {
+                    #object_ident.close(#buffer_ident.as_datastar_buffer());
+                });
+
+                g.push_str("}\"");
             }
             DataContent::Node(attribute_value_node) => {
                 g.push_str(" data-");

@@ -14,6 +14,7 @@ pub use crate::{
     datastar_object::__spread,
     reference::FormComponent,
     render::{__escape_script_body, __escape_style_body},
+    signal_object::SignalObject,
 };
 
 pub mod action_rendering;
