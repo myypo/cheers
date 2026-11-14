@@ -31,11 +31,12 @@ pub fn __render_action_options_call(
     RawDatastarSource::dangerously_create(buffer.rendered().into_inner())
 }
 
-fn push_action_option_separator(s: &mut String, separator: &mut bool) {
-    if *separator {
+fn push_option_name(s: &mut String, name: &str) {
+    if !s.is_empty() {
         s.push(',');
     }
-    *separator = true;
+    s.push_str(name);
+    s.push(':');
 }
 
 pub fn __render_action_call(
@@ -45,61 +46,74 @@ pub fn __render_action_call(
     form: bool,
     options: &ActionOptions,
 ) {
-    let s = buffer.dangerously_get_string();
-
     // XSS SAFETY: the static action syntax is framework-generated, while the
-    // dynamic path and selector values are emitted as JS single-quoted string
+    // dynamic path, selector and header values are emitted as JS single-quoted string
     // literals that also remain safe for embedding in a double-quoted HTML
-    // attribute value. Retry values are emitted from a framework-owned enum, and numeric retry
-    // options are emitted as JS number literals.
+    // attribute value. Enum options are emitted from framework-owned strings, and numeric and
+    // boolean options as JS literals.
+    let mut opts = String::new();
+    if form {
+        push_option_name(&mut opts, "contentType");
+        opts.push_str("'form'");
+    }
+    if let Some(form_selector) = &options.selector {
+        push_option_name(&mut opts, "selector");
+        push_js_single_quoted_string_to_html_attribute(&mut opts, form_selector);
+    }
+    if !options.headers.is_empty() {
+        push_option_name(&mut opts, "headers");
+        opts.push('{');
+        for (idx, (name, value)) in options.headers.iter().enumerate() {
+            if idx > 0 {
+                opts.push(',');
+            }
+            push_js_single_quoted_string_to_html_attribute(&mut opts, name);
+            opts.push(':');
+            push_js_single_quoted_string_to_html_attribute(&mut opts, value);
+        }
+        opts.push('}');
+    }
+    if let Some(open_when_hidden) = options.open_when_hidden {
+        push_option_name(&mut opts, "openWhenHidden");
+        opts.push_str(if open_when_hidden { "true" } else { "false" });
+    }
+    if let Some(cancellation) = options.request_cancellation {
+        push_option_name(&mut opts, "requestCancellation");
+        push_js_single_quoted_string_to_html_attribute(&mut opts, cancellation.as_str());
+    }
+    if let Some(retry) = options.retry {
+        push_option_name(&mut opts, "retry");
+        push_js_single_quoted_string_to_html_attribute(&mut opts, retry.as_str());
+    }
+    for (name, value) in [
+        (
+            "retryInterval",
+            options.retry_interval.map(|v| v.to_string()),
+        ),
+        ("retryScaler", options.retry_scaler.map(|v| v.to_string())),
+        (
+            "retryMaxWait",
+            options.retry_max_wait.map(|v| v.to_string()),
+        ),
+        (
+            "retryMaxCount",
+            options.retry_max_count.map(|v| v.to_string()),
+        ),
+    ] {
+        if let Some(value) = value {
+            push_option_name(&mut opts, name);
+            opts.push_str(&value);
+        }
+    }
+
+    let s = buffer.dangerously_get_string();
     s.push('@');
     s.push_str(method);
     s.push('(');
     push_js_single_quoted_string_to_html_attribute(s, path);
-    if form
-        || options.selector.is_some()
-        || options.retry.is_some()
-        || options.retry_interval.is_some()
-        || options.retry_scaler.is_some()
-        || options.retry_max_wait.is_some()
-        || options.retry_max_count.is_some()
-    {
+    if !opts.is_empty() {
         s.push_str(",{");
-        let mut separator = false;
-        if form {
-            push_action_option_separator(s, &mut separator);
-            s.push_str("contentType:'form'");
-        }
-        if let Some(form_selector) = &options.selector {
-            push_action_option_separator(s, &mut separator);
-            s.push_str("selector:");
-            push_js_single_quoted_string_to_html_attribute(s, form_selector);
-        }
-        if let Some(retry) = options.retry {
-            push_action_option_separator(s, &mut separator);
-            s.push_str("retry:");
-            push_js_single_quoted_string_to_html_attribute(s, retry.as_str());
-        }
-        if let Some(retry_interval) = options.retry_interval {
-            push_action_option_separator(s, &mut separator);
-            s.push_str("retryInterval:");
-            s.push_str(&retry_interval.to_string());
-        }
-        if let Some(retry_scaler) = options.retry_scaler {
-            push_action_option_separator(s, &mut separator);
-            s.push_str("retryScaler:");
-            s.push_str(&retry_scaler.to_string());
-        }
-        if let Some(retry_max_wait) = options.retry_max_wait {
-            push_action_option_separator(s, &mut separator);
-            s.push_str("retryMaxWait:");
-            s.push_str(&retry_max_wait.to_string());
-        }
-        if let Some(retry_max_count) = options.retry_max_count {
-            push_action_option_separator(s, &mut separator);
-            s.push_str("retryMaxCount:");
-            s.push_str(&retry_max_count.to_string());
-        }
+        s.push_str(&opts);
         s.push('}');
     }
     s.push(')');

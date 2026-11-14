@@ -44,6 +44,7 @@ fn assets_headers(content_type: &'static str) -> HeaderMap {
 }
 
 const DATASTAR_ENTRY_MODULE: &str = "cheers/datastar-entry";
+const FORM_SUBMIT_WARNING_MODULE: &str = "cheers/form-submit-warning";
 const RUNTIME_ENTRY_MODULE: &str = "cheers/runtime-entry";
 const SSR_STREAM_MODULE: &str = "cheers/ssr-stream";
 const SSR_STREAM_SUBSECOND_MODULE: &str = "cheers/ssr-stream-subsecond";
@@ -59,6 +60,9 @@ fn runtime_entry(track: bool) -> String {
     if include_subsecond_stream_runtime() {
         entry.push_str("import './ssr-stream-subsecond';\n");
     }
+    if cfg!(debug_assertions) {
+        entry.push_str("import './form-submit-warning';\n");
+    }
     if track {
         entry.push_str("import './track-plugin';\n");
     }
@@ -72,6 +76,13 @@ fn datastar_modules(track: Option<&TrackConfig>) -> Result<Vec<bundle::VirtualMo
         bundle::VirtualModule::new(DATASTAR_ENTRY_MODULE, include_str!("datastar-entry.ts")),
         bundle::VirtualModule::new(SSR_STREAM_MODULE, include_str!("ssr-stream.ts")),
     ];
+
+    if cfg!(debug_assertions) {
+        modules.push(bundle::VirtualModule::new(
+            FORM_SUBMIT_WARNING_MODULE,
+            include_str!("form-submit-warning.ts"),
+        ));
+    }
 
     if include_subsecond_stream_runtime() {
         modules.push(bundle::VirtualModule::new(
@@ -866,6 +877,16 @@ mod tests {
                 .iter()
                 .any(|module| module.specifier == SSR_STREAM_SUBSECOND_MODULE),
             include_subsecond_stream_runtime()
+        );
+        assert_eq!(
+            runtime_entry.content.contains("./form-submit-warning"),
+            cfg!(debug_assertions)
+        );
+        assert_eq!(
+            modules
+                .iter()
+                .any(|module| module.specifier == FORM_SUBMIT_WARNING_MODULE),
+            cfg!(debug_assertions)
         );
         assert!(!runtime_entry.content.contains("./track-plugin"));
         assert!(

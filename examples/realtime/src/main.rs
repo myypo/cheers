@@ -709,4 +709,186 @@ window.setTimeout = (callback, delay, ...args) =>
         .await
         .expect("wait for datastar in browser");
     }
+
+    #[action(POST)]
+    async fn tag_request(headers: axum::http::HeaderMap) -> PatchElements {
+        let text = match headers.get("x-trigger").map(|value| value.to_str()) {
+            Some(Ok("save")) => "tagged save",
+            _ => "untagged",
+        };
+        PatchElements::new().element(Note { id: 3, text })
+    }
+
+    #[tokio::test]
+    async fn action_options_reach_the_request() {
+        let ctx = Ctx {
+            stocks: Box::leak(Box::new(Mutex::new(BTreeMap::new()))),
+            stocks_tx: tokio::sync::broadcast::channel(1).0,
+        };
+
+        let app = cheers::router::new(
+            Router::new()
+                .route(
+                    "/",
+                    get(|| async {
+                        let tag = TagRequestAction.options(
+                            ActionOptions::new()
+                                .header("X-Trigger", "save")
+                                .open_when_hidden(true)
+                                .request_cancellation(ActionCancellation::Cleanup),
+                        );
+                        html! {
+                            Base {
+                                Note id=3 text="waiting";
+                                button type="button" !on:click(tag) { "Tag" }
+                            }
+                        }
+                    }),
+                )
+                .action::<TagRequestAction>(),
+            cheers::router::Config::default(),
+        )
+        .expect("create app")
+        .with_state(ctx);
+
+        cheers::test::App::new(app)
+            .await
+            .unwrap()
+            .run(|app| async move {
+                app.goto(app.url("/")).await?;
+                app.query(By::XPath("//button[text()='Tag']"))
+                    .and_clickable()
+                    .first()
+                    .await?
+                    .click()
+                    .await?;
+                app.query(By::Id(Note::id(3).to_string()))
+                    .with_text("tagged save".match_full())
+                    .first()
+                    .await?;
+                Ok(())
+            })
+            .await
+            .expect("send the action's header");
+    }
+
+    #[action(POST)]
+    async fn search(axum::Form(_): axum::Form<BTreeMap<String, String>>) -> PatchElements {
+        PatchElements::new().element(Note {
+            id: 4,
+            text: "searched",
+        })
+    }
+
+    /// Keeps `console.warn` calls across the reload a native form submission causes.
+    const RECORD_WARNINGS: &str = "console.warn = (...args) => sessionStorage.setItem(\
+        'warnings', (sessionStorage.getItem('warnings') ?? '') + String(args[0]) + '\\n');";
+
+    async fn recorded_warnings(app: &WebDriver) -> WebDriverResult<String> {
+        app.execute("return sessionStorage.getItem('warnings') ?? '';", vec![])
+            .await?
+            .convert()
+    }
+
+    fn search_app() -> Router {
+        let ctx = Ctx {
+            stocks: Box::leak(Box::new(Mutex::new(BTreeMap::new()))),
+            stocks_tx: tokio::sync::broadcast::channel(1).0,
+        };
+
+        cheers::router::new(
+            Router::new()
+                .route(
+                    "/button",
+                    get(|| async {
+                        html! {
+                            Base {
+                                Note id=4 text="idle";
+                                form {
+                                    input name="q";
+                                    button type="button" !on:click(SearchAction) { "Search" }
+                                }
+                            }
+                        }
+                    }),
+                )
+                .route(
+                    "/submit",
+                    get(|| async {
+                        html! {
+                            Base {
+                                Note id=4 text="idle";
+                                form !on:submit(SearchAction) {
+                                    input name="q";
+                                    button type="button" { "Search" }
+                                }
+                            }
+                        }
+                    }),
+                )
+                .action::<SearchAction>(),
+            cheers::router::Config::default(),
+        )
+        .expect("create app")
+        .with_state(ctx)
+    }
+
+    /// The warning is bundled only in debug builds.
+    #[cfg(debug_assertions)]
+    #[tokio::test]
+    async fn a_native_submission_of_a_form_with_actions_warns() {
+        cheers::test::App::new(search_app())
+            .await
+            .unwrap()
+            .run(|app| async move {
+                app.goto(app.url("/button")).await?;
+                app.execute(RECORD_WARNINGS, vec![]).await?;
+                app.find(By::Css("input[name='q']"))
+                    .await?
+                    .send_keys("ore" + Key::Enter)
+                    .await?;
+
+                let mut warnings = String::new();
+                for _ in 0..50 {
+                    warnings = recorded_warnings(&app).await?;
+                    if !warnings.is_empty() {
+                        break;
+                    }
+                    tokio::time::sleep(Duration::from_millis(100)).await;
+                }
+                assert!(
+                    warnings.contains("submitted natively"),
+                    "expected a warning, got {warnings:?}"
+                );
+                assert_eq!(app.current_url().await?.query(), Some("q=ore"));
+                Ok(())
+            })
+            .await
+            .expect("warn about a native form submission");
+    }
+
+    #[tokio::test]
+    async fn a_form_submitting_through_an_action_does_not_warn() {
+        cheers::test::App::new(search_app())
+            .await
+            .unwrap()
+            .run(|app| async move {
+                app.goto(app.url("/submit")).await?;
+                app.execute(RECORD_WARNINGS, vec![]).await?;
+                app.find(By::Css("input[name='q']"))
+                    .await?
+                    .send_keys("ore" + Key::Enter)
+                    .await?;
+
+                app.query(By::Id(Note::id(4).to_string()))
+                    .with_text("searched".match_full())
+                    .first()
+                    .await?;
+                assert_eq!(recorded_warnings(&app).await?, "");
+                assert_eq!(app.current_url().await?.query(), None);
+                Ok(())
+            })
+            .await
+            .expect("submit through the action without a warning");
+    }
 }

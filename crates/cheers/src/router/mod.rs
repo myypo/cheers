@@ -127,10 +127,38 @@ impl ActionRetry {
     }
 }
 
+/// How a Datastar action request relates to other requests from the same element.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ActionCancellation {
+    /// A new request from the same element aborts the one still running. Datastar's default.
+    Auto,
+    /// Like [`Auto`](Self::Auto), and the request is also aborted when its element is removed,
+    /// such as when a patch morphs it away.
+    Cleanup,
+    /// Requests from the same element run side by side.
+    Disabled,
+}
+
+impl ActionCancellation {
+    pub(crate) fn as_str(self) -> &'static str {
+        match self {
+            Self::Auto => "auto",
+            Self::Cleanup => "cleanup",
+            Self::Disabled => "disabled",
+        }
+    }
+}
+
+/// Request headers Datastar sets itself; overriding them breaks how the response is handled.
+const DATASTAR_HEADERS: [&str; 3] = ["accept", "content-type", "datastar-request"];
+
 /// Options rendered into a Datastar action call.
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct ActionOptions {
     pub(crate) selector: Option<String>,
+    pub(crate) headers: Vec<(String, String)>,
+    pub(crate) open_when_hidden: Option<bool>,
+    pub(crate) request_cancellation: Option<ActionCancellation>,
     pub(crate) retry: Option<ActionRetry>,
     pub(crate) retry_interval: Option<u64>,
     pub(crate) retry_scaler: Option<f64>,
@@ -161,6 +189,51 @@ impl ActionOptions {
         cssparser::serialize_identifier(&id.to_string(), &mut selector)
             .expect("writing CSS identifier to String should not fail");
         self.form_selector(selector)
+    }
+
+    /// Sends a header with the request, replacing an earlier one with the same name.
+    ///
+    /// # Panics
+    ///
+    /// When `name` is not a valid header name or is one Datastar sets itself (`Accept`,
+    /// `Content-Type`, `Datastar-Request`), or when `value` is not a valid header value.
+    #[must_use]
+    pub fn header(mut self, name: impl Into<String>, value: impl Into<String>) -> Self {
+        let (name, value) = (name.into(), value.into());
+        assert!(
+            axum::http::HeaderName::from_bytes(name.as_bytes()).is_ok(),
+            "invalid action header name {name:?}"
+        );
+        assert!(
+            !DATASTAR_HEADERS
+                .iter()
+                .any(|header| header.eq_ignore_ascii_case(&name)),
+            "action header {name:?} is set by Datastar"
+        );
+        assert!(
+            axum::http::HeaderValue::from_str(&value).is_ok(),
+            "invalid value for action header {name:?}"
+        );
+        self.headers
+            .retain(|(existing, _)| !existing.eq_ignore_ascii_case(&name));
+        self.headers.push((name, value));
+        self
+    }
+
+    /// Whether the request stays open while the page is hidden.
+    ///
+    /// By default Datastar closes a `GET` request when the page is hidden and sends it again,
+    /// running the handler again, when the page is shown; requests with other methods stay open.
+    #[must_use]
+    pub fn open_when_hidden(mut self, open: bool) -> Self {
+        self.open_when_hidden = Some(open);
+        self
+    }
+
+    #[must_use]
+    pub fn request_cancellation(mut self, cancellation: ActionCancellation) -> Self {
+        self.request_cancellation = Some(cancellation);
+        self
     }
 
     #[must_use]

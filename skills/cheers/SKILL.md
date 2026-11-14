@@ -231,6 +231,10 @@ Keep backend state authoritative; do not mirror broad backend state into signals
 
 Actions generate `...Action` types. `Path<_>` arguments become action fields/path segments. `Form<_>` or `#[form]` makes the generated action string include form content-type options; do not add those manually. When a form action is triggered outside the form it should serialize, render it with `.options(ActionOptions::new().form_id(GeneratedComponent::id(...)))` for a generated form id or `.options(ActionOptions::new().form_selector("..."))` for an explicit CSS selector.
 
+Other `ActionOptions`: `.open_when_hidden(true)` keeps a `GET` stream open while the tab is hidden (by default Datastar closes it and sends the request again, rerunning the handler, when the tab is shown); `.request_cancellation(ActionCancellation::Cleanup)` also aborts the request when its element is removed; `.header(name, value)` adds a request header. Cancellation only aborts the request in the browser; to stop double submits, disable the trigger with `!indicator` or deduplicate on the server.
+
+A form's native submission is only blocked by `!on:submit(...)` on the form or by an action started from a click inside it. Pressing Enter in a form whose button is `type="button"` submits it natively as a `GET` to the current URL; put the action on the form with `!on:submit` instead. Debug builds log a console warning when a form with actions inside submits natively.
+
 When adding a field to a generated form, keep the `#[form(...)]` declaration, `self.form_names()` destructuring, input `name=...` attributes, and handler `Form<GeneratedForm>` type in sync.
 
 ```rust
