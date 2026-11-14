@@ -281,6 +281,18 @@ mod tests {
         );
     }
 
+    #[test]
+    fn track_action_keeps_datastar_action_syntax_literal() {
+        let rendered = TrackAction(serde_json::json!({ "tag": "user@team(eng)" }))
+            .render()
+            .into_inner();
+
+        assert_eq!(
+            rendered,
+            "@track({&quot;tag&quot;:&quot;user\\u0040team(eng)&quot;})"
+        );
+    }
+
     #[tokio::test]
     async fn track_request_extracts_batch_and_headers() {
         async fn handler(track: TrackRequest<()>) -> impl IntoResponse {

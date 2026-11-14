@@ -709,4 +709,286 @@ window.setTimeout = (callback, delay, ...args) =>
         .await
         .expect("wait for datastar in browser");
     }
+
+    #[action(POST)]
+    async fn tag_request(headers: axum::http::HeaderMap) -> PatchElements {
+        let text = match headers.get("x-trigger").map(|value| value.to_str()) {
+            Some(Ok("save")) => "tagged save",
+            _ => "untagged",
+        };
+        PatchElements::new().element(Note { id: 3, text })
+    }
+
+    #[tokio::test]
+    async fn action_options_reach_the_request() {
+        let ctx = Ctx {
+            stocks: Box::leak(Box::new(Mutex::new(BTreeMap::new()))),
+            stocks_tx: tokio::sync::broadcast::channel(1).0,
+        };
+
+        let app = cheers::router::new(
+            Router::new()
+                .route(
+                    "/",
+                    get(|| async {
+                        let tag = TagRequestAction.options(
+                            ActionOptions::new()
+                                .header("X-Trigger", "save")
+                                .open_when_hidden(true)
+                                .request_cancellation(ActionCancellation::Cleanup),
+                        );
+                        html! {
+                            Base {
+                                Note id=3 text="waiting";
+                                button type="button" !on:click(tag) { "Tag" }
+                            }
+                        }
+                    }),
+                )
+                .action::<TagRequestAction>(),
+            cheers::router::Config::default(),
+        )
+        .expect("create app")
+        .with_state(ctx);
+
+        cheers::test::App::new(app)
+            .await
+            .unwrap()
+            .run(|app| async move {
+                app.goto(app.url("/")).await?;
+                app.query(By::XPath("//button[text()='Tag']"))
+                    .and_clickable()
+                    .first()
+                    .await?
+                    .click()
+                    .await?;
+                app.query(By::Id(Note::id(3).to_string()))
+                    .with_text("tagged save".match_full())
+                    .first()
+                    .await?;
+                Ok(())
+            })
+            .await
+            .expect("send the action's header");
+    }
+
+    #[action(POST)]
+    async fn search(axum::Form(_): axum::Form<BTreeMap<String, String>>) -> PatchElements {
+        PatchElements::new().element(Note {
+            id: 4,
+            text: "searched",
+        })
+    }
+
+    /// Records the index among `document.forms` of each form the runtime warns about.
+    const RECORD_FORM_WARNINGS: &str = "window.__formWarnings = []; const warn = console.warn; \
+        console.warn = (...args) => { \
+            if (String(args[0]).startsWith('cheers: this form')) \
+                window.__formWarnings.push(Array.from(document.forms).indexOf(args[1])); \
+            else warn(...args); \
+        };";
+
+    fn search_page(form: impl Render) -> axum::response::Html<String> {
+        axum::response::Html(
+            html! {
+                Base {
+                    Note id=4 text="idle";
+                    (form)
+                }
+            }
+            .render()
+            .into_inner(),
+        )
+    }
+
+    fn search_app() -> Router {
+        let ctx = Ctx {
+            stocks: Box::leak(Box::new(Mutex::new(BTreeMap::new()))),
+            stocks_tx: tokio::sync::broadcast::channel(1).0,
+        };
+        cheers::router::new(
+            Router::new()
+                .route(
+                    "/button",
+                    get(|| async {
+                        search_page(html! {
+                            form {
+                                input name="q";
+                                button type="button" !on:click(SearchAction) { "Search" }
+                            }
+                        })
+                    }),
+                )
+                .route(
+                    "/outside",
+                    get(|| async {
+                        let search =
+                            SearchAction.options(ActionOptions::new().form_id("search-form"));
+                        search_page(html! {
+                            form id="search-form" {
+                                input name="q";
+                            }
+                            button type="button" !on:click(search) { "Search" }
+                        })
+                    }),
+                )
+                .route(
+                    "/second",
+                    get(|| async {
+                        let search = SearchAction
+                            .options(ActionOptions::new().form_selector("form.filters"));
+                        search_page(html! {
+                            form class="filters" {
+                                input name="tag";
+                            }
+                            form class="filters" {
+                                input name="q";
+                            }
+                            button type="button" !on:click(search) { "Search" }
+                        })
+                    }),
+                )
+                .route(
+                    "/patched",
+                    get(|| async {
+                        search_page(html! {
+                            div id="patched" {}
+                            button type="button" !on:click(PatchSearchFormAction) { "Load" }
+                        })
+                    }),
+                )
+                .route(
+                    "/submit",
+                    get(|| async {
+                        search_page(html! {
+                            form !on:submit(SearchAction) {
+                                input name="q";
+                                button type="submit" { "Search" }
+                            }
+                        })
+                    }),
+                )
+                .route(
+                    "/submit-button",
+                    get(|| async {
+                        search_page(html! {
+                            form {
+                                input name="q";
+                                button type="submit" !on:click(SearchAction) { "Search" }
+                            }
+                        })
+                    }),
+                )
+                .route(
+                    "/no-implicit-submission",
+                    get(|| async {
+                        search_page(html! {
+                            form {
+                                input type="checkbox" name="q";
+                                button type="button" !on:click(SearchAction) { "Search" }
+                            }
+                        })
+                    }),
+                )
+                .route(
+                    "/native",
+                    get(|| async {
+                        search_page(html! {
+                            form action="/native" {
+                                input name="q";
+                                button type="button" !on:click(SearchAction) { "Search" }
+                            }
+                        })
+                    }),
+                )
+                .route(
+                    "/unrelated",
+                    get(|| async {
+                        search_page(html! {
+                            Note id=3 text="waiting";
+                            form {
+                                input name="q" !on:input(TagRequestAction);
+                                button type="submit" { "Search" }
+                            }
+                        })
+                    }),
+                )
+                .action::<SearchAction>()
+                .action::<PatchSearchFormAction>()
+                .action::<TagRequestAction>(),
+            cheers::router::Config::default(),
+        )
+        .expect("create app")
+        .with_state(ctx)
+    }
+
+    #[action(POST)]
+    async fn patch_search_form() -> PatchElements {
+        PatchElements::new().element(html! {
+            div id="patched" {
+                form {
+                    input name="q";
+                    button type="button" !on:click(SearchAction) { "Search" }
+                }
+            }
+        })
+    }
+
+    /// Waits two animation frames, after the runtime's check, then returns the forms it warned
+    /// about.
+    async fn form_warnings(app: &WebDriver) -> WebDriverResult<Vec<i64>> {
+        app.execute_async(
+            "const done = arguments[arguments.length - 1]; \
+             requestAnimationFrame(() => requestAnimationFrame(() => done(window.__formWarnings)));",
+            vec![],
+        )
+        .await?
+        .convert()
+    }
+
+    #[tokio::test]
+    async fn debug_builds_warn_about_forms_an_action_submits_outside_on_submit() {
+        cheers::test::App::new(search_app())
+            .await
+            .unwrap()
+            .run(|app| async move {
+                app.cdp()
+                    .page()
+                    .add_script_to_evaluate_on_new_document(RECORD_FORM_WARNINGS)
+                    .await?;
+                for (path, warned) in [
+                    ("/button", &[0][..]),
+                    ("/outside", &[0]),
+                    ("/second", &[0]),
+                    ("/submit", &[]),
+                    ("/submit-button", &[]),
+                    ("/no-implicit-submission", &[]),
+                    ("/native", &[]),
+                    ("/unrelated", &[]),
+                ] {
+                    app.goto(app.url(path)).await?;
+                    let expected = if cfg!(debug_assertions) { warned } else { &[] };
+                    assert_eq!(form_warnings(&app).await?, expected, "{path}");
+                }
+
+                app.goto(app.url("/patched")).await?;
+                assert_eq!(form_warnings(&app).await?, [0; 0]);
+                app.query(By::XPath("//button[text()='Load']"))
+                    .and_clickable()
+                    .first()
+                    .await?
+                    .click()
+                    .await?;
+                app.query(By::Css("#patched form")).first().await?;
+                let expected = if cfg!(debug_assertions) {
+                    &[0][..]
+                } else {
+                    &[]
+                };
+                assert_eq!(form_warnings(&app).await?, expected);
+                Ok(())
+            })
+            .await
+            .expect("warn about forms an action submits outside on:submit");
+    }
 }

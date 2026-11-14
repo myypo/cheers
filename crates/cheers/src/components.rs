@@ -48,6 +48,10 @@ impl Render for Doctype {
 /// `subsecond` feature enabled, that script morphs rebuilt HTML after Subsecond patches instead of
 /// reloading the page.
 ///
+/// In debug builds, the runtime logs a console warning for each form without an `action` attribute
+/// that an action taking a form submits from outside the form's `!on:submit`, such as from a
+/// `type="button"` button, because pressing Enter in it submits it natively and reloads the page.
+///
 /// Include this in pages that use Cheers client-side behaviors such as actions, signals and patching
 ///
 /// # Example

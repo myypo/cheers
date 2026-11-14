@@ -382,8 +382,11 @@ pub fn scoped_signal(tokens: proc_macro::TokenStream) -> proc_macro::TokenStream
 /// handler takes a `Form<_>` argument or an argument marked with `#[form]`. Action options are
 /// configured with `.options(ActionOptions::new().retry(ActionRetry::Never))`, including retry
 /// timing through `.retry_interval(...)`, `.retry_scaler(...)`, `.retry_max_wait(...)`, and
-/// `.retry_max_count(...)`. Form actions can target an explicit form to serialize with
-/// `.form_id(...)` or `.form_selector(...)` on `ActionOptions`.
+/// `.retry_max_count(...)`, request headers through `.header(name, value)`, whether a request stays
+/// open while the page is hidden through `.open_when_hidden(...)`, and how requests from the same
+/// element cancel each other through `.request_cancellation(ActionCancellation::...)`. Form actions
+/// can target an explicit form to serialize with `.form_id(...)` or `.form_selector(...)` on
+/// `ActionOptions`.
 /// Register the generated route explicitly with `Router::action::<...Action>()`.
 ///
 /// # Example
