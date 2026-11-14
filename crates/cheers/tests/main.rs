@@ -2621,6 +2621,80 @@ fn data_signals() {
 }
 
 #[test]
+fn data_signals_merge_signals_sharing_a_root() {
+    #[expect(dead_code)]
+    #[derive(Cheers)]
+    struct Pair {
+        #[signal]
+        a: i32,
+        #[signal]
+        b: i32,
+    }
+
+    #[expect(dead_code)]
+    #[derive(Cheers)]
+    struct Other {
+        #[signal]
+        value: i32,
+    }
+
+    #[expect(dead_code)]
+    #[derive(Cheers)]
+    struct Row {
+        #[id]
+        id: String,
+        #[signal]
+        open: bool,
+        #[signal]
+        loaded: bool,
+    }
+
+    let a = Pair::signal_a();
+    let b = Pair::signal_b();
+    let value = Other::signal_value();
+
+    let interleaved = html! {
+        div !signals((@&a): 1, (@&value): 100, (@&b): 2) {}
+    }
+    .render();
+    assert_eq!(
+        interleaved.as_inner(),
+        r#"<div data-signals="{_pair:{a:1,b:2},_other:{value:100}}"></div>"#
+    );
+
+    let first_open = Row::signal_open("x.y".to_owned());
+    let first_loaded = Row::signal_loaded("x.y".to_owned());
+    let second_open = Row::signal_open("z".to_owned());
+    let dynamic = html! {
+        div !signals(
+            (@&first_open): true,
+            (@&second_open): false,
+            (@&first_loaded): false,
+        ) {}
+    }
+    .render();
+    assert_eq!(
+        dynamic.as_inner(),
+        r#"<div data-signals="{_row:{'x.y':{open:true,loaded:false},z:{open:false}}}"></div>"#
+    );
+}
+
+#[test]
+#[cfg(debug_assertions)]
+#[should_panic(expected = "is assigned together with itself or one of its nested signals")]
+fn data_signals_reject_assigning_a_signal_twice() {
+    #[expect(dead_code)]
+    #[derive(Cheers)]
+    struct Pair {
+        #[signal]
+        a: i32,
+    }
+
+    let a = Pair::signal_a();
+    let _ = html! { div !signals((@&a): 1, (@&a): 2) {} }.render();
+}
+
+#[test]
 fn data_signals_render_vecs_as_js_arrays() {
     #[expect(dead_code)]
     #[derive(Cheers)]
@@ -2914,7 +2988,7 @@ fn signal_computed() {
 
     assert_eq!(
         result,
-        r#"<div><p data-computed="{_input:{c:()=>$_input['a']+$_input['b']}}" data-computed="{_input:{d:()=>$_input['c']- 1}}"></p></div>"#
+        r#"<div><p data-computed="{_input:{c:()=>$_input['a']+$_input['b'],d:()=>$_input['c']- 1}}"></p></div>"#
     )
 }
 

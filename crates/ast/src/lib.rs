@@ -1802,6 +1802,10 @@ impl Data {
     }
 }
 
+fn signal_object_ident() -> Ident {
+    Ident::new("__cheers_signal_object", Span::mixed_site())
+}
+
 impl Generate for Data {
     const CONTEXT: Context = Context::AttributeValue;
 
@@ -1817,31 +1821,31 @@ impl Generate for Data {
             DataContent::Signals(signals) => {
                 g.push_str(" data-");
                 g.push_literals(name_literals);
-                g.push_str("=\"");
-                g.push_str("{");
-                let mut first = true;
+                g.push_str("=\"{");
+
+                let buffer_ident = Generator::buffer_ident();
+                let object_ident = signal_object_ident();
+                g.push_stmt(quote! {
+                    let mut #object_ident = ::cheers::__internal::SignalObject::open(
+                        #buffer_ident.as_datastar_buffer(),
+                    );
+                });
                 for d in signals {
-                    if !first {
-                        g.push_str(",");
-                    } else {
-                        first = false;
-                    }
-
-                    let buffer_ident = Generator::buffer_ident();
-                    let buffer_expr = quote!(#buffer_ident.as_datastar_buffer());
-
                     let ident_ref = d.ident.borrowed_expr(g);
                     let expr = &d.value;
                     g.push_stmt(quote! {
-                        ::cheers::prelude::Signal::__assign(
+                        #object_ident.assign(
                             #ident_ref,
-                            #buffer_expr,
                             #expr,
+                            #buffer_ident.as_datastar_buffer(),
                         );
                     });
                 }
-                g.push_str("}");
-                g.push_str("\"");
+                g.push_stmt(quote! {
+                    #object_ident.close(#buffer_ident.as_datastar_buffer());
+                });
+
+                g.push_str("}\"");
             }
             DataContent::Kv(entries) => {
                 g.push_str(" data-");
@@ -1851,28 +1855,35 @@ impl Generate for Data {
                 g.push_str("\"");
             }
             DataContent::Computed(d) => {
-                for d in d {
-                    g.push_str(" data-");
-                    g.push_literals(name_literals.clone());
-                    g.push_str("=\"");
-                    g.push_str("{");
+                g.push_str(" data-");
+                g.push_literals(name_literals);
+                g.push_str("=\"{");
 
-                    let buffer_ident = Generator::buffer_ident();
-                    let buffer_expr = quote!(#buffer_ident.as_datastar_buffer());
+                let buffer_ident = Generator::buffer_ident();
+                let object_ident = signal_object_ident();
+                g.push_stmt(quote! {
+                    let mut #object_ident = ::cheers::__internal::SignalObject::open(
+                        #buffer_ident.as_datastar_buffer(),
+                    );
+                });
+                for d in d {
                     let ident_ref = d.ident.borrowed_expr(g);
                     g.push_stmt(quote! {
-                        let count = ::cheers::prelude::Signal::__computed_open(
+                        #object_ident.computed_open(
                             #ident_ref,
-                            #buffer_expr
+                            #buffer_ident.as_datastar_buffer(),
                         );
                     });
                     g.push_js_value_node(&mut d.value);
                     g.push_stmt(quote! {
-                        ::cheers::prelude::Signal::__computed_close(count, #buffer_expr);
+                        #object_ident.computed_close(#buffer_ident.as_datastar_buffer());
                     });
-                    g.push_str("}");
-                    g.push_str("\"");
                 }
+                g.push_stmt(quote! {
+                    #object_ident.close(#buffer_ident.as_datastar_buffer());
+                });
+
+                g.push_str("}\"");
             }
             DataContent::Node(attribute_value_node) => {
                 g.push_str(" data-");

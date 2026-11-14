@@ -12,6 +12,7 @@ pub use serde;
 
 pub use crate::{
     datastar_object::__spread, reference::FormComponent, render::__escape_script_body,
+    signal_object::SignalObject,
 };
 
 pub mod action_rendering;

@@ -18,6 +18,7 @@ mod reference;
 mod render;
 mod response;
 pub mod router;
+mod signal_object;
 mod signal_path;
 pub mod subsecond;
 #[cfg(feature = "test")]
