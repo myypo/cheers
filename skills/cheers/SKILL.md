@@ -231,9 +231,7 @@ Keep backend state authoritative; do not mirror broad backend state into signals
 
 Actions generate `...Action` types. `Path<_>` arguments become action fields/path segments. `Form<_>` or `#[form]` makes the generated action string include form content-type options; do not add those manually. When a form action is triggered outside the form it should serialize, render it with `.options(ActionOptions::new().form_id(GeneratedComponent::id(...)))` for a generated form id or `.options(ActionOptions::new().form_selector("..."))` for an explicit CSS selector.
 
-Other `ActionOptions`: `.open_when_hidden(true)` keeps a `GET` stream open while the tab is hidden (by default Datastar closes it and sends the request again, rerunning the handler, when the tab is shown); `.request_cancellation(ActionCancellation::Cleanup)` also aborts the request when its element is removed; `.header(name, value)` adds a request header. Cancellation only aborts the request in the browser; to stop double submits, disable the trigger with `!indicator` or deduplicate on the server.
-
-A form's native submission is only blocked by `!on:submit(...)` on the form or by an action started from a click inside it. Pressing Enter in a form whose button is `type="button"` submits it natively as a `GET` to the current URL; put the action on the form with `!on:submit` instead. Debug builds log a console warning when a form with actions inside submits natively.
+Put a form's action on the form with `!on:submit`, not on a `type="button"` button inside it: pressing Enter submits the form natively and reloads the page.
 
 When adding a field to a generated form, keep the `#[form(...)]` declaration, `self.form_names()` destructuring, input `name=...` attributes, and handler `Form<GeneratedForm>` type in sync.
 
@@ -253,7 +251,7 @@ html! {
 - `PatchSignals`: `.set(signal, value)`, `.remove(signal)`, `.only_if_missing()` for small values already read by the page.
 - `EventBatch`: return `EventBatch::new().with(...)` for several `PatchElements`, `PatchSignals`, or `ExecuteScript` in one response; `push`/`extend` for conditional or looped events.
 - Navigation from an action: return axum's `Redirect::to(url)`; `cheers::router::new` turns a redirect answering a Datastar request into a real browser navigation, including to another origin. Do not hand-write a `location.assign` script for it. When a layer added to the router `cheers::router::new` returns can redirect, such as an auth guard, also apply `from_fn(cheers::router::datastar_redirect)` as the outermost layer.
-- `EventStream`: long-lived server push; the response ends when its source ends. `EventStream::from_stream(stream)` forwards an existing `Stream` of events. `EventStream::spawn(|tx| async move { tx.send(..)?; Ok::<_, SendError>(()) })` runs a task that is cancelled when the client disconnects; prefer it over `tokio::spawn` + `select!` on `tx.closed()`. `EventStream::channel()` only when several tasks or a server-wide hub hold senders. Do not use it to batch events a handler computes before returning; use `EventBatch`.
+- `EventStream`: long-lived server push; the response ends when its source ends. `GET` streams close while the tab is hidden and rerun the handler when it is shown; use `.options(ActionOptions::new().open_when_hidden(true))` to keep them open. `EventStream::from_stream(stream)` forwards an existing `Stream` of events. `EventStream::spawn(|tx| async move { tx.send(..)?; Ok::<_, SendError>(()) })` runs a task that is cancelled when the client disconnects; prefer it over `tokio::spawn` + `select!` on `tx.closed()`. `EventStream::channel()` only when several tasks or a server-wide hub hold senders. Do not use it to batch events a handler computes before returning; use `EventBatch`.
 
 # Testing
 
