@@ -525,6 +525,8 @@ impl Generate for Element {
 
         // `initially` renders as an inline `display` and an element has only one `style`, so the
         // two are written together here — the only place that sees both.
+        self.merge_signal_object_attributes();
+
         let initially = self.show_initially();
         let mut merged_into_style = false;
 
@@ -619,6 +621,43 @@ impl Element {
                 if attr_name.literals().into_iter().map(|l| l.value()).collect::<String>() == name
             )
         })
+    }
+
+    /// Folds repeated `!signals(...)` / `!computed(...)` attributes with the same name into the
+    /// first one, since a browser keeps only the first of repeated HTML attributes.
+    fn merge_signal_object_attributes(&mut self) {
+        let mut first = 0;
+        while first < self.attrs.len() {
+            let Some(name) = self.attrs[first].signal_object_name() else {
+                first += 1;
+                continue;
+            };
+
+            let mut later = first + 1;
+            while later < self.attrs.len() {
+                if self.attrs[later].signal_object_name().as_ref() != Some(&name) {
+                    later += 1;
+                    continue;
+                }
+
+                let Attribute::Data { data: from, .. } = self.attrs.remove(later) else {
+                    continue;
+                };
+                if let Attribute::Data { data: into, .. } = &mut self.attrs[first] {
+                    match (&mut into.content, from.content) {
+                        (DataContent::Signals(into), DataContent::Signals(from)) => {
+                            into.extend(from);
+                        }
+                        (DataContent::Computed(into), DataContent::Computed(from)) => {
+                            into.extend(from);
+                        }
+                        _ => {}
+                    }
+                }
+            }
+
+            first += 1;
+        }
     }
 
     /// The `initially` expression of this element's `!show`, if it has one.
@@ -741,6 +780,22 @@ impl SyntaxStatic for Attribute {
 }
 
 impl Attribute {
+    /// The full attribute name of a `!signals(...)` / `!computed(...)` that parsed cleanly.
+    fn signal_object_name(&self) -> Option<String> {
+        let Self::Data { data, .. } = self else {
+            return None;
+        };
+        if data.recovery_error.is_some()
+            || !matches!(
+                data.content,
+                DataContent::Signals(_) | DataContent::Computed(_)
+            )
+        {
+            return None;
+        }
+        Some(data.name_literals().iter().map(LitStr::value).collect())
+    }
+
     /// The plain `style="..."` / `style=(expr)` that `!show` appends to. Conditional forms are
     /// rejected by [`Element::show_style_error`].
     fn style_value_mut(&mut self) -> Option<(&AttributeName, &mut AttributeValueNode)> {
@@ -1854,6 +1909,7 @@ impl Generate for Data {
                 generate_kv_object(g, entries);
                 g.push_str("\"");
             }
+            DataContent::Computed(d) if d.is_empty() => {}
             DataContent::Computed(d) => {
                 g.push_str(" data-");
                 g.push_literals(name_literals);

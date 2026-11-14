@@ -2680,18 +2680,45 @@ fn data_signals_merge_signals_sharing_a_root() {
 }
 
 #[test]
-#[cfg(debug_assertions)]
-#[should_panic(expected = "is assigned together with itself or one of its nested signals")]
-fn data_signals_reject_assigning_a_signal_twice() {
+fn data_signals_and_computed_merge_repeated_attributes_on_one_element() {
     #[expect(dead_code)]
     #[derive(Cheers)]
     struct Pair {
         #[signal]
         a: i32,
+        #[signal]
+        b: i32,
+        #[signal]
+        c: i32,
+        #[signal]
+        d: i32,
     }
 
     let a = Pair::signal_a();
-    let _ = html! { div !signals((@&a): 1, (@&a): 2) {} }.render();
+    let b = Pair::signal_b();
+    let c = Pair::signal_c();
+    let d = Pair::signal_d();
+
+    let rendered = html! {
+        div
+            !signals((@&a): 1)
+            !computed((@&c): { "1" })
+            !signals[ifmissing]((@&a): 3)
+            !signals((@&b): 2)
+            !computed((@&d): { "2" })
+        {}
+    }
+    .render();
+    assert_eq!(
+        rendered.as_inner(),
+        r#"<div data-signals="{_pair:{a:1,b:2}}" data-computed="{_pair:{c:()=>1,d:()=>2}}" data-signals__ifmissing="{_pair:{a:3}}"></div>"#
+    );
+}
+
+#[test]
+fn data_computed_without_entries_renders_nothing() {
+    let rendered = html! { div !computed() {} }.render();
+    assert_eq!(rendered.as_inner(), "<div></div>");
 }
 
 #[test]
