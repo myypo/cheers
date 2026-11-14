@@ -3382,6 +3382,149 @@ fn script_body_in_svg_stays_markup() {
 }
 
 #[test]
+fn style_body_literals_are_raw_css() {
+    let rendered = html! {
+        style { ".nav > a:hover, .card & .title { content: '&amp;\"'; }" }
+    }
+    .render()
+    .into_inner();
+
+    assert_eq!(
+        rendered,
+        "<style>.nav > a:hover, .card & .title { content: '&amp;\"'; }</style>"
+    );
+}
+
+#[test]
+fn style_body_literals_cannot_close_style_element() {
+    let rendered = html! {
+        style { "a::after { content: '</STYLE><img>'; }" "b::after { content: '</sty" "le>'; }" }
+    }
+    .render()
+    .into_inner();
+
+    assert_eq!(
+        rendered,
+        "<style>a::after { content: '<\\/STYLE><img>'; }b::after { content: '<\\/style>'; }</style>"
+    );
+}
+
+#[test]
+fn style_body_cannot_close_an_enclosing_raw_text_element() {
+    // XSS SAFETY: the test checks that the style body escapes this
+    let css = RawStyle::dangerously_create("a{}</noscript><img src=x onerror=alert(1)>");
+
+    let rendered = html! {
+        noscript { style { (css) "b{background:url(a</*c*/)}" } }
+    }
+    .render()
+    .into_inner();
+
+    assert_eq!(
+        rendered,
+        "<noscript><style>a{}<\\/noscript><img src=x onerror=alert(1)>\
+         b{background:url(a</*c*/)}</style></noscript>"
+    );
+}
+
+#[test]
+fn style_body_cannot_close_style_element_across_dynamic_parts() {
+    let ready = true;
+    // XSS SAFETY: the test checks that the style body escapes this
+    let tail = RawStyle::dangerously_create("yle>");
+
+    let rendered = [
+        html! { style { "</st" @let _x = 1; "yle>" } }.render(),
+        html! { style { "<" @if ready { "/style>" } } }.render(),
+        html! { style { "</st" (tail) } }.render(),
+    ]
+    .map(|rendered| rendered.into_inner());
+
+    assert_eq!(
+        rendered,
+        [
+            "<style><\\/style></style>",
+            "<style><\\/style></style>",
+            "<style><\\/style></style>",
+        ]
+    );
+}
+
+proptest::proptest! {
+    #[test]
+    fn style_body_cannot_close_style_element(
+        pieces in proptest::collection::vec(
+            proptest::sample::select(vec!["<", "/", "style", "STYLE", "</", "</st", "noscript", "*", "x"]),
+            0..16,
+        ),
+    ) {
+        let body_pieces = pieces.clone();
+        let rendered = html! {
+            style {
+                @for piece in &body_pieces {
+                    // XSS SAFETY: the test checks that the style body escapes these
+                    (RawStyle::dangerously_create(*piece))
+                }
+            }
+        }
+        .render()
+        .into_inner();
+
+        let body = rendered
+            .strip_prefix("<style>")
+            .and_then(|html| html.strip_suffix("</style>"))
+            .expect("a style element")
+            .to_ascii_lowercase();
+        let opens_end_tag = body
+            .as_bytes()
+            .windows(3)
+            .any(|w| w[0] == b'<' && w[1] == b'/' && w[2].is_ascii_alphabetic());
+        proptest::prop_assert!(!opens_end_tag, "{pieces:?} -> {rendered:?}");
+    }
+}
+
+#[test]
+fn style_body_interpolates_css_values() {
+    #[derive(Cheers)]
+    struct Card {
+        #[id]
+        id: i32,
+    }
+
+    let CardIds { id } = Card { id: 7 }.ids();
+    let class = "1st card</style>";
+    let label = "a\"b\\c</style>\n";
+    let width = 12.5;
+    let columns = 3_usize;
+
+    let rendered = html! {
+        style {
+            "#" (id) " ." (CssIdent(class)) "::before { content: " (CssString(label)) "; }"
+            ".grid { width: " (width) "rem; columns: " (columns) "; }"
+        }
+    }
+    .render()
+    .into_inner();
+
+    assert_eq!(
+        rendered,
+        "<style>#card-7 .\\31 st\\ card\\<\\/style\\>::before { content: \"a\\\"b\\\\c\\3c /style>\\a \"; }\
+         .grid { width: 12.5rem; columns: 3; }</style>"
+    );
+}
+
+#[test]
+fn style_body_in_svg_stays_markup() {
+    let rendered = html! {
+        svg { style { "a > b {}" } }
+    }
+    .render()
+    .into_inner();
+
+    assert_eq!(rendered, "<svg><style>a &gt; b {}</style></svg>");
+}
+
+#[test]
 fn signal_id() {
     #[derive(Cheers)]
     #[expect(dead_code)]
@@ -4050,6 +4193,124 @@ fn action_options_render_retry_timing_options() {
         result.as_inner(),
         r#"@get('/cheers/actions/my_handler',{retry:'error',retryInterval:250,retryScaler:1.5,retryMaxWait:4000,retryMaxCount:3})"#
     );
+}
+
+#[test]
+fn action_options_render_headers_visibility_and_cancellation() {
+    #[action(POST)]
+    async fn my_handler(_: Form<String>) {}
+
+    let result = MyHandlerAction {}
+        .options(
+            ActionOptions::new()
+                .retry(ActionRetry::Never)
+                .request_cancellation(ActionCancellation::Cleanup)
+                .open_when_hidden(false)
+                .header("X-Trigger", "it's \"here\"")
+                .header("X-Other", "1")
+                .header("x-trigger", "save"),
+        )
+        .render();
+
+    assert_eq!(
+        result.as_inner(),
+        r#"@post('/cheers/actions/my_handler',{contentType:'form',headers:{'X-Other':'1','x-trigger':'save'},openWhenHidden:false,requestCancellation:'cleanup',retry:'never'})"#
+    );
+}
+
+#[test]
+fn action_options_render_every_cancellation() {
+    #[action(GET)]
+    async fn my_handler() {}
+
+    for (cancellation, rendered) in [
+        (ActionCancellation::Auto, "auto"),
+        (ActionCancellation::Cleanup, "cleanup"),
+        (ActionCancellation::Disabled, "disabled"),
+    ] {
+        let result = MyHandlerAction {}
+            .options(
+                ActionOptions::new()
+                    .open_when_hidden(true)
+                    .request_cancellation(cancellation),
+            )
+            .render();
+        assert_eq!(
+            *result.as_inner(),
+            format!(
+                "@get('/cheers/actions/my_handler',{{openWhenHidden:true,requestCancellation:'{rendered}'}})"
+            )
+        );
+    }
+}
+
+#[test]
+fn action_option_header_values_are_escaped_for_the_attribute() {
+    #[action(GET)]
+    async fn my_handler() {}
+
+    let result = MyHandlerAction {}
+        .options(ActionOptions::new().header("X-Note", "</script>'\\"))
+        .render();
+
+    assert_eq!(
+        result.as_inner(),
+        r#"@get('/cheers/actions/my_handler',{headers:{'X-Note':'&lt;/script&gt;\'\\'}})"#
+    );
+}
+
+#[test]
+fn action_option_header_values_keep_datastar_action_syntax_literal() {
+    #[action(GET)]
+    async fn my_handler() {}
+
+    let result = MyHandlerAction {}
+        .options(ActionOptions::new().header("X-Tag", "user@team(eng)"))
+        .render();
+
+    assert_eq!(
+        result.as_inner(),
+        r#"@get('/cheers/actions/my_handler',{headers:{'X-Tag':'user\x40team(eng)'}})"#
+    );
+}
+
+#[test]
+#[should_panic(expected = "is set by Datastar")]
+fn action_option_header_rejects_datastar_headers() {
+    let _ = ActionOptions::new().header("Datastar-Request", "false");
+}
+
+#[test]
+fn action_option_header_rejects_headers_browsers_drop() {
+    for (name, value) in [
+        ("Cookie", "1"),
+        ("origin", "1"),
+        ("Sec-Fetch-Site", "1"),
+        ("Proxy-Authorization", "1"),
+        ("X-HTTP-Method", "trace"),
+        ("X-HTTP-Method-Override", "GET, CONNECT"),
+    ] {
+        let result = std::panic::catch_unwind(|| ActionOptions::new().header(name, value));
+        assert!(result.is_err(), "{name}: {value} should be rejected");
+    }
+    let _ = ActionOptions::new().header("X-HTTP-Method-Override", "PATCH");
+}
+
+#[test]
+fn action_option_header_rejects_invalid_names() {
+    for name in ["X Bad", "__proto__", ""] {
+        let result = std::panic::catch_unwind(|| ActionOptions::new().header(name, "1"));
+        assert!(result.is_err(), "{name:?} should be rejected");
+    }
+}
+
+#[test]
+fn action_option_header_rejects_values_browsers_change() {
+    for value in ["a\nb", "東京", "José", " padded", "padded ", "tab\there"] {
+        let result = std::panic::catch_unwind(|| ActionOptions::new().header("X-Value", value));
+        assert!(result.is_err(), "{value:?} should be rejected");
+    }
+    let _ = ActionOptions::new().header("X-Value", "inner space, \"quotes\" and <tags>");
 }
 
 #[test]

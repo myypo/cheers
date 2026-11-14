@@ -1,0 +1,11 @@
+error: expected one of: string literal, integer literal, boolean literal, floating point literal, character literal, curly braces, `@`, parentheses, identifier
+ --> tests/ui/data_attribute_nested_group_error.rs:6:30
+  |
+6 |         div !attr("k": { "a" ...x }) {}
+  |                              ^
+
+error: expected one of: `let`, `if`, `for`, `while`, `match`, `async`
+ --> tests/ui/data_attribute_nested_group_error.rs:7:33
+  |
+7 |         button !on:click({ "a" @@ }) {}
+  |                                 ^

@@ -1,0 +1,17 @@
+error: HTML markup cannot appear in a `style` body. Write the CSS as string literals and `(values)`.
+  --> tests/ui/markup_in_style.rs:16:13
+   |
+16 |             b { "bold" }
+   |             ^
+
+error: HTML markup cannot appear in a `style` body. Write the CSS as string literals and `(values)`.
+  --> tests/ui/markup_in_style.rs:17:13
+   |
+17 |             Greeting;
+   |             ^^^^^^^^
+
+error: `@async` streams HTML, so it cannot appear in attribute values, JavaScript source (a `script` body or `js_script!`) or a `style` body.
+  --> tests/ui/markup_in_style.rs:18:14
+   |
+18 |             @async {
+   |              ^^^^^

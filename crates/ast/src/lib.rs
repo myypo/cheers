@@ -9,13 +9,13 @@ mod validation;
 use std::marker::PhantomData;
 
 pub use basics::UnquotedName;
-use proc_macro2::{Span, TokenStream};
+use proc_macro2::{Delimiter, Span, TokenStream, TokenTree};
 use quote::{ToTokens, quote, quote_spanned};
 use syn::{
     Error, Expr, Ident, LitBool, LitChar, LitFloat, LitInt, LitStr, Token, braced, bracketed,
     ext::IdentExt,
     parenthesized,
-    parse::{Parse, ParseStream},
+    parse::{Parse, ParseStream, Parser},
     punctuated::Punctuated,
     token::{Brace, Bracket, Paren},
 };
@@ -30,7 +30,7 @@ use self::{
         Generator, NodeFlavour,
     },
 };
-use crate::generate::Context;
+use crate::generate::{Context, RawText};
 
 pub type Document = Nodes<ElementNode>;
 
@@ -134,10 +134,12 @@ impl Generate for ElementNode {
     const CONTEXT: Context = Context::Element;
 
     fn generate(&mut self, g: &mut Generator<'_>) {
+        if let (Self::Element(_) | Self::Component(_), Some(kind)) = (&*self, g.raw_text()) {
+            g.push_markup_in_raw_text_error(kind, control::element_node_span(self));
+            return;
+        }
+
         match self {
-            node @ (Self::Element(_) | Self::Component(_)) if g.in_script_source() => {
-                g.push_markup_in_script_error(control::element_node_span(node), "HTML markup");
-            }
             Self::Element(element) => g.push(element),
             Self::Component(component) => g.push(component),
             Self::Literal(lit) => g.push_escaped_literal(Self::CONTEXT, &lit.lit_str()),
@@ -557,9 +559,17 @@ impl Generate for Element {
             });
         }
 
-        let script_body_is_javascript = flavour == NodeFlavour::Html
-            && self.name.name() == "script"
-            && self.script_body_is_javascript();
+        // The HTML parser reads these bodies as raw text up to the end tag, and decodes no
+        // character references there.
+        let raw_text = if flavour != NodeFlavour::Html {
+            None
+        } else if self.name.name() == "script" && self.script_body_is_javascript() {
+            Some(RawText::Script)
+        } else if self.name.name() == "style" {
+            Some(RawText::Style)
+        } else {
+            None
+        };
 
         match &mut self.body {
             ElementBody::Normal { children, .. } => {
@@ -568,14 +578,14 @@ impl Generate for Element {
                 let child_flavour = flavour.child_flavour(&self.name);
                 if child_flavour != flavour {
                     g.push_with_flavour(child_flavour, |g| g.push(children));
-                } else if script_body_is_javascript && !g.has_context_override() {
-                    // The HTML parser reads a `<script>` body as raw text up to `</script`, and
-                    // decodes no character references there.
+                } else if let Some(kind) = raw_text
+                    && !g.has_context_override()
+                {
                     if children.is_static() {
-                        g.with_context_override(Context::ScriptSource, |g| g.push(children));
+                        g.with_context_override(kind.context(), |g| g.push(children));
                     } else {
-                        g.push_runtime_escaped_script(|g| {
-                            g.with_context_override(Context::ScriptSource, |g| g.push(children));
+                        g.push_runtime_escaped_raw_text(kind, |g| {
+                            g.with_context_override(kind.context(), |g| g.push(children));
                         });
                     }
                 } else {
@@ -1781,30 +1791,42 @@ impl Parse for Data {
             });
         }
 
-        let data;
-        let paren_token = parenthesized!(data in input);
+        let group = input.step(|cursor| {
+            // `peek(Paren)` looks through invisible groups (from `macro_rules!` fragments).
+            let mut rest = *cursor;
+            while let Some((inner, Delimiter::None, _, _)) = rest.any_group() {
+                rest = inner;
+            }
+            match rest.token_tree() {
+                Some((TokenTree::Group(group), rest))
+                    if group.delimiter() == Delimiter::Parenthesis =>
+                {
+                    Ok((group, rest))
+                }
+                _ => Err(cursor.error("expected parentheses")),
+            }
+        })?;
+        let paren_token = Paren {
+            span: group.delim_span(),
+        };
 
-        if recovery_error.is_some() {
-            // syn reports leftover tokens in `data` instead of `recovery_error` unless consumed.
-            data.parse::<TokenStream>()?;
-            return Ok(Self {
-                namespace,
-                name,
-                paren_token: Some(paren_token),
-                modifiers,
-                content: DataContent::Recovered,
-                recovery_error,
-            });
-        }
-
-        let parse_kind = DataParseKind::new(name.ident());
-        let content = match parse_kind.parse_content(&data) {
-            Ok(content) => content,
-            Err(err) => {
-                // syn reports leftover tokens in `data` instead of `err` unless they are consumed.
-                data.parse::<TokenStream>()?;
-                recovery_error = Some(err);
-                DataContent::Recovered
+        let content = if recovery_error.is_some() {
+            DataContent::Recovered
+        } else {
+            let parse_kind = DataParseKind::new(name.ident());
+            let parse_group = |input: ParseStream| {
+                let data;
+                parenthesized!(data in input);
+                parse_kind.parse_content(&data)
+            };
+            // syn shares one unexpected-token cell across all nested buffers of `input`, so a
+            // half-parsed inner group would fail the whole macro; `parse2` gets a fresh cell.
+            match parse_group.parse2(TokenTree::Group(group).into()) {
+                Ok(content) => content,
+                Err(err) => {
+                    recovery_error = Some(err);
+                    DataContent::Recovered
+                }
             }
         };
 
@@ -1985,6 +2007,8 @@ impl Generate for Data {
 
 #[cfg(test)]
 mod tests {
+    use proc_macro2::Delimiter;
+    use quote::quote;
     use syn::parse_str;
 
     use super::{
@@ -2086,6 +2110,50 @@ mod tests {
         assert!(matches!(data.content, DataContent::Recovered));
         assert!(data.recovery_error.is_some());
         assert!(data.has_parens());
+    }
+
+    #[test]
+    fn data_attribute_recovers_errors_in_nested_groups() {
+        for source in [
+            r#"!attr("k": { "a" ...x })"#,
+            r#"!on:click({ "a" @@ })"#,
+            r#"!signals(a: { 1 2 })"#,
+            r#"!computed(a: { "x" @@ })"#,
+            r#"!show({ "a" @@ }, initially: true)"#,
+        ] {
+            let attr = parse_str::<Attribute>(source)
+                .unwrap_or_else(|err| panic!("expected `{source}` to recover, got: {err}"));
+
+            let Attribute::Data { data, .. } = attr else {
+                panic!("expected data attribute");
+            };
+
+            assert!(matches!(data.content, DataContent::Recovered), "{source}");
+            let err = data.recovery_error.expect("expected a recovery error");
+            assert!(
+                !err.to_string().contains("expected `}`"),
+                "`{source}` reported the enclosing group instead of the error: {err}"
+            );
+        }
+    }
+
+    #[test]
+    fn data_attribute_parses_payload_in_invisible_group() {
+        for (payload, recovers) in [
+            (quote! { ("k": x) }, false),
+            (quote! { ("k": { "a" ...x }) }, true),
+        ] {
+            let invisible = proc_macro2::Group::new(Delimiter::None, payload);
+            let attr = syn::parse2::<Attribute>(quote! { !attr #invisible })
+                .expect("expected attribute to parse");
+
+            let Attribute::Data { data, .. } = attr else {
+                panic!("expected data attribute");
+            };
+
+            assert!(data.has_parens());
+            assert_eq!(data.recovery_error.is_some(), recovers);
+        }
     }
 
     #[test]

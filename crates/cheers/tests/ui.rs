@@ -83,6 +83,18 @@ fn markup_in_script_is_rejected() {
 }
 
 #[test]
+fn markup_in_style_is_rejected() {
+    let tests = trybuild::TestCases::new();
+    tests.compile_fail("tests/ui/markup_in_style.rs");
+}
+
+#[test]
+fn string_in_style_is_rejected() {
+    let tests = trybuild::TestCases::new();
+    tests.compile_fail("tests/ui/string_in_style.rs");
+}
+
+#[test]
 fn html_value_in_script_is_rejected() {
     let tests = trybuild::TestCases::new();
     tests.compile_fail("tests/ui/html_value_in_script.rs");
@@ -110,6 +122,12 @@ fn conditional_spread_is_rejected() {
 fn empty_js_object_value_is_rejected() {
     let tests = trybuild::TestCases::new();
     tests.compile_fail("tests/ui/empty_js_object_value.rs");
+}
+
+#[test]
+fn data_attribute_nested_group_error_is_reported() {
+    let tests = trybuild::TestCases::new();
+    tests.compile_fail("tests/ui/data_attribute_nested_group_error.rs");
 }
 
 #[test]

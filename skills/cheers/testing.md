@@ -80,6 +80,43 @@ assert!(row.text().await?.contains("Balin"));
 
 Prefer clicking user-facing controls over invoking generated action URLs directly.
 
+## Requests in flight
+
+To check the page while an action request is pending (an indicator, a disabled button, a later
+request overtaking it), hold it on the server instead of patching `window.fetch`:
+
+```rust
+let held = app.hold_action::<SaveAction>();
+app.query(By::Css("button")).with_text("Save").and_clickable().first().await?.click().await?;
+held.reached().await?;
+assert!(!app.find(By::Css("button")).await?.is_enabled().await?);
+held.release();
+```
+
+`hold_action` runs the handler and withholds its response; `hold_action_request` holds the request
+before the handler, so the server handles requests sent meanwhile first. Each call holds the next
+request to that action; dropping the `HeldAction` releases it. A streaming response is held
+before its body is produced, so the stream's own work hasn't run when `reached()` returns.
+
+## Tracked items
+
+`app.tracked()` returns the items the page posted to the endpoint set with
+`Config::track(TrackConfig::new(path))` once the app's ingest route accepted them, and
+`app.wait_for_tracked(|items| ..)` waits until a closure finds one. Mount an ingest route in the
+router passed to `cheers::router::new`, such as `.route("/_track", post(|| async {
+StatusCode::ACCEPTED }))`; a route added to the router it returns is not captured.
+
+```rust
+let props = app
+    .wait_for_tracked(|items| {
+        items.iter().find_map(|item| match item {
+            Item::Analytics(event) => Some(event.props.clone()),
+            _ => None,
+        })
+    })
+    .await?;
+```
+
 ## Isolated browser component routes
 
 When browser behavior matters but the full page is noise, mount a focused route:

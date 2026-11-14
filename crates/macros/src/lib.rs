@@ -163,6 +163,12 @@ pub fn cheers_derive(item: proc_macro::TokenStream) -> proc_macro::TokenStream {
 /// can be interpolated directly. Elements, components and `@async` are rejected there. A `script`
 /// with any other `type` is a data block and renders its body as HTML text.
 ///
+/// The body of an HTML `style` element renders in the `StyleSource` context: string literals are
+/// raw CSS with end tags such as `</style` escaped, and interpolated values must be CSS values such as numbers,
+/// `CssString`, `CssIdent`, an `ElementId` (rendered as an identifier) or `RawStyle`. Rust strings
+/// don't render there. Elements, components and `@async` are rejected. An SVG `style` renders its
+/// body as text.
+///
 /// # Example
 ///
 /// ```ignore
@@ -376,8 +382,11 @@ pub fn scoped_signal(tokens: proc_macro::TokenStream) -> proc_macro::TokenStream
 /// handler takes a `Form<_>` argument or an argument marked with `#[form]`. Action options are
 /// configured with `.options(ActionOptions::new().retry(ActionRetry::Never))`, including retry
 /// timing through `.retry_interval(...)`, `.retry_scaler(...)`, `.retry_max_wait(...)`, and
-/// `.retry_max_count(...)`. Form actions can target an explicit form to serialize with
-/// `.form_id(...)` or `.form_selector(...)` on `ActionOptions`.
+/// `.retry_max_count(...)`, request headers through `.header(name, value)`, whether a request stays
+/// open while the page is hidden through `.open_when_hidden(...)`, and how requests from the same
+/// element cancel each other through `.request_cancellation(ActionCancellation::...)`. Form actions
+/// can target an explicit form to serialize with `.form_id(...)` or `.form_selector(...)` on
+/// `ActionOptions`.
 /// Register the generated route explicitly with `Router::action::<...Action>()`.
 ///
 /// # Example

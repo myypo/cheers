@@ -11,6 +11,7 @@ axum.workspace = true
 
 [dev-dependencies]
 cheers = { workspace = true, features = ["test"] }
+serde_json.workspace = true
 thirtyfour.workspace = true
 tokio = { workspace = true, features = ["macros", "rt-multi-thread", "net"] }
 

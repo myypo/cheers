@@ -2,6 +2,9 @@
 
 use axum::{Router, response::Html, routing::get};
 
+#[cfg(test)]
+mod hooks;
+
 pub fn router() -> Router {
     Router::new().route(
         "/",

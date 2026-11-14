@@ -65,6 +65,11 @@ impl TrackConfig {
         self
     }
 
+    #[cfg(feature = "test")]
+    pub(crate) fn endpoint(&self) -> &str {
+        &self.endpoint
+    }
+
     pub(crate) fn javascript_module_source(&self) -> Result<String, serde_json::Error> {
         fn escape_javascript_json(json: &str) -> String {
             json.replace('\u{2028}', "\\u2028")
@@ -273,6 +278,18 @@ mod tests {
         assert_eq!(
             rendered,
             "@track({&quot;message&quot;:&quot;hi \\&quot;there\\&quot; &lt;tag&gt; &amp; more \\u2028\\u2029&quot;})"
+        );
+    }
+
+    #[test]
+    fn track_action_keeps_datastar_action_syntax_literal() {
+        let rendered = TrackAction(serde_json::json!({ "tag": "user@team(eng)" }))
+            .render()
+            .into_inner();
+
+        assert_eq!(
+            rendered,
+            "@track({&quot;tag&quot;:&quot;user\\u0040team(eng)&quot;})"
         );
     }
 

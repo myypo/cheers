@@ -1025,8 +1025,8 @@ impl Generate for Async {
             g.push_diagnostic(
                 syn::Error::new(
                     self.async_token.span,
-                    "`@async` streams HTML, so it cannot appear in attribute values or \
-                     JavaScript source, such as a `script` body or `js_script!`.",
+                    "`@async` streams HTML, so it cannot appear in attribute values, JavaScript \
+                     source (a `script` body or `js_script!`) or a `style` body.",
                 )
                 .to_compile_error(),
             );
