@@ -65,6 +65,11 @@ impl TrackConfig {
         self
     }
 
+    #[cfg(feature = "test")]
+    pub(crate) fn endpoint(&self) -> &str {
+        &self.endpoint
+    }
+
     pub(crate) fn javascript_module_source(&self) -> Result<String, serde_json::Error> {
         fn escape_javascript_json(json: &str) -> String {
             json.replace('\u{2028}', "\\u2028")
