@@ -48,6 +48,11 @@ impl Render for Doctype {
 /// `subsecond` feature enabled, that script morphs rebuilt HTML after Subsecond patches instead of
 /// reloading the page.
 ///
+/// The runtime also blocks the native submission of a form that has no `action` attribute and
+/// contains or is targeted by a Datastar action, which would otherwise reload the page, such as
+/// when Enter is pressed in a form whose action is on a `type="button"` button. Debug builds log a
+/// console warning when the form's own `!on:submit` or the clicked button doesn't handle it.
+///
 /// Include this in pages that use Cheers client-side behaviors such as actions, signals and patching
 ///
 /// # Example

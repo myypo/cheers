@@ -152,6 +152,35 @@ impl ActionCancellation {
 /// Request headers Datastar sets itself; overriding them breaks how the response is handled.
 const DATASTAR_HEADERS: [&str; 3] = ["accept", "content-type", "datastar-request"];
 
+/// Request headers browsers don't let `fetch` set, which they drop without an error.
+const FORBIDDEN_HEADERS: [&str; 24] = [
+    "accept-charset",
+    "accept-encoding",
+    "access-control-request-headers",
+    "access-control-request-method",
+    "connection",
+    "content-length",
+    "cookie",
+    "cookie2",
+    "date",
+    "dnt",
+    "expect",
+    "host",
+    "keep-alive",
+    "origin",
+    "referer",
+    "set-cookie",
+    "te",
+    "trailer",
+    "transfer-encoding",
+    "upgrade",
+    "via",
+    "x-http-method",
+    "x-http-method-override",
+    "x-method-override",
+];
+const FORBIDDEN_HEADER_PREFIXES: [&str; 2] = ["proxy-", "sec-"];
+
 /// Options rendered into a Datastar action call.
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct ActionOptions {
@@ -195,24 +224,32 @@ impl ActionOptions {
     ///
     /// # Panics
     ///
-    /// When `name` is not a valid header name or is one Datastar sets itself (`Accept`,
-    /// `Content-Type`, `Datastar-Request`), or when `value` is not a valid header value.
+    /// When `name` is not a valid header name, is one Datastar sets itself (`Accept`,
+    /// `Content-Type`, `Datastar-Request`) or one browsers don't let scripts set (such as `Cookie`,
+    /// `Origin` or `Sec-*`), or when `value` has characters other than visible ASCII and inner
+    /// spaces, which browsers reject or change.
     #[must_use]
     pub fn header(mut self, name: impl Into<String>, value: impl Into<String>) -> Self {
         let (name, value) = (name.into(), value.into());
+        let lowercase = name.to_ascii_lowercase();
         assert!(
-            axum::http::HeaderName::from_bytes(name.as_bytes()).is_ok(),
+            axum::http::HeaderName::from_bytes(name.as_bytes()).is_ok() && lowercase != "__proto__",
             "invalid action header name {name:?}"
         );
         assert!(
-            !DATASTAR_HEADERS
-                .iter()
-                .any(|header| header.eq_ignore_ascii_case(&name)),
+            !DATASTAR_HEADERS.contains(&lowercase.as_str()),
             "action header {name:?} is set by Datastar"
         );
         assert!(
-            axum::http::HeaderValue::from_str(&value).is_ok(),
-            "invalid value for action header {name:?}"
+            !FORBIDDEN_HEADERS.contains(&lowercase.as_str())
+                && !FORBIDDEN_HEADER_PREFIXES
+                    .iter()
+                    .any(|prefix| lowercase.starts_with(prefix)),
+            "browsers don't send action header {name:?} set by a script"
+        );
+        assert!(
+            value.bytes().all(|b| matches!(b, b' '..=b'~')) && value.trim() == value,
+            "invalid value for action header {name:?}: only visible ASCII and inner spaces are sent unchanged"
         );
         self.headers
             .retain(|(existing, _)| !existing.eq_ignore_ascii_case(&name));

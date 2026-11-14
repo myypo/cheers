@@ -4159,21 +4159,55 @@ fn action_option_header_values_are_escaped_for_the_attribute() {
 }
 
 #[test]
+fn action_option_header_values_keep_datastar_action_syntax_literal() {
+    #[action(GET)]
+    async fn my_handler() {}
+
+    let result = MyHandlerAction {}
+        .options(ActionOptions::new().header("X-Tag", "user@team(eng)"))
+        .render();
+
+    assert_eq!(
+        result.as_inner(),
+        r#"@get('/cheers/actions/my_handler',{headers:{'X-Tag':'user\x40team(eng)'}})"#
+    );
+}
+
+#[test]
 #[should_panic(expected = "is set by Datastar")]
 fn action_option_header_rejects_datastar_headers() {
     let _ = ActionOptions::new().header("Datastar-Request", "false");
 }
 
 #[test]
-#[should_panic(expected = "invalid action header name")]
-fn action_option_header_rejects_invalid_names() {
-    let _ = ActionOptions::new().header("X Bad", "1");
+fn action_option_header_rejects_headers_browsers_drop() {
+    for name in [
+        "Cookie",
+        "origin",
+        "Sec-Fetch-Site",
+        "Proxy-Authorization",
+        "X-HTTP-Method",
+    ] {
+        let result = std::panic::catch_unwind(|| ActionOptions::new().header(name, "1"));
+        assert!(result.is_err(), "{name} should be rejected");
+    }
 }
 
 #[test]
-#[should_panic(expected = "invalid value for action header")]
-fn action_option_header_rejects_invalid_values() {
-    let _ = ActionOptions::new().header("X-Bad", "a\nb");
+fn action_option_header_rejects_invalid_names() {
+    for name in ["X Bad", "__proto__", ""] {
+        let result = std::panic::catch_unwind(|| ActionOptions::new().header(name, "1"));
+        assert!(result.is_err(), "{name:?} should be rejected");
+    }
+}
+
+#[test]
+fn action_option_header_rejects_values_browsers_change() {
+    for value in ["a\nb", "東京", "José", " padded", "padded ", "tab\there"] {
+        let result = std::panic::catch_unwind(|| ActionOptions::new().header("X-Value", value));
+        assert!(result.is_err(), "{value:?} should be rejected");
+    }
+    let _ = ActionOptions::new().header("X-Value", "inner space, \"quotes\" and <tags>");
 }
 
 #[test]
