@@ -74,6 +74,10 @@ pub fn new<S: Clone + Send + Sync + 'static>(
     config: Config,
 ) -> Result<Router<S>, Error> {
     let router = assets_router(config.track.as_ref())?;
+    #[cfg(feature = "test")]
+    if let Some(track) = &config.track {
+        crate::test::register_track_endpoint(track.endpoint());
+    }
 
     #[cfg(debug_assertions)]
     let router = router.merge(hot_reload::router());

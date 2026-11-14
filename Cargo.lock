@@ -580,6 +580,7 @@ version = "0.1.0-alpha.1"
 dependencies = [
  "axum",
  "cheers",
+ "serde_json",
  "thirtyfour",
  "tokio",
 ]

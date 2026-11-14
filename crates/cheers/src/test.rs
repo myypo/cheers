@@ -20,8 +20,14 @@ use thirtyfour::{
 };
 use tokio::{net::TcpListener, sync::oneshot, task::JoinHandle};
 
+use crate::{router::ActionDef, track};
+
+mod hooks;
 #[cfg(unix)]
 mod pool;
+
+pub use hooks::HeldAction;
+pub(crate) use hooks::register_track_endpoint;
 
 #[cfg(not(unix))]
 mod pool {
@@ -73,6 +79,7 @@ pub struct App {
     task: Option<JoinHandle<io::Result<()>>>,
     driver: Option<thirtyfour::WebDriver>,
     lease: Option<pool::Lease>,
+    hooks: Arc<hooks::Hooks>,
 }
 
 /// Environment variable used by [`chrome`] to locate WebDriver.
@@ -207,6 +214,11 @@ impl App {
     pub async fn new(app: Router) -> WebDriverResult<Self> {
         crate::router::disable_live_reload();
 
+        let hooks = Arc::new(hooks::Hooks::default());
+        let app = app.layer(axum::middleware::from_fn_with_state(
+            hooks.clone(),
+            hooks::intercept,
+        ));
         let listener = TcpListener::bind(("127.0.0.1", 0)).await?;
         let addr = listener.local_addr()?;
         let (shutdown_tx, shutdown_rx) = oneshot::channel::<()>();
@@ -233,6 +245,7 @@ impl App {
             task: Some(task),
             driver: Some(driver),
             lease,
+            hooks,
         })
     }
 
@@ -257,6 +270,7 @@ impl App {
             addr: self.addr,
             driver: self.driver.as_ref().expect("browser to be present").clone(),
             context: self.lease.as_ref().map(pool::Lease::context),
+            hooks: self.hooks.clone(),
         };
 
         let mut output = None;
@@ -341,6 +355,7 @@ pub struct Session {
     addr: SocketAddr,
     driver: thirtyfour::WebDriver,
     context: Option<Arc<str>>,
+    hooks: Arc<hooks::Hooks>,
 }
 
 impl Session {
@@ -426,6 +441,72 @@ impl Session {
     }
 }
 
+impl Session {
+    /// Hold the response to the next request for action `A` until the returned [`HeldAction`] is
+    /// released or dropped.
+    ///
+    /// The handler runs as usual and only its response is kept from the browser, so the page can
+    /// be checked while the request is in flight, such as an indicator showing or a button
+    /// disabled, with the server-side effects already applied. Each call holds one request;
+    /// several holds for the same action take its requests in the order they were made.
+    ///
+    /// ```ignore
+    /// let held = app.hold_action::<SaveAction>();
+    /// app.find(By::Css("button")).await?.click().await?;
+    /// held.reached().await?;
+    /// // The page still shows the request as pending.
+    /// held.release();
+    /// ```
+    pub fn hold_action<A: ActionDef>(&self) -> HeldAction {
+        self.hooks.hold(A::METHOD, A::PATH, hooks::Stage::Response)
+    }
+
+    /// Hold the next request for action `A` before its handler runs, until the returned
+    /// [`HeldAction`] is released or dropped.
+    ///
+    /// Unlike [`hold_action`](Self::hold_action), the server sees nothing of the request until it is
+    /// released, so requests sent meanwhile are handled first.
+    pub fn hold_action_request<A: ActionDef>(&self) -> HeldAction {
+        self.hooks.hold(A::METHOD, A::PATH, hooks::Stage::Request)
+    }
+
+    /// The items the page posted to the track endpoint, in the order the server received them.
+    ///
+    /// The endpoint is the one configured with [`crate::router::Config::track`], when it is a path
+    /// on the test server. A batch counts once the app answers it successfully; when the app
+    /// serves nothing at the endpoint, the batch is answered with `202 Accepted` and counted, so a
+    /// test app needs no ingest route.
+    ///
+    /// The runtime sends items in batches up to half a second apart, so wait for the ones a test
+    /// expects with [`wait_for_tracked`](Self::wait_for_tracked).
+    pub fn tracked(&self) -> Vec<track::Item<serde_json::Value>> {
+        self.hooks.tracked()
+    }
+
+    /// Wait until `f` finds what it looks for in the [`tracked`](Self::tracked) items and return
+    /// it.
+    ///
+    /// `f` runs on every item received so far, each time a batch arrives. Fails with
+    /// [`WebDriverError::Timeout`] when it finds nothing within 20 seconds.
+    ///
+    /// ```ignore
+    /// let opened = app
+    ///     .wait_for_tracked(|items| {
+    ///         items.iter().find_map(|item| match item {
+    ///             Item::Analytics(event) if event.props["vault_id"] == 69 => Some(event.clone()),
+    ///             _ => None,
+    ///         })
+    ///     })
+    ///     .await?;
+    /// ```
+    pub async fn wait_for_tracked<T>(
+        &self,
+        f: impl FnMut(&[track::Item<serde_json::Value>]) -> Option<T>,
+    ) -> WebDriverResult<T> {
+        self.hooks.wait_for_tracked(f).await
+    }
+}
+
 /// Poll `body` once, catching a panic it raises.
 ///
 /// This must stay non-generic and out of line. A `catch_unwind` instantiated in the caller's crate
@@ -445,6 +526,7 @@ fn poll_catching_panics(
 }
 
 const DATASTAR_READY_TIMEOUT: Duration = Duration::from_secs(20);
+const WAIT_TIMEOUT: Duration = Duration::from_secs(20);
 
 const WAIT_FOR_DATASTAR_SCRIPT: &str = r#"
 const timeoutMs = arguments[0];
