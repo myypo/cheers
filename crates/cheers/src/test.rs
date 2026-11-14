@@ -27,7 +27,7 @@ mod hooks;
 mod pool;
 
 pub use hooks::HeldAction;
-pub(crate) use hooks::TRACK_HEADER;
+pub(crate) use hooks::capture_track;
 
 #[cfg(not(unix))]
 mod pool {
@@ -309,6 +309,7 @@ impl App {
 
     async fn shutdown(mut self) -> WebDriverResult<()> {
         let mut first_error = None;
+        self.hooks.close();
 
         if let Some(driver) = self.driver.take()
             && let Err(err) = driver.quit().await
@@ -447,8 +448,12 @@ impl Session {
     ///
     /// The handler runs as usual and only its response is kept from the browser, so the page can
     /// be checked while the request is in flight, such as an indicator showing or a button
-    /// disabled, with the server-side effects already applied. Each call holds one request;
-    /// several holds for the same action take its requests in the order they were made.
+    /// disabled, with the handler's effects already applied. A streaming response, such as an
+    /// [`EventStream`](crate::events::EventStream), is held before its body is produced, so
+    /// whatever the stream does has not happened yet.
+    ///
+    /// Each call holds one request; several holds for the same action take its requests in the
+    /// order they were made. Only a registered action's requests are held.
     ///
     /// ```ignore
     /// let held = app.hold_action::<SaveAction>();
@@ -464,17 +469,19 @@ impl Session {
     /// Hold the next request for action `A` before its handler runs, until the returned
     /// [`HeldAction`] is released or dropped.
     ///
-    /// Unlike [`hold_action`](Self::hold_action), the server sees nothing of the request until it is
-    /// released, so requests sent meanwhile are handled first.
+    /// Unlike [`hold_action`](Self::hold_action), the server sees nothing of the request until it
+    /// is released, so requests sent meanwhile are handled first.
     pub fn hold_action_request<A: ActionDef>(&self) -> HeldAction {
         self.hooks.hold(A::METHOD, A::PATH, hooks::Stage::Request)
     }
 
-    /// The items the page posted to the track endpoint, in the order the server received them.
+    /// The items the page posted to the track endpoint, in the order the app answered their
+    /// batches.
     ///
-    /// The endpoint is the one configured with [`crate::router::Config::track`]. A batch counts once the app answers it successfully; when the app
-    /// serves nothing at the endpoint, the batch is answered with `202 Accepted` and counted, so a
-    /// test app needs no ingest route.
+    /// The endpoint is the one configured with [`crate::router::Config::track`], and the router has
+    /// to come from [`crate::router::new`]. Batches pass through to the app's ingest route as usual
+    /// and count once it answers them successfully. A test app needs such a route, for example
+    /// `.route("/_track", post(|| async { StatusCode::ACCEPTED }))`.
     ///
     /// The runtime sends items in batches up to half a second apart, so wait for the ones a test
     /// expects with [`wait_for_tracked`](Self::wait_for_tracked).
@@ -486,7 +493,8 @@ impl Session {
     /// it.
     ///
     /// `f` runs on every item received so far, each time a batch arrives. Fails with
-    /// [`WebDriverError::Timeout`] when it finds nothing within 20 seconds.
+    /// [`WebDriverError::Timeout`] when it finds nothing within 20 seconds; the error lists the
+    /// items received and any track requests that were not recorded, such as ones the app failed.
     ///
     /// ```ignore
     /// let opened = app

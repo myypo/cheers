@@ -81,6 +81,19 @@ pub fn new<S: Clone + Send + Sync + 'static>(
         .nest("/cheers", router)
         .merge(actions_and_pages);
 
+    #[cfg(feature = "test")]
+    let router = match config.track.as_ref().map(TrackConfig::endpoint) {
+        // An absolute URL is posted to a host the test app doesn't serve.
+        Some(endpoint) if endpoint.starts_with('/') && !endpoint.starts_with("//") => {
+            let path: std::sync::Arc<str> =
+                endpoint.split(['?', '#']).next().unwrap_or(endpoint).into();
+            router.layer(axum::middleware::from_fn(move |req, next| {
+                crate::test::capture_track(path.clone(), req, next)
+            }))
+        }
+        _ => router,
+    };
+
     let router = router.layer(axum::middleware::from_fn(
         datastar_redirect::datastar_redirect,
     ));

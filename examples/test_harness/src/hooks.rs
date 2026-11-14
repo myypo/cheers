@@ -5,7 +5,12 @@ use std::sync::{
     atomic::{AtomicUsize, Ordering},
 };
 
-use axum::{Router, extract::State, routing::get};
+use axum::{
+    Router,
+    extract::State,
+    http::StatusCode,
+    routing::{get, post},
+};
 use cheers::{
     components::{Doctype, Scripts},
     prelude::*,
@@ -180,26 +185,36 @@ async fn an_unreached_hold_dropped_holds_nothing() {
 }
 
 #[tokio::test]
-async fn tracked_items_are_captured_without_an_ingest_route() {
+async fn tracked_items_are_captured_as_the_ingest_route_answers_them() {
+    let ingested = Arc::new(AtomicUsize::new(0));
+    let counted = ingested.clone();
     let router = cheers::router::new(
-        Router::new().route(
-            "/",
-            get(|| async {
-                html! {
-                    Doctype;
-                    html lang="en" {
-                        head { title { "Vault" } }
-                        body {
-                            button
-                                type="button"
-                                !on:click((TrackAction(serde_json::json!({ "vault_id": 69 }))))
-                            { "Open vault" }
-                            Scripts;
+        Router::new()
+            .route(
+                "/_harness_track",
+                post(move || async move {
+                    counted.fetch_add(1, Ordering::SeqCst);
+                    StatusCode::ACCEPTED
+                }),
+            )
+            .route(
+                "/",
+                get(|| async {
+                    html! {
+                        Doctype;
+                        html lang="en" {
+                            head { title { "Vault" } }
+                            body {
+                                button
+                                    type="button"
+                                    !on:click((TrackAction(serde_json::json!({ "vault_id": 69 }))))
+                                { "Open vault" }
+                                Scripts;
+                            }
                         }
                     }
-                }
-            }),
-        ),
+                }),
+            ),
         cheers::router::Config::default().track(TrackConfig::new("/_harness_track")),
     )
     .expect("create app");
@@ -235,8 +250,36 @@ async fn tracked_items_are_captured_without_an_ingest_route() {
                 .await?;
             assert_eq!(props, serde_json::json!({ "vault_id": 69 }));
             assert_eq!(app.tracked().len(), 2);
+            assert!(ingested.load(Ordering::SeqCst) >= 1);
             Ok(())
         })
         .await
         .expect("capture tracked items");
+}
+
+#[tokio::test]
+async fn a_hold_outliving_the_test_does_not_keep_the_app_from_shutting_down() {
+    use tokio::io::AsyncWriteExt;
+
+    let app = cheers::test::App::new(save_app(Saves::default()))
+        .await
+        .expect("start the app");
+    let run = app.run(|app| async move {
+        let held = app.hold_action_request::<SaveAction>();
+        // A connection of its own, which closing the browser would not end.
+        let address = app.url("").trim_start_matches("http://").to_owned();
+        let mut connection = tokio::net::TcpStream::connect(address.trim_end_matches('/')).await?;
+        connection
+            .write_all(
+                b"POST /cheers/actions/save HTTP/1.1\r\nHost: test\r\nContent-Length: 0\r\n\r\n",
+            )
+            .await?;
+        held.reached().await?;
+        Ok((held, connection))
+    });
+    let (held, _connection) = tokio::time::timeout(std::time::Duration::from_secs(10), run)
+        .await
+        .expect("shut down while a request is held")
+        .expect("run the app");
+    held.release();
 }

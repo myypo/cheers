@@ -6,7 +6,6 @@ type TrackConfig = {
   endpoint: string;
   service?: string;
   release?: string;
-  test_header?: string;
 };
 
 type TrackContext = {
@@ -102,10 +101,7 @@ function flush(useKeepalive: boolean): void {
 
   flushInFlight = fetch(CONFIG.endpoint, {
     method: "POST",
-    headers: {
-      "content-type": "application/json",
-      ...(CONFIG.test_header ? { [CONFIG.test_header]: "1" } : {}),
-    },
+    headers: { "content-type": "application/json" },
     body,
     keepalive: useKeepalive && body.length <= 60_000,
   })
