@@ -27,7 +27,7 @@ mod hooks;
 mod pool;
 
 pub use hooks::HeldAction;
-pub(crate) use hooks::register_track_endpoint;
+pub(crate) use hooks::TRACK_HEADER;
 
 #[cfg(not(unix))]
 mod pool {
@@ -472,8 +472,7 @@ impl Session {
 
     /// The items the page posted to the track endpoint, in the order the server received them.
     ///
-    /// The endpoint is the one configured with [`crate::router::Config::track`], when it is a path
-    /// on the test server. A batch counts once the app answers it successfully; when the app
+    /// The endpoint is the one configured with [`crate::router::Config::track`]. A batch counts once the app answers it successfully; when the app
     /// serves nothing at the endpoint, the batch is answered with `202 Accepted` and counted, so a
     /// test app needs no ingest route.
     ///

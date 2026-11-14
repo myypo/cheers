@@ -65,18 +65,19 @@ impl TrackConfig {
         self
     }
 
-    #[cfg_attr(not(feature = "test"), expect(dead_code))]
-    pub(crate) fn endpoint(&self) -> &str {
-        &self.endpoint
-    }
-
     pub(crate) fn javascript_module_source(&self) -> Result<String, serde_json::Error> {
         fn escape_javascript_json(json: &str) -> String {
             json.replace('\u{2028}', "\\u2028")
                 .replace('\u{2029}', "\\u2029")
         }
 
-        let json = serde_json::to_string(self)?;
+        #[cfg_attr(not(feature = "test"), expect(unused_mut))]
+        let mut config = serde_json::to_value(self)?;
+        #[cfg(feature = "test")]
+        {
+            config["test_header"] = crate::test::TRACK_HEADER.into();
+        }
+        let json = serde_json::to_string(&config)?;
         let json = escape_javascript_json(&json);
 
         Ok(format!("const config = {json};\nexport default config;\n"))
@@ -265,6 +266,10 @@ mod tests {
         assert!(source.contains(r#""endpoint":"/_track""#));
         assert!(source.contains(r#""service":"svc""#));
         assert!(source.contains(r#""release":"1\u2028.0\u2029.0""#));
+        assert_eq!(
+            source.contains(r#""test_header":"cheers-track""#),
+            cfg!(feature = "test")
+        );
     }
 
     #[test]

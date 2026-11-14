@@ -17,31 +17,9 @@ use tokio::sync::watch;
 use super::WAIT_TIMEOUT;
 use crate::track::{Batch, Item};
 
-/// Track endpoints of every router built with [`crate::router::new`] in this process.
-///
-/// A test app only gets an already-built router, so the endpoint can't be read from it.
-static TRACK_ENDPOINTS: Mutex<Vec<String>> = Mutex::new(Vec::new());
-
-pub(crate) fn register_track_endpoint(endpoint: &str) {
-    // An absolute URL, even one naming the test server, is posted to a host the test doesn't
-    // serve.
-    if !endpoint.starts_with('/') || endpoint.starts_with("//") {
-        return;
-    }
-    let path = endpoint.split(['?', '#']).next().unwrap_or(endpoint);
-    let mut endpoints = TRACK_ENDPOINTS.lock().unwrap_or_else(|e| e.into_inner());
-    if !endpoints.iter().any(|e| e == path) {
-        endpoints.push(path.to_owned());
-    }
-}
-
-fn is_track_endpoint(path: &str) -> bool {
-    TRACK_ENDPOINTS
-        .lock()
-        .unwrap_or_else(|e| e.into_inner())
-        .iter()
-        .any(|e| e == path)
-}
+/// Header the runtime adds to its track requests in builds with the `test` feature, so the test
+/// layer can tell them apart without knowing the app's endpoint.
+pub(crate) const TRACK_HEADER: &str = "cheers-track";
 
 /// What a test app's [`intercept`] layer shares with its [`super::Session`].
 #[derive(Default)]
@@ -145,7 +123,7 @@ pub(crate) async fn intercept(
     if let Some(hold) = hooks.take_hold(req.method(), req.uri().path()) {
         return hold.around(next.run(req)).await;
     }
-    if req.method() == Method::POST && is_track_endpoint(req.uri().path()) {
+    if req.method() == Method::POST && req.headers().contains_key(TRACK_HEADER) {
         return hooks.capture_track(req, next).await;
     }
     next.run(req).await
