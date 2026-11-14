@@ -44,8 +44,7 @@ fn assets_headers(content_type: &'static str) -> HeaderMap {
 }
 
 const DATASTAR_ENTRY_MODULE: &str = "cheers/datastar-entry";
-const DEBUG_MODULE: &str = "cheers/debug";
-const FORM_SUBMIT_GUARD_MODULE: &str = "cheers/form-submit-guard";
+const FORM_SUBMIT_WARNING_MODULE: &str = "cheers/form-submit-warning";
 const RUNTIME_ENTRY_MODULE: &str = "cheers/runtime-entry";
 const SSR_STREAM_MODULE: &str = "cheers/ssr-stream";
 const SSR_STREAM_SUBSECOND_MODULE: &str = "cheers/ssr-stream-subsecond";
@@ -57,9 +56,10 @@ fn include_subsecond_stream_runtime() -> bool {
 }
 
 fn runtime_entry(track: bool) -> String {
-    let mut entry = String::from(
-        "import './datastar-entry';\nimport './ssr-stream';\nimport './form-submit-guard';\n",
-    );
+    let mut entry = String::from("import './datastar-entry';\nimport './ssr-stream';\n");
+    if cfg!(debug_assertions) {
+        entry.push_str("import './form-submit-warning';\n");
+    }
     if include_subsecond_stream_runtime() {
         entry.push_str("import './ssr-stream-subsecond';\n");
     }
@@ -70,26 +70,19 @@ fn runtime_entry(track: bool) -> String {
     entry
 }
 
-const DEBUG_PLACEHOLDER: &str = "const debug: boolean = true;";
-
-fn debug_module() -> String {
-    include_str!("debug.ts").replace(
-        DEBUG_PLACEHOLDER,
-        &format!("const debug: boolean = {};", cfg!(debug_assertions)),
-    )
-}
-
 fn datastar_modules(track: Option<&TrackConfig>) -> Result<Vec<bundle::VirtualModule>, Error> {
     let mut modules = vec![
         bundle::VirtualModule::new(RUNTIME_ENTRY_MODULE, runtime_entry(track.is_some())),
         bundle::VirtualModule::new(DATASTAR_ENTRY_MODULE, include_str!("datastar-entry.ts")),
         bundle::VirtualModule::new(SSR_STREAM_MODULE, include_str!("ssr-stream.ts")),
-        bundle::VirtualModule::new(
-            FORM_SUBMIT_GUARD_MODULE,
-            include_str!("form-submit-guard.ts"),
-        ),
-        bundle::VirtualModule::new(DEBUG_MODULE, debug_module()),
     ];
+
+    if cfg!(debug_assertions) {
+        modules.push(bundle::VirtualModule::new(
+            FORM_SUBMIT_WARNING_MODULE,
+            include_str!("form-submit-warning.ts"),
+        ));
+    }
 
     if include_subsecond_stream_runtime() {
         modules.push(bundle::VirtualModule::new(
@@ -885,15 +878,16 @@ mod tests {
                 .any(|module| module.specifier == SSR_STREAM_SUBSECOND_MODULE),
             include_subsecond_stream_runtime()
         );
-        assert!(runtime_entry.content.contains("./form-submit-guard"));
-        let debug = modules
-            .iter()
-            .find(|module| module.specifier == DEBUG_MODULE)
-            .expect("debug module should be present");
-        assert!(debug.content.contains(&format!(
-            "const debug: boolean = {};",
+        assert_eq!(
+            runtime_entry.content.contains("./form-submit-warning"),
             cfg!(debug_assertions)
-        )));
+        );
+        assert_eq!(
+            modules
+                .iter()
+                .any(|module| module.specifier == FORM_SUBMIT_WARNING_MODULE),
+            cfg!(debug_assertions)
+        );
         assert!(!runtime_entry.content.contains("./track-plugin"));
         assert!(
             modules

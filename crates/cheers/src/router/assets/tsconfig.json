@@ -11,8 +11,7 @@
   },
   "include": [
     "./datastar-entry.ts",
-    "debug.ts",
-    "form-submit-guard.ts",
+    "form-submit-warning.ts",
     "ssr-stream.ts",
     "ssr-stream-subsecond.ts",
     "track-config.ts",

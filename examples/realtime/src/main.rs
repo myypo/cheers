@@ -780,36 +780,13 @@ window.setTimeout = (callback, delay, ...args) =>
         })
     }
 
-    /// Registered after the runtime's listeners, so each entry says whether the runtime
-    /// prevented the submission.
-    const RECORD_SUBMISSIONS: &str = "window.__submits = []; window.__warnings = []; \
-        console.warn = (...args) => window.__warnings.push(String(args[0])); \
-        window.addEventListener('submit', (evt) => window.__submits.push(evt.defaultPrevented));";
-
-    async fn submit_with_enter(app: &WebDriver) -> WebDriverResult<()> {
-        app.find(By::Css("input[name='q']"))
-            .await?
-            .send_keys("ore" + Key::Enter)
-            .await
-    }
-
-    async fn recorded_submissions(app: &WebDriver) -> WebDriverResult<(Vec<bool>, Vec<String>)> {
-        for _ in 0..50 {
-            let submits: Vec<bool> = app
-                .execute("return window.__submits;", vec![])
-                .await?
-                .convert()?;
-            if !submits.is_empty() {
-                let warnings = app
-                    .execute("return window.__warnings;", vec![])
-                    .await?
-                    .convert()?;
-                return Ok((submits, warnings));
-            }
-            tokio::time::sleep(Duration::from_millis(100)).await;
-        }
-        panic!("the form was not submitted");
-    }
+    /// Records the index among `document.forms` of each form the runtime warns about.
+    const RECORD_FORM_WARNINGS: &str = "window.__formWarnings = []; const warn = console.warn; \
+        console.warn = (...args) => { \
+            if (String(args[0]).startsWith('cheers: this form')) \
+                window.__formWarnings.push(Array.from(document.forms).indexOf(args[1])); \
+            else warn(...args); \
+        };";
 
     fn search_page(form: impl Render) -> axum::response::Html<String> {
         axum::response::Html(
@@ -856,12 +833,59 @@ window.setTimeout = (callback, delay, ...args) =>
                     }),
                 )
                 .route(
+                    "/second",
+                    get(|| async {
+                        let search = SearchAction
+                            .options(ActionOptions::new().form_selector("form.filters"));
+                        search_page(html! {
+                            form class="filters" {
+                                input name="tag";
+                            }
+                            form class="filters" {
+                                input name="q";
+                            }
+                            button type="button" !on:click(search) { "Search" }
+                        })
+                    }),
+                )
+                .route(
+                    "/patched",
+                    get(|| async {
+                        search_page(html! {
+                            div id="patched" {}
+                            button type="button" !on:click(PatchSearchFormAction) { "Load" }
+                        })
+                    }),
+                )
+                .route(
                     "/submit",
                     get(|| async {
                         search_page(html! {
                             form !on:submit(SearchAction) {
                                 input name="q";
                                 button type="submit" { "Search" }
+                            }
+                        })
+                    }),
+                )
+                .route(
+                    "/submit-button",
+                    get(|| async {
+                        search_page(html! {
+                            form {
+                                input name="q";
+                                button type="submit" !on:click(SearchAction) { "Search" }
+                            }
+                        })
+                    }),
+                )
+                .route(
+                    "/no-implicit-submission",
+                    get(|| async {
+                        search_page(html! {
+                            form {
+                                input type="checkbox" name="q";
+                                button type="button" !on:click(SearchAction) { "Search" }
                             }
                         })
                     }),
@@ -889,23 +913,8 @@ window.setTimeout = (callback, delay, ...args) =>
                         })
                     }),
                 )
-                .route(
-                    "/second",
-                    get(|| async {
-                        let search = SearchAction
-                            .options(ActionOptions::new().form_selector("form.filters"));
-                        search_page(html! {
-                            form class="filters" {
-                                input name="tag";
-                            }
-                            form class="filters" {
-                                input name="q";
-                            }
-                            button type="button" !on:click(search) { "Search" }
-                        })
-                    }),
-                )
                 .action::<SearchAction>()
+                .action::<PatchSearchFormAction>()
                 .action::<TagRequestAction>(),
             cheers::router::Config::default(),
         )
@@ -913,85 +922,73 @@ window.setTimeout = (callback, delay, ...args) =>
         .with_state(ctx)
     }
 
-    #[tokio::test]
-    async fn enter_does_not_reload_a_form_whose_action_is_on_a_button() {
-        cheers::test::App::new(search_app())
-            .await
-            .unwrap()
-            .run(|app| async move {
-                for path in ["/button", "/outside"] {
-                    app.goto(app.url(path)).await?;
-                    app.execute(RECORD_SUBMISSIONS, vec![]).await?;
-                    submit_with_enter(&app).await?;
-
-                    let (submits, warnings) = recorded_submissions(&app).await?;
-                    assert_eq!(submits, [true], "{path}");
-                    assert_eq!(
-                        warnings
-                            .iter()
-                            .any(|warning| warning.contains("blocked the native submission")),
-                        cfg!(debug_assertions),
-                        "{path}: {warnings:?}"
-                    );
-                    assert_eq!(app.current_url().await?.query(), None, "{path}");
-                    app.query(By::Id(Note::id(4).to_string()))
-                        .with_text("idle".match_full())
-                        .first()
-                        .await?;
+    #[action(POST)]
+    async fn patch_search_form() -> PatchElements {
+        PatchElements::new().element(html! {
+            div id="patched" {
+                form {
+                    input name="q";
+                    button type="button" !on:click(SearchAction) { "Search" }
                 }
-                Ok(())
-            })
-            .await
-            .expect("block the native submission");
+            }
+        })
+    }
+
+    /// Waits two animation frames, after the runtime's check, then returns the forms it warned
+    /// about.
+    async fn form_warnings(app: &WebDriver) -> WebDriverResult<Vec<i64>> {
+        app.execute_async(
+            "const done = arguments[arguments.length - 1]; \
+             requestAnimationFrame(() => requestAnimationFrame(() => done(window.__formWarnings)));",
+            vec![],
+        )
+        .await?
+        .convert()
     }
 
     #[tokio::test]
-    async fn a_form_submitting_through_its_action_does_not_warn() {
+    async fn debug_builds_warn_about_forms_an_action_submits_outside_on_submit() {
         cheers::test::App::new(search_app())
             .await
             .unwrap()
             .run(|app| async move {
-                app.goto(app.url("/submit")).await?;
-                app.execute(RECORD_SUBMISSIONS, vec![]).await?;
-                submit_with_enter(&app).await?;
-
-                app.query(By::Id(Note::id(4).to_string()))
-                    .with_text("searched".match_full())
-                    .first()
+                app.cdp()
+                    .page()
+                    .add_script_to_evaluate_on_new_document(RECORD_FORM_WARNINGS)
                     .await?;
-                let (submits, warnings) = recorded_submissions(&app).await?;
-                assert_eq!(submits, [true]);
-                assert!(warnings.is_empty(), "{warnings:?}");
-                assert_eq!(app.current_url().await?.query(), None);
-                Ok(())
-            })
-            .await
-            .expect("submit through the action without a warning");
-    }
-
-    #[tokio::test]
-    async fn forms_not_submitted_by_an_action_submit_natively() {
-        cheers::test::App::new(search_app())
-            .await
-            .unwrap()
-            .run(|app| async move {
-                for path in ["/native", "/unrelated", "/second"] {
+                for (path, warned) in [
+                    ("/button", &[0][..]),
+                    ("/outside", &[0]),
+                    ("/second", &[0]),
+                    ("/submit", &[]),
+                    ("/submit-button", &[]),
+                    ("/no-implicit-submission", &[]),
+                    ("/native", &[]),
+                    ("/unrelated", &[]),
+                ] {
                     app.goto(app.url(path)).await?;
-                    submit_with_enter(&app).await?;
-
-                    let mut submitted = false;
-                    for _ in 0..50 {
-                        if app.current_url().await?.query() == Some("q=ore") {
-                            submitted = true;
-                            break;
-                        }
-                        tokio::time::sleep(Duration::from_millis(100)).await;
-                    }
-                    assert!(submitted, "{path}: the form was not submitted natively");
+                    let expected = if cfg!(debug_assertions) { warned } else { &[] };
+                    assert_eq!(form_warnings(&app).await?, expected, "{path}");
                 }
+
+                app.goto(app.url("/patched")).await?;
+                assert_eq!(form_warnings(&app).await?, [0; 0]);
+                app.query(By::XPath("//button[text()='Load']"))
+                    .and_clickable()
+                    .first()
+                    .await?
+                    .click()
+                    .await?;
+                app.query(By::Css("#patched form")).first().await?;
+                let expected = if cfg!(debug_assertions) {
+                    &[0][..]
+                } else {
+                    &[]
+                };
+                assert_eq!(form_warnings(&app).await?, expected);
                 Ok(())
             })
             .await
-            .expect("submit forms natively");
+            .expect("warn about forms an action submits outside on:submit");
     }
 }
