@@ -11,7 +11,7 @@ DESIGN.md follows the [DESIGN.md format spec](https://raw.githubusercontent.com/
 - An existing DESIGN.md has drifted from the code.
 - Before a large redesign, to capture the current state as reference.
 
-Never overwrite an existing DESIGN.md silently. Show it and ask: refresh, overwrite, or merge. On the record-from-build pass below, the builder collects that choice before handing off; a writer that receives no choice for an existing DESIGN.md writes nothing and reports that the choice is owed. If another tool in the project expects a specific format, preserve that format and fold these requirements into it.
+Never overwrite an existing DESIGN.md silently. Show it and ask: refresh, overwrite, or merge. On the record-from-build pass below, the builder collects that choice before handing off, except over a seed (a DESIGN.md opening with the `<!-- SEED: ... -->` comment), which the build replaces without asking; a writer that receives no choice for an existing DESIGN.md writes nothing and reports that the choice is owed. If another tool in the project expects a specific format, preserve that format and fold these requirements into it.
 
 ## Choose the path
 
