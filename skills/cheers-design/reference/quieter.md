@@ -1,6 +1,6 @@
 # Quieter
 
-Reduce visual intensity in a Cheers UI that is too loud, aggressive, or overstimulating without losing personality or turning generic. Quiet design is harder than bold design: subtlety needs precision, and quiet without intent collapses to the category default.
+Reduce visual intensity in a Cheers UI that is too loud, aggressive, or overstimulating without losing personality or turning generic. Quiet design is harder than bold design: subtlety needs precision, and quiet without intent collapses to the category default. Generic quiet looks like gray text on white, one sans at a uniform weight, and a grid of identical cards; restraint still needs a point of view.
 
 ## Visitor mode
 
@@ -41,7 +41,7 @@ Read [craft-floor.md](craft-floor.md) first.
 - Desaturate rather than replace: shift loud hues toward 70–85% of their saturation instead of swapping them for gray.
 - Use fewer colors more deliberately; let tinted neutrals do more work and color act as accent (about 10%).
 - On Operate and Read surfaces move toward Restrained, reserving accent for primary action, selection, focus, and semantic status.
-- Keep high contrast where it matters: text, controls, and status. Never gray text on color; use a darker shade of that color or transparency instead.
+- Keep high contrast where it matters: text, controls, and status. Never gray text on color; use a darker shade of that color instead, since transparency ties contrast to whatever sits behind the text.
 
 ### Weight and type
 

@@ -22,7 +22,7 @@ Do not run a second mechanical scan.
 
 ## Disposition
 
-The first line of your return is `disposition: recapture`, `disposition: rebuild`, `disposition: fix`, or `disposition: ship`. These four words are the whole vocabulary. The word is derived, never felt: recapture when the evidence check failed; rebuild when material is contradicted on the focal element or contradiction is the page rather than the exception, in which case stop ordering repairs and make the first material fix a rebuild directive naming the regions to re-derive and the assets to produce; fix when material fixes remain; ship only when nothing is contradicted or missing. Calibrate against the contract and the world's quality bar, never against the effort visible in the build. A page a design director would send back is fix at best however functional it is.
+The first line of your return is `disposition: recapture`, `disposition: rebuild`, `disposition: fix`, or `disposition: ship`. These four words are the whole vocabulary. The word is derived, never felt: recapture when the evidence check failed; rebuild when material is contradicted on the focal element or contradiction is the page rather than the exception, in which case stop ordering repairs and make the first material fix a rebuild directive naming the regions to re-derive and the assets to produce; fix when material fixes remain; ship only when material_fixes is empty and nothing is contradicted or missing. Calibrate against the contract and the world's quality bar, never against the effort visible in the build. A page a design director would send back is fix at best however functional it is.
 
 ## Output
 

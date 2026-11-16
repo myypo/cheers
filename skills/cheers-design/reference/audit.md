@@ -43,10 +43,18 @@ Score: 0 severe user-visible cost, 1 major problems, 2 partial optimization, 3 m
 ### 3. Responsive and touch
 
 - fixed widths that break narrow viewports; horizontal scroll; layouts that break at 200% text size; no structural mobile variant
-- touch targets under 44x44px
+- touch targets under 44x44px. WCAG AA (SC 2.5.8) requires at least 24x24 CSS px unless an exception applies: spacing, an equivalent control, inline text, user-agent styling, or an essential size. Spacing passes when a 24 CSS px circle centered on the target's bounding box overlaps no other target and no other undersized target's circle
 - broken touch interaction: custom sliders, drag surfaces, and scrollable control strips whose primary gesture fails under touch, that swallow page scroll or lose the drag to it, or that stay stuck after an interrupted gesture. Code tells: mouse-only handlers, no `touch-action` on a pointer-event drag surface, drag state that nothing clears on cancel, lost capture, or blur. Exercise the gesture when a browser tool can synthesize touch (a rendered viewport proves layout, not the gesture), then say what produced the evidence (emulated viewport, synthesized touch, which engine, physical device) and what stayed untested
 
-Score: 0 desktop-only, 1 major failures, 2 works with rough edges, 3 minor target or overflow issues, 4 every viewport works and gestures work under touch.
+On pages that declare `dir="rtl"` on `<html>` or `<body>`, each of these is a signal to verify the rendered result, not a defect in itself; flag only where the rendering is actually wrong:
+
+- physical directional properties (`margin-left`/`right`, `padding-left`/`right`, `text-align: left`/`right`, `float`, `border-left`/`right`) where logical equivalents (`margin-inline-start`/`end`, `text-align: start`/`end`, `border-inline-start`/`end`) would be expected. A `[dir="rtl"] .x { margin-right: 1rem }` override is correct only when it also clears the conflicting base property (`margin-left: 0`); otherwise both margins apply
+- `left:` or `right:` on positioned elements instead of `inset-inline-start`/`end`. `left: 50%; transform: translateX(-50%)` centers correctly in both directions; replacing `left` there breaks it, because `translateX` does not mirror
+- arrows, chevrons, and navigation icons pointing against the reading order. An RTL-only page may ship assets already drawn the right way; check the rendered icon rather than treating a missing `scaleX(-1)` as a defect
+
+`lang` alone does not set direction (browsers take it from `dir`), so do not flag physical properties on a page without `dir="rtl"`; an RTL-script `lang` (`ar`, `fa`, `ur`, `ps`, `ckb`, `he`, `yi`, `ug`, `sd`, `dv`) without an explicit `dir` is worth noting.
+
+Score: 0 desktop-only, 1 major failures, 2 works with rough edges, 3 minor target or overflow issues, 4 every viewport works and gestures work under touch. On RTL-declared pages, reduce by 1 for pervasive rendered RTL failures.
 
 ### 4. Interaction trust and state coverage
 

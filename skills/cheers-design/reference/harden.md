@@ -81,6 +81,11 @@ Use backend-modeled undo or confirmation, never optimistic removal with rollback
 - No fixed-width text containers or buttons; budget 30 to 40% expansion for translations.
 - `min-width: 0` on flex and grid children holding text; `overflow-wrap: break-word` where user-generated text appears. Truncate or line-clamp only where the full value is reachable another way.
 - Logical properties (`margin-inline-start`, `padding-inline`) and mirrored directional icons where direction may vary.
+- Arabic-script text (Arabic, Persian, Urdu, Pashto, Kurdish):
+  - Preserve the zero-width non-joiner (U+200C). Persian and Kurdish use it between compound-word parts to break cursive joining; a filter or sanitizer that strips it changes meaning.
+  - Store Persian ی (U+06CC) and ک (U+06A9) and Arabic ي (U+064A) and ك (U+0643) as typed, but treat each pair as equivalent in search and validation, so Arabic-keyboard input matches Persian text and neither variant is rejected.
+  - Format digits for the locale: `fa-IR` and Arabic locales use Eastern Arabic-Indic numerals (۰–۹, ٠–٩).
+  - Use the calendar the locale expects: Solar Hijri for Persian users, Hijri for many Arabic-speaking users (for example the `fa-IR` or `ar-SA-u-ca-islamic` locale).
 - UTF-8 everywhere. Dates, numbers, currencies, units, and relative time formatted for the locale on the server. Plurals and messages come from whole translatable strings, never concatenated fragments.
 - Body and input text at least 16px on mobile (14px only for genuinely secondary text); containers grow at 200% zoom.
 

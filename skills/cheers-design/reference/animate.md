@@ -65,6 +65,10 @@ Exit faster than entrance. Long feedback feels like latency. Keep easing in the 
 }
 ```
 
+## Hover
+
+Hover motion never moves a neighbor or takes its pointer target. Keep the hovered element still and let a child carry the motion (`.card:hover .card-surface { transform: translateY(-2px) }`). An element that moves itself slides out from under a pointer near its edge and flickers. Optional previews wait for the pointer to settle: for a CSS reveal, set `transition-delay` on the hover state only, so leaving is not delayed.
+
 ## Backend-confirmed motion
 
 - Animate the pending affordance (a disabled control, a progress mark, a status line saying what is happening), never the outcome. No check draws, exit animations, slide-into-list, or reordering until the backend confirms.

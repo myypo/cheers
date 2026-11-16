@@ -36,7 +36,7 @@ Reach for the earliest layer that achieves the effect. Use `cheers` for exact im
 2. **Hypermedia.** Server-rendered confirmed states, coherent update regions, server-side paging or windowing for large tables, and streams for live data or streaming validation.
 3. **Local affordances.** Signals for reveal, selection, focus, and pending state.
 4. **Static JS helpers,** only when the experience cannot stay declarative and the trade-off is worth it: Web Animations API for composable, cancellable choreography; spring physics; client-side virtual scrolling when the server cannot window the data.
-5. **Canvas, WebGL, WASM,** only when the effect or scale demands it: Canvas 2D or OffscreenCanvas in a Worker to keep the main thread free; WebGL for shaders and large datasets; WebGPU (Chrome/Edge, Safari 26+, Firefox on Windows and macOS) always with a WebGL2 fallback; Web Workers or WASM for heavy computation.
+5. **Canvas, WebGL, WASM,** only when the effect or scale demands it: Canvas 2D or OffscreenCanvas in a Worker to keep the main thread free; WebGL for shaders and large datasets; WebGPU (Chrome/Edge, Safari 26+, Firefox on Windows and macOS) always with a WebGL2 fallback, gated on `'gpu' in navigator` plus a non-null `navigator.gpu.requestAdapter()` so a blocklisted or headless GPU still reaches the fallback; Web Workers or WASM for heavy computation.
 
 Sound and device APIs need explicit opt-in or permission and a user gesture.
 
@@ -58,7 +58,7 @@ Sound and device APIs need explicit opt-in or permission and a user gesture.
 
 ## Verify
 
-Ambitious effects rarely land on the first try, so check the render instead of assuming it. Inspect desktop and mobile in one batched round, refine everything it shows in one batch, confirm with at most one more round, and report what still falls short rather than looping. Run the [mechanical scan](../SKILL.md#mechanical-scan-optional) once over the changed page. Answer each with evidence:
+Ambitious effects rarely land on the first try, so check the render instead of assuming it: an effect that technically runs can still stutter, ease wrong, or land on the wrong frame, so aim the checks at timing, easing, and smoothness. Inspect desktop and mobile in one batched round, refine everything it shows in one batch, confirm with at most one more round, and report what still falls short rather than looping. Run the [mechanical scan](../SKILL.md#mechanical-scan-optional) once over the changed page. Answer each with evidence:
 
 - **Wow:** would someone seeing it fresh react?
 - **Removal:** take it away. If nobody would notice, remove it.
