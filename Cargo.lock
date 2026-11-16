@@ -418,7 +418,7 @@ dependencies = [
 
 [[package]]
 name = "cargo-cheers"
-version = "0.1.0-alpha.1"
+version = "0.1.0-alpha.2"
 dependencies = [
  "anyhow",
  "assert_cmd",
@@ -483,7 +483,7 @@ dependencies = [
 
 [[package]]
 name = "cheers"
-version = "0.1.0-alpha.1"
+version = "0.1.0-alpha.2"
 dependencies = [
  "anyhow",
  "async-compression",
@@ -532,7 +532,7 @@ dependencies = [
 
 [[package]]
 name = "cheers-ast"
-version = "0.1.0-alpha.1"
+version = "0.1.0-alpha.2"
 dependencies = [
  "base64 0.22.1",
  "html-escape",
@@ -545,7 +545,7 @@ dependencies = [
 
 [[package]]
 name = "cheers-example-component-testing"
-version = "0.1.0-alpha.1"
+version = "0.1.0-alpha.2"
 dependencies = [
  "axum",
  "cheers",
@@ -555,7 +555,7 @@ dependencies = [
 
 [[package]]
 name = "cheers-example-readme"
-version = "0.1.0-alpha.1"
+version = "0.1.0-alpha.2"
 dependencies = [
  "axum",
  "cheers",
@@ -565,7 +565,7 @@ dependencies = [
 
 [[package]]
 name = "cheers-example-realtime"
-version = "0.1.0-alpha.1"
+version = "0.1.0-alpha.2"
 dependencies = [
  "axum",
  "cheers",
@@ -576,7 +576,7 @@ dependencies = [
 
 [[package]]
 name = "cheers-example-test-harness"
-version = "0.1.0-alpha.1"
+version = "0.1.0-alpha.2"
 dependencies = [
  "axum",
  "cheers",
@@ -587,7 +587,7 @@ dependencies = [
 
 [[package]]
 name = "cheers-example-track"
-version = "0.1.0-alpha.1"
+version = "0.1.0-alpha.2"
 dependencies = [
  "axum",
  "cheers",
@@ -597,7 +597,7 @@ dependencies = [
 
 [[package]]
 name = "cheers-macros"
-version = "0.1.0-alpha.1"
+version = "0.1.0-alpha.2"
 dependencies = [
  "cheers-ast",
  "proc-macro2",
@@ -607,7 +607,7 @@ dependencies = [
 
 [[package]]
 name = "cheers-prettyplease"
-version = "0.1.0-alpha.1"
+version = "0.1.0-alpha.2"
 dependencies = [
  "proc-macro2",
  "syn 2.0.119",
