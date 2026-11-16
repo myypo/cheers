@@ -44,7 +44,7 @@ Read [craft-floor.md](craft-floor.md) first.
 
 ### Visual structure
 
-- Reduce to the world's committed color roles (on a Restrained surface, one or two plus neutrals); one family, three or four sizes, two or three weights.
+- Reduce to the world's committed color roles (on a Restrained surface, one or two decorative or brand colors plus neutrals); keep semantic colors (success, warning, error) and pair each with a non-color cue. One family, three or four sizes, two or three weights.
 - Remove decorative containers. Replace nested cards with spacing, headings, and dividers; use one spacing scale.
 - Pick left or center alignment and stick with it.
 - Prefer a linear flow over complex grids or sidebars where the content allows.
@@ -59,7 +59,7 @@ Read [craft-floor.md](craft-floor.md) first.
 
 ### Copy
 
-Cut every sentence in half, then do it again. Active voice ("Save changes", not "Changes will be saved"), plain language, no headers restating intros, no marketing fluff or hedging. Preserve specific labels, hints, and error recovery copy.
+Cut filler, not meaning. Active voice ("Save changes", not "Changes will be saved"), plain language, no headers restating intros, no marketing fluff or hedging. Preserve specific labels, hints, and error recovery copy.
 
 ### Code
 

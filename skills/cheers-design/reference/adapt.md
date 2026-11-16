@@ -59,7 +59,7 @@ Read [craft-floor.md](craft-floor.md) before editing. Implement through `cheers`
 ### Touch and input
 
 - Touch targets at least 44x44 CSS px with spacing between them. A small visible mark can sit inside a larger hit area.
-- Detect input, not screen size: `(hover: hover)` and `(pointer: coarse)` queries. Nothing essential lives behind hover; touch gets a visible control or an active state instead.
+- Detect input, not screen size: `(hover: hover)` and `(pointer: coarse)` queries. Nothing essential lives behind hover; touch gets a visible control or an active state instead. A hover lift moves a child, never the hovered element itself (`.card:hover .card-surface { transform: translateY(-2px) }`), so the card stays the hit area; see [animate.md](animate.md#hover).
 - Every swipe, drag, pinch, or multi-finger gesture has a single-tap alternative: buttons for carousel steps, a menu or visible action for swipe-to-delete, steppers or inputs beside a slider, move buttons beside drag reorder.
 - Long-press is never the only way to an action; surface the same action in a visible menu.
 - Never disable pinch zoom. Custom pan or zoom surfaces set `touch-action` so the page still scrolls around them.

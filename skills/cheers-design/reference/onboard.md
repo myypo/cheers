@@ -38,7 +38,7 @@ Name the aha moment, the minimum a user must learn to reach it, the first action
 
 ### Empty states
 
-Every empty state answers what will appear here, why it matters, and the first action. Where it helps, add an illustration or icon rather than text alone, and a contextual help link. Match the kind:
+A first-use empty state answers what will appear here, why it matters, and the first action; where it helps, add an illustration or icon rather than text alone, and a contextual help link. The other kinds need less: a user-cleared state stays light, and a no-results state mostly needs a way out. Match the kind:
 
 - **First use:** emphasize value; offer a template or example.
 - **User cleared:** light touch; make recreating easy.
@@ -67,7 +67,7 @@ Do not fake real objects; label examples and templates as such.
 ### Progress and dismissal
 
 - Steps that represent account or data state complete only after backend confirmation. Never mark one done optimistically. Tour steps and device-local hints are local affordances.
-- Durable completion and dismissals that matter across sessions or devices live in backend user state. Device-local hint visibility is acceptable for non-critical tips and is a local affordance only.
+- Durable completion and dismissals that matter across sessions or devices live in backend user state. Device-local hint visibility is acceptable for non-critical tips and is a local affordance only; key it by account and onboarding version (`tooltip-seen-reports:v1:<user-id>`) so a shared browser does not let one account's progress hide onboarding for another.
 - Never show the same onboarding twice; returning users do not see initial onboarding again.
 
 Use the main `cheers` skill for exact action, patch, and test mechanics.

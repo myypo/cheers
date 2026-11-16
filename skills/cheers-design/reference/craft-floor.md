@@ -1,10 +1,10 @@
 # Craft floor
 
-Load this after the direction is settled, and build without announcing the checklist. A pinned brief or the committed visual world overrides anything here; your own habit does not.
+Load this after the direction is settled, and build without announcing the checklist. A pinned brief or the committed visual world overrides anything here except a line marked as a ban; your own habit does not.
 
 ## Verify
 
-Each of these is a check on the built result, not an intention. Run them together in the batched inspection rounds, not as separate screenshot trips; the checks share one render.
+Each of these is a check on the built result, not an intention. Run them together in each batched look at the render, not as separate screenshot trips; the checks share one render.
 
 - **Contrast:** body and placeholder text ≥4.5:1, large text ≥3:1. On colored surfaces tint secondary text from that hue or the foreground; never gray.
 - **Depth:** shadows carry an offset and a soft blur. A zero-offset colored halo is decoration. Declare elevation once, border or shadow: a 1px border under a wide soft shadow is the ghost card. Card radii stay at 12–16px; pills are for small controls.
@@ -41,7 +41,6 @@ Surface habits:
 - Geometric masks standing in for organic contours. A circle, polygon, or radial-gradient cutout approximating a photographic subject's edge reads worse than omitting it. Use a real alpha matte or a cut-out asset.
 - Sketch-style SVG scenes and `feTurbulence` grain imitating illustration. Real illustration or none. This bans SVG imitating pictures, never SVG doing geometry: crisp vector shapes, diagrams, animated linework, and shader-driven effects stay first-class. A shaded, perspectived, or figure-bearing illustration is a picture even in line-art style; geometry means shapes you can specify exactly.
 - Stripe and grid-overlay backgrounds with no canvas, map, blueprint, or measuring tool under them. Backgrounds are surfaces, textured only from the subject's world.
-- Animating an image on hover, directly or through its parent. It is not an action target; give the container the feedback.
 - Light or dark picked by category. Pick it from the use scene: who, where, under what ambient light.
 
 Claims and configuration come from supplied truth; label illustrative values honestly. Naming a concept and then ironizing it is not a claim.

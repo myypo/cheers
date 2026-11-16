@@ -11,7 +11,7 @@ DESIGN.md follows the [DESIGN.md format spec](https://raw.githubusercontent.com/
 - An existing DESIGN.md has drifted from the code.
 - Before a large redesign, to capture the current state as reference.
 
-On a standalone `document` run, never overwrite an existing DESIGN.md silently. Show it and ask: refresh, overwrite, or merge. The record-from-build pass below already has the user's world approval and writes without asking. If another tool in the project expects a specific format, preserve that format and fold these requirements into it.
+Never overwrite an existing DESIGN.md silently. Show it and ask: refresh, overwrite, or merge. On the record-from-build pass below, the builder collects that choice before handing off, except over a seed (a DESIGN.md opening with the `<!-- SEED: ... -->` comment), which the build replaces without asking; a writer that receives no choice for an existing DESIGN.md writes nothing and reports that the choice is owed. If another tool in the project expects a specific format, preserve that format and fold these requirements into it.
 
 ## Choose the path
 
@@ -32,7 +32,7 @@ At the finish of a new world or approved system change, DESIGN.md is written fro
 - **Do not re-interview.** Take the qualitative language from the direction contract and the confirmed answers instead of asking again.
 - **Budget the reading.** Batch reads, take this file and the stylesheets first, sample components rather than walking the tree, and start writing by the midpoint.
 
-Return: paths written, or "No changes" with the files checked; a five-line system summary (palette, type ramp, named rules); and one line naming the defects or drift not canonized or repaired, and why.
+Return: paths written, or "No changes" with the files checked and, when an existing DESIGN.md stopped the write, the choice owed; a five-line system summary (palette, type ramp, named rules); and one line naming the defects or drift not canonized or repaired, and why.
 
 ## Scan mode
 
@@ -88,7 +88,7 @@ colors:
 typography:
   display:
     fontFamily: "Example Display, Georgia, serif"
-    fontSize: "clamp(2.5rem, 7vw, 4.5rem)"
+    fontSize: "4.5rem"
     fontWeight: 700
     lineHeight: 1
   body:

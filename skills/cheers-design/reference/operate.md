@@ -24,6 +24,7 @@ Restrained is the floor: tinted neutrals plus one accent used with discipline. A
 - Accent color marks primary actions, current selection, focus, and state, not decoration.
 - Use a second neutral layer for sidebars, toolbars, and panels, slightly cooler or warmer than the content surface.
 - Charts and status systems need distinguishable shape, labels, and contrast, not color alone.
+- State colors (red for critical, amber for degraded) sit on top of the world's palette only where they carry meaning.
 
 ## Layout
 
@@ -37,6 +38,7 @@ Restrained is the floor: tinted neutrals plus one accent used with discipline. A
 Every interactive component has default, hover, focus-visible, active, disabled, pending, error, and success states where relevant. Don't ship half of them.
 
 - Loading states preserve layout (skeletons over spinners in the middle of content) and set expectations without implying success.
+- A headline number that moves over time shows its recent history, with the onset marked when something changed.
 - Empty states teach the interface: what will appear, why it matters, the first useful action. Never just "nothing here".
 - Consistent affordances across the surface: same button shape, same form-control vocabulary, same icon style. Icons have accessible names or surrounding text.
 - Overlays escape their container. An absolutely positioned dropdown inside an `overflow: hidden` or `overflow: auto` ancestor gets clipped; reach for `<dialog>`, the popover API, or `position: fixed`.

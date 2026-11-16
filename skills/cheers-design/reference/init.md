@@ -101,6 +101,8 @@ Preserve useful legacy headings. Write the file before any visual-world or surfa
 
 Summarize captured and deliberately undecided facts. Do not offer DESIGN.md merely because it is missing.
 
+Tell the user once which files to commit: PRODUCT.md, DESIGN.md, `.cheers-design/surfaces/`, and `.cheers-design/critique/ignore.md`. A blanket `.cheers-design/` ignore hides them from teammates and other worktrees. Review captures under `.cheers-design/review/` are scratch output and can be ignored. Critique snapshots under `.cheers-design/critique/` are run history that `polish` reads as a backlog: commit them when the team should share that backlog, otherwise ignore them except `ignore.md`.
+
 Recommend the next action from the actual project state:
 
 - Empty or early project: ask for the surface to be built, or suggest `cheers-design shape <surface>` when the user wants a confirmed brief without implementation. New-work establishes a visual world only when the requested work needs one.

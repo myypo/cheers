@@ -9,7 +9,7 @@ Package-local notices and license texts are kept next to the code or skill mater
 `skills/cheers-design` adapts material from Impeccable.
 
 - Original work: <https://github.com/pbakaus/impeccable>
-- Upstream sync/base: `508d7e8955de3b3caf2d8676e85206723d41a887`
+- Upstream sync/base: `d41d9860b0094dcb68030657da63461212835aaa`
 - Copyright: 2025-2026 Paul Bakaus
 - License: Apache License 2.0
 - Local notice: [`skills/cheers-design/NOTICE.md`](skills/cheers-design/NOTICE.md)
