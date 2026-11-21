@@ -271,6 +271,7 @@ async fn main() {
 
 #[cfg(test)]
 mod tests {
+    use cheers::test::{DiagnosticKind, PatchTarget};
     use thirtyfour::{prelude::*, stringmatch::StringMatchable};
 
     use super::*;
@@ -780,14 +781,6 @@ window.setTimeout = (callback, delay, ...args) =>
         })
     }
 
-    /// Records the index among `document.forms` of each form the runtime warns about.
-    const RECORD_FORM_WARNINGS: &str = "window.__formWarnings = []; const warn = console.warn; \
-        console.warn = (...args) => { \
-            if (String(args[0]).startsWith('cheers: this form')) \
-                window.__formWarnings.push(Array.from(document.forms).indexOf(args[1])); \
-            else warn(...args); \
-        };";
-
     fn search_page(form: impl Render) -> axum::response::Html<String> {
         axum::response::Html(
             html! {
@@ -838,10 +831,10 @@ window.setTimeout = (callback, delay, ...args) =>
                         let search = SearchAction
                             .options(ActionOptions::new().form_selector("form.filters"));
                         search_page(html! {
-                            form class="filters" {
+                            form class="filters" name="tags" {
                                 input name="tag";
                             }
-                            form class="filters" {
+                            form class="filters" name="query" {
                                 input name="q";
                             }
                             button type="button" !on:click(search) { "Search" }
@@ -934,16 +927,17 @@ window.setTimeout = (callback, delay, ...args) =>
         })
     }
 
-    /// Waits two animation frames, after the runtime's check, then returns the forms it warned
-    /// about.
-    async fn form_warnings(app: &WebDriver) -> WebDriverResult<Vec<i64>> {
-        app.execute_async(
-            "const done = arguments[arguments.length - 1]; \
-             requestAnimationFrame(() => requestAnimationFrame(() => done(window.__formWarnings)));",
-            vec![],
-        )
-        .await?
-        .convert()
+    /// The forms the runtime warned about since the last call, by their opening tags.
+    async fn form_warnings(app: &cheers::test::Session) -> WebDriverResult<Vec<String>> {
+        Ok(app
+            .take_diagnostics()
+            .await?
+            .into_iter()
+            .map(|diagnostic| match diagnostic.kind {
+                DiagnosticKind::FormSubmittedOutsideOnSubmit { form } => form,
+                _ => panic!("expected a form warning: {diagnostic}"),
+            })
+            .collect())
     }
 
     #[tokio::test]
@@ -952,14 +946,10 @@ window.setTimeout = (callback, delay, ...args) =>
             .await
             .unwrap()
             .run(|app| async move {
-                app.cdp()
-                    .page()
-                    .add_script_to_evaluate_on_new_document(RECORD_FORM_WARNINGS)
-                    .await?;
                 for (path, warned) in [
-                    ("/button", &[0][..]),
-                    ("/outside", &[0]),
-                    ("/second", &[0]),
+                    ("/button", &["<form></form>"][..]),
+                    ("/outside", &[r#"<form id="search-form"></form>"#]),
+                    ("/second", &[r#"<form class="filters" name="tags"></form>"#]),
                     ("/submit", &[]),
                     ("/submit-button", &[]),
                     ("/no-implicit-submission", &[]),
@@ -972,7 +962,7 @@ window.setTimeout = (callback, delay, ...args) =>
                 }
 
                 app.goto(app.url("/patched")).await?;
-                assert_eq!(form_warnings(&app).await?, [0; 0]);
+                assert_eq!(form_warnings(&app).await?, [""; 0]);
                 app.query(By::XPath("//button[text()='Load']"))
                     .and_clickable()
                     .first()
@@ -981,7 +971,7 @@ window.setTimeout = (callback, delay, ...args) =>
                     .await?;
                 app.query(By::Css("#patched form")).first().await?;
                 let expected = if cfg!(debug_assertions) {
-                    &[0][..]
+                    &["<form></form>"][..]
                 } else {
                     &[]
                 };
@@ -990,5 +980,288 @@ window.setTimeout = (callback, delay, ...args) =>
             })
             .await
             .expect("warn about forms an action submits outside on:submit");
+    }
+
+    #[action(POST)]
+    async fn patch_absent_note() -> PatchElements {
+        PatchElements::new()
+            .element(Note {
+                id: 3,
+                text: "patched",
+            })
+            .element(Note {
+                id: 9,
+                text: "absent",
+            })
+    }
+
+    #[action(POST)]
+    async fn patch_absent_note_optionally() -> PatchElements {
+        PatchElements::new()
+            .optional()
+            .element(Note {
+                id: 3,
+                text: "patched",
+            })
+            .element(Note {
+                id: 9,
+                text: "absent",
+            })
+    }
+
+    #[action(POST)]
+    async fn patch_element_without_id() -> PatchElements {
+        PatchElements::new()
+            .optional()
+            .element(Note {
+                id: 3,
+                text: "patched",
+            })
+            .element(html! { p { "stray" } })
+    }
+
+    #[action(POST)]
+    async fn patch_absent_selector() -> EventBatch {
+        EventBatch::new()
+            .with(
+                PatchElements::new()
+                    .selector("#absent")
+                    .mode(PatchElementsMode::Inner)
+                    .element("absent"),
+            )
+            .with(PatchElements::new().element(Note {
+                id: 3,
+                text: "patched",
+            }))
+    }
+
+    fn diagnostics_app() -> Router {
+        let ctx = Ctx {
+            stocks: Box::leak(Box::new(Mutex::new(BTreeMap::new()))),
+            stocks_tx: tokio::sync::broadcast::channel(1).0,
+        };
+        cheers::router::new(
+            Router::new()
+                .route(
+                    "/",
+                    get(|| async {
+                        html! {
+                            Base {
+                                Note id=3 text="waiting";
+                                button type="button" !on:click(PatchAbsentNoteAction) { "Absent" }
+                                button type="button" !on:click(PatchAbsentNoteOptionallyAction) {
+                                    "Optional"
+                                }
+                                button type="button" !on:click(PatchAbsentSelectorAction) {
+                                    "Selector"
+                                }
+                                button type="button" !on:click(PatchElementWithoutIdAction) {
+                                    "Without id"
+                                }
+                                button type="button" !on:click("window.cheersUndefined()") {
+                                    "Throw"
+                                }
+                            }
+                        }
+                    }),
+                )
+                .action::<PatchAbsentNoteAction>()
+                .action::<PatchAbsentNoteOptionallyAction>()
+                .action::<PatchAbsentSelectorAction>()
+                .action::<PatchElementWithoutIdAction>(),
+            cheers::router::Config::default(),
+        )
+        .expect("create app")
+        .with_state(ctx)
+    }
+
+    async fn click(app: &cheers::test::Session, text: &str) -> WebDriverResult<()> {
+        app.query(By::XPath(format!("//button[text()='{text}']")))
+            .and_clickable()
+            .first()
+            .await?
+            .click()
+            .await
+    }
+
+    async fn wait_for_patched_note(app: &cheers::test::Session) -> WebDriverResult<()> {
+        app.query(By::Id(Note::id(3).to_string()))
+            .with_text("patched".match_full())
+            .first()
+            .await?;
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn debug_builds_report_patches_without_a_target_unless_optional() {
+        cheers::test::App::new(diagnostics_app())
+            .await
+            .unwrap()
+            .run(|app| async move {
+                app.goto(app.url("/")).await?;
+                click(&app, "Optional").await?;
+                wait_for_patched_note(&app).await?;
+                assert_eq!(app.take_diagnostics().await?, []);
+
+                for (button, kind) in [
+                    (
+                        "Absent",
+                        DiagnosticKind::PatchTargetMissing {
+                            target: PatchTarget::Id(Note::id(9).to_string()),
+                        },
+                    ),
+                    (
+                        "Selector",
+                        DiagnosticKind::PatchTargetMissing {
+                            target: PatchTarget::Selector("#absent".to_owned()),
+                        },
+                    ),
+                    (
+                        "Without id",
+                        DiagnosticKind::PatchElementWithoutId {
+                            element: "<p></p>".to_owned(),
+                        },
+                    ),
+                ] {
+                    app.goto(app.url("/")).await?;
+                    click(&app, button).await?;
+                    wait_for_patched_note(&app).await?;
+                    let reported: Vec<_> = app
+                        .take_diagnostics()
+                        .await?
+                        .into_iter()
+                        .map(|diagnostic| (diagnostic.page, diagnostic.kind))
+                        .collect();
+                    let expected = if cfg!(debug_assertions) {
+                        vec![("/".to_owned(), kind)]
+                    } else {
+                        Vec::new()
+                    };
+                    assert_eq!(reported, expected, "{button}");
+                }
+                Ok(())
+            })
+            .await
+            .expect("report patches without a target");
+    }
+
+    #[tokio::test]
+    async fn debug_builds_report_uncaught_errors() {
+        cheers::test::App::new(diagnostics_app())
+            .await
+            .unwrap()
+            .run(|app| async move {
+                app.goto(app.url("/")).await?;
+                click(&app, "Throw").await?;
+                let diagnostics = app.take_diagnostics().await?;
+                if cfg!(debug_assertions) {
+                    assert_eq!(diagnostics.len(), 1, "{diagnostics:?}");
+                    assert!(
+                        matches!(
+                            &diagnostics[0].kind,
+                            DiagnosticKind::UncaughtError { message }
+                                if message.contains("cheersUndefined")
+                        ),
+                        "{}",
+                        diagnostics[0]
+                    );
+                } else {
+                    assert_eq!(diagnostics, []);
+                }
+                Ok(())
+            })
+            .await
+            .expect("report uncaught errors");
+    }
+
+    #[tokio::test]
+    async fn debug_builds_report_an_error_raised_just_before_navigating() {
+        cheers::test::App::new(diagnostics_app())
+            .await
+            .unwrap()
+            .run(|app| async move {
+                app.goto(app.url("/")).await?;
+                let note = Note::id(3).to_string();
+                app.execute(
+                    format!(
+                        r#"
+                        document.getElementById("{note}").remove();
+                        window.dispatchEvent(
+                          new ErrorEvent("error", {{ error: new Error("before navigating") }}),
+                        );
+                        location.assign("/");
+                        "#
+                    ),
+                    vec![],
+                )
+                .await?;
+                app.query(By::Id(note)).first().await?;
+                app.wait_for_datastar().await?;
+                let reported: Vec<_> = app
+                    .take_diagnostics()
+                    .await?
+                    .into_iter()
+                    .map(|diagnostic| (diagnostic.page, diagnostic.kind))
+                    .collect();
+                let expected = if cfg!(debug_assertions) {
+                    vec![(
+                        "/".to_owned(),
+                        DiagnosticKind::UncaughtError {
+                            message: "before navigating".to_owned(),
+                        },
+                    )]
+                } else {
+                    Vec::new()
+                };
+                assert_eq!(reported, expected);
+                Ok(())
+            })
+            .await
+            .expect("report an error raised just before navigating");
+    }
+
+    #[tokio::test]
+    async fn a_test_takes_diagnostics_the_apps_middleware_turns_away() {
+        let app = diagnostics_app().layer(axum::middleware::from_fn(
+            |req: axum::extract::Request, next: axum::middleware::Next| async move {
+                if req.uri().path() == "/cheers/diagnostics" {
+                    return axum::response::IntoResponse::into_response(
+                        axum::http::StatusCode::FORBIDDEN,
+                    );
+                }
+                next.run(req).await
+            },
+        ));
+        cheers::test::App::new(app)
+            .await
+            .unwrap()
+            .run(|app| async move {
+                app.goto(app.url("/")).await?;
+                click(&app, "Absent").await?;
+                wait_for_patched_note(&app).await?;
+                let expected = usize::from(cfg!(debug_assertions));
+                assert_eq!(app.take_diagnostics().await?.len(), expected);
+                Ok(())
+            })
+            .await
+            .expect("take diagnostics the app's middleware turns away");
+    }
+
+    #[tokio::test]
+    #[cfg_attr(
+        debug_assertions,
+        should_panic(expected = "the app's pages reported diagnostics the test did not take")
+    )]
+    async fn a_test_fails_on_a_diagnostic_it_did_not_take() {
+        cheers::test::App::new(diagnostics_app())
+            .await
+            .unwrap()
+            .run(|app| async move {
+                app.goto(app.url("/")).await?;
+                click(&app, "Absent").await?;
+                wait_for_patched_note(&app).await
+            })
+            .await
+            .expect("run the test");
     }
 }

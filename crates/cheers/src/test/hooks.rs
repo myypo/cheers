@@ -1,5 +1,5 @@
 use std::{
-    collections::VecDeque,
+    collections::{HashSet, VecDeque},
     future::Future,
     sync::{Arc, Mutex, MutexGuard},
 };
@@ -15,7 +15,10 @@ use thirtyfour::error::{WebDriverError, WebDriverResult};
 use tokio::sync::watch;
 
 use super::TEST_TIMEOUT;
-use crate::track::{Batch, Item};
+use crate::{
+    router::diagnostics::{self, Diagnostic, DiagnosticKind},
+    track::{Batch, Item},
+};
 
 /// What a test app shares between its [`intercept`] layer, the [`capture_track`] layer of the
 /// router under test, and its [`super::Session`].
@@ -28,7 +31,14 @@ pub(crate) struct Hooks {
     track_problems: Mutex<Vec<String>>,
     /// The endpoint of the [`capture_track`] layer any request has passed through.
     capture_endpoint: Mutex<Option<Arc<str>>>,
+    /// Diagnostics the app's pages reported that the test has not taken.
+    diagnostics: Mutex<Vec<Diagnostic>>,
+    /// The ids of every diagnostic report that arrived.
+    received_reports: watch::Sender<HashSet<String>>,
 }
+
+/// The header carrying the id the runtime gives each diagnostic report.
+const REPORT_ID_HEADER: &str = "x-cheers-diagnostic-id";
 
 fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
     mutex.lock().unwrap_or_else(|e| e.into_inner())
@@ -107,18 +117,48 @@ impl Hooks {
         }
     }
 
+    fn diagnose(&self, diagnostic: Diagnostic) {
+        lock(&self.diagnostics).push(diagnostic);
+    }
+
+    /// Wait until the diagnostic reports with these ids have arrived.
+    pub(crate) async fn wait_for_reports(&self, ids: &[String]) -> WebDriverResult<()> {
+        let mut rx = self.received_reports.subscribe();
+        let arrived = |received: &HashSet<String>| ids.iter().all(|id| received.contains(id));
+        if tokio::time::timeout(TEST_TIMEOUT, rx.wait_for(arrived))
+            .await
+            .is_ok()
+        {
+            return Ok(());
+        }
+        let received = self.received_reports.borrow();
+        let missing: Vec<_> = ids.iter().filter(|id| !received.contains(*id)).collect();
+        Err(WebDriverError::Timeout(format!(
+            "diagnostic reports {missing:?} the browser sent did not arrive within {TEST_TIMEOUT:?}"
+        )))
+    }
+
+    pub(crate) fn take_diagnostics(&self) -> Vec<Diagnostic> {
+        std::mem::take(&mut *lock(&self.diagnostics))
+    }
+
     fn track_problem(&self, problem: String) {
         tracing::warn!("{problem}");
         lock(&self.track_problems).push(problem);
     }
 }
 
-/// The test app's outermost layer: hands [`Hooks`] to [`capture_track`] and holds action requests.
+/// The test app's outermost layer: hands [`Hooks`] to [`capture_track`], records diagnostics and
+/// holds action requests.
 pub(crate) async fn intercept(
     State(hooks): State<Arc<Hooks>>,
     mut req: Request,
     next: Next,
 ) -> Response {
+    // Recorded here, before the app's own layers, which may turn the report away.
+    if req.method() == Method::POST && req.uri().path() == diagnostics::PATH {
+        return record_diagnostic(&hooks, req, next).await;
+    }
     req.extensions_mut().insert(hooks.clone());
     // Fallback requests have no matched path, so an action that was never registered is not held.
     let hold = req
@@ -128,6 +168,39 @@ pub(crate) async fn intercept(
     match hold {
         Some(hold) => around(hold, &hooks, next.run(req)).await,
         None => next.run(req).await,
+    }
+}
+
+async fn record_diagnostic(hooks: &Hooks, req: Request, next: Next) -> Response {
+    let (parts, body) = req.into_parts();
+    let id = parts
+        .headers
+        .get(REPORT_ID_HEADER)
+        .and_then(|id| id.to_str().ok())
+        .map(str::to_owned);
+    let bytes = to_bytes(body, usize::MAX).await;
+    hooks.diagnose(match &bytes {
+        Ok(bytes) => serde_json::from_slice(bytes).unwrap_or_else(|err| {
+            unreadable_report(String::from_utf8_lossy(bytes).into_owned(), err.to_string())
+        }),
+        Err(err) => unreadable_report(String::new(), err.to_string()),
+    });
+    if let Some(id) = id {
+        hooks.received_reports.send_modify(|received| {
+            received.insert(id);
+        });
+    }
+    let Ok(bytes) = bytes else {
+        return StatusCode::BAD_REQUEST.into_response();
+    };
+    next.run(Request::from_parts(parts, Body::from(bytes)))
+        .await
+}
+
+fn unreadable_report(report: String, error: String) -> Diagnostic {
+    Diagnostic {
+        page: String::new(),
+        kind: DiagnosticKind::UnreadableReport { report, error },
     }
 }
 

@@ -29,6 +29,8 @@ mod pool;
 pub use hooks::HeldAction;
 pub(crate) use hooks::capture_track;
 
+pub use crate::router::diagnostics::{Diagnostic, DiagnosticKind, PatchTarget};
+
 #[cfg(not(unix))]
 mod pool {
     use std::{io, path::Path, sync::Arc};
@@ -66,6 +68,9 @@ mod pool {
 ///
 /// Drive the browser through [`App::run`], whose [`Session`] builds URLs for the server and
 /// waits for Datastar after navigating.
+///
+/// In debug builds, a test fails when the app's pages reported a [`Diagnostic`] it did not take
+/// with [`Session::take_diagnostics`].
 ///
 /// ```ignore
 /// cheers::test::App::new(router).await?.run(|app| async move {
@@ -255,6 +260,12 @@ impl App {
     /// [`shutdown`](Self::shutdown), then re-raising the result. If the test body
     /// panics, `run` performs best-effort shutdown and then resumes the panic.
     ///
+    /// # Panics
+    ///
+    /// When the body succeeds but the app's pages reported a [`Diagnostic`] the body did not take
+    /// with [`Session::take_diagnostics`]. Before checking, `run` has the page the browser ends on
+    /// run its pending checks and waits for every report the tab sent to arrive.
+    ///
     /// ```ignore
     /// cheers::test::App::new(router).await?.run(|app| async move {
     ///     app.goto(app.url("/")).await?;
@@ -282,7 +293,20 @@ impl App {
         match caught {
             Ok(()) => {
                 let result = output.expect("a body that completed stored its result");
-                match (result, self.shutdown().await) {
+                let (result, diagnostics) = match result {
+                    Ok(value) => {
+                        let driver = self.driver.as_ref().expect("browser to be present");
+                        // A test may end where no script runs, such as with an alert open; the
+                        // reports that already arrived still count.
+                        let unsettled = unsettled_reports(driver).await.unwrap_or_default();
+                        match self.hooks.wait_for_reports(&unsettled).await {
+                            Ok(()) => (Ok(value), self.hooks.take_diagnostics()),
+                            Err(err) => (Err(err), Vec::new()),
+                        }
+                    }
+                    Err(err) => (Err(err), Vec::new()),
+                };
+                let result = match (result, self.shutdown().await) {
                     (Ok(value), Ok(())) => Ok(value),
                     (Err(err), Ok(())) => Err(err),
                     (Ok(_), Err(err)) => Err(err),
@@ -290,7 +314,19 @@ impl App {
                         eprintln!("failed to shut down test app after test error: {shutdown_err}");
                         Err(err)
                     }
+                };
+                if result.is_ok() && !diagnostics.is_empty() {
+                    panic!(
+                        "the app's pages reported diagnostics the test did not take with \
+                         `Session::take_diagnostics`:\n{}",
+                        diagnostics
+                            .iter()
+                            .map(Diagnostic::to_string)
+                            .collect::<Vec<_>>()
+                            .join("\n")
+                    );
                 }
+                result
             }
             Err(payload) => {
                 if let Err(err) = self.shutdown().await {
@@ -514,7 +550,42 @@ impl Session {
     ) -> WebDriverResult<T> {
         self.hooks.wait_for_tracked(f).await
     }
+
+    /// Return and clear every [`Diagnostic`] the app's pages reported so far, once the current
+    /// page has run its pending checks and every report the tab sent, including from the pages
+    /// before it, has arrived.
+    ///
+    /// [`App::run`] fails a test whose pages reported a diagnostic it did not take, so a test that
+    /// expects one takes it here. Only debug builds report diagnostics.
+    ///
+    /// ```ignore
+    /// app.goto(app.url("/search")).await?;
+    /// let diagnostics = app.take_diagnostics().await?;
+    /// assert!(matches!(
+    ///     diagnostics[0].kind,
+    ///     DiagnosticKind::FormSubmittedOutsideOnSubmit { .. }
+    /// ));
+    /// ```
+    pub async fn take_diagnostics(&self) -> WebDriverResult<Vec<Diagnostic>> {
+        let unsettled = unsettled_reports(&self.driver).await?;
+        self.hooks.wait_for_reports(&unsettled).await?;
+        Ok(self.hooks.take_diagnostics())
+    }
 }
+
+/// Run the current page's pending checks and return the ids of the reports its tab sent that may
+/// not have arrived yet.
+async fn unsettled_reports(driver: &thirtyfour::WebDriver) -> WebDriverResult<Vec<String>> {
+    driver
+        .execute(SETTLE_DIAGNOSTICS_SCRIPT, vec![])
+        .await?
+        .convert()
+}
+
+const SETTLE_DIAGNOSTICS_SCRIPT: &str = r#"
+const settle = window.__cheersSettleDiagnostics;
+return typeof settle === "function" ? settle() : [];
+"#;
 
 /// Poll `body` once, catching a panic it raises.
 ///

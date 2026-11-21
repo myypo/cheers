@@ -1,3 +1,4 @@
+import { diagnose } from "./diagnose";
 import { attrSelector } from "./ssr-stream";
 
 function ssrTarget(root: ParentNode, key: string): Element | null {
@@ -30,6 +31,8 @@ function applySsrTemplate(
     if (removeIfMissing) {
       template.remove();
       if (script) script.remove();
+    } else {
+      diagnose({ kind: "async_stream_target_missing", key });
     }
     return;
   }
@@ -48,6 +51,7 @@ function ssrStream(key: string): void {
   const template = document.querySelector(attrSelector("data-ssr", key + "-t"));
   if (!(template instanceof HTMLTemplateElement)) {
     console.warn("Cheers async stream target missing", key);
+    diagnose({ kind: "async_stream_target_missing", key });
     return;
   }
 

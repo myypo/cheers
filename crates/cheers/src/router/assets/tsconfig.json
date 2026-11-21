@@ -6,11 +6,13 @@
       "@engine": ["../../../vendor/datastar/src/engine/engine.ts"],
       "@engine/*": ["../../../vendor/datastar/src/engine/*"],
       "@plugins/*": ["../../../vendor/datastar/src/plugins/*"],
-      "@utils/*": ["../../../vendor/datastar/src/utils/*"]
+      "@utils/*": ["../../../vendor/datastar/src/utils/*"],
+      "cheers/diagnose": ["./diagnose.ts"]
     }
   },
   "include": [
     "./datastar-entry.ts",
+    "diagnose.ts",
     "form-submit-warning.ts",
     "ssr-stream.ts",
     "ssr-stream-subsecond.ts",
