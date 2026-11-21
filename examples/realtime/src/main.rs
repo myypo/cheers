@@ -443,9 +443,7 @@ mod tests {
 
     #[action(POST)]
     async fn mark_script_ran() -> ExecuteScript {
-        ExecuteScript::new(js_script! {
-            "window.scriptRan = true"
-        })
+        ExecuteScript::new(js_script! { "window.scriptRan = true" })
     }
 
     #[tokio::test]
@@ -515,7 +513,10 @@ mod tests {
     async fn insert_init_script() -> PatchElements {
         PatchElements::new().element(html! {
             div id="init-script-slot" {
-                script !init({ "window.inits = (window.inits ?? 0) + 1" }) {}
+                script !init({ "(window.inits ??= []).push('direct')" }) {}
+                div {
+                    script !init({ "(window.inits ??= []).push('nested')" }) {}
+                }
             }
         })
     }
@@ -557,16 +558,15 @@ mod tests {
                     .await?
                     .click()
                     .await?;
-                app.query(By::Css("#init-script-slot > script"))
+                app.query(By::Css("#init-script-slot script"))
                     .first()
                     .await?;
-                // Gives a second init time to run.
-                tokio::time::sleep(Duration::from_millis(200)).await;
-                let inits = app
-                    .execute("return window.inits ?? 0;", vec![])
+                let mut inits = app
+                    .execute("return window.inits ?? [];", vec![])
                     .await?
-                    .convert::<u32>()?;
-                assert_eq!(inits, 1);
+                    .convert::<Vec<String>>()?;
+                inits.sort();
+                assert_eq!(inits, ["direct", "nested"]);
                 Ok(())
             })
             .await
@@ -1081,9 +1081,7 @@ window.setTimeout = (callback, delay, ...args) =>
                 id: 3,
                 text: "patched",
             })
-            .element(html! {
-                p { "stray" }
-            })
+            .element(html! { p { "stray" } })
     }
 
     #[action(POST)]
