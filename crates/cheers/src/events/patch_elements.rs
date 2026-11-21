@@ -65,6 +65,7 @@ pub struct PatchElements {
     mode: Option<PatchElementsMode>,
     selector: Option<String>,
     view_transition: ViewTransition,
+    optional: bool,
     components: Option<Buffer>,
 }
 
@@ -81,6 +82,7 @@ impl PatchElements {
             mode: None,
             selector: None,
             view_transition: ViewTransition::None,
+            optional: false,
             components: None,
         }
     }
@@ -119,6 +121,17 @@ impl PatchElements {
         self
     }
 
+    /// Lets the patch find nothing to update on the page.
+    ///
+    /// In debug builds, a patch whose selector or element ids match nothing on the page is reported
+    /// as a diagnostic: the server logs it and a `cheers::test::App` test fails. Mark a patch whose
+    /// targets may be absent, such as a badge only some pages render or a panel the user may have
+    /// closed, so it is skipped silently.
+    pub fn optional(mut self) -> Self {
+        self.optional = true;
+        self
+    }
+
     /// Appends a rendered element payload to this patch.
     ///
     /// Multiple calls add multiple rendered elements to the same patch message.
@@ -128,10 +141,8 @@ impl PatchElements {
             components.dangerously_get_string().push('\n');
             element.render_to(&mut components);
             Self {
-                mode: self.mode,
-                selector: self.selector,
-                view_transition: self.view_transition,
                 components: Some(components),
+                ..self
             }
         } else {
             let mut buffer = Buffer::new();
@@ -253,6 +264,7 @@ impl IntoEvent for PatchElements {
             mode,
             selector,
             view_transition,
+            optional,
             components,
         } = self;
 
@@ -297,6 +309,9 @@ impl IntoEvent for PatchElements {
                 );
             }
         }
+        if optional {
+            add_sse_line(&mut data, "optional true".to_owned());
+        }
         if let Some(components) = components {
             let components = components.rendered().into_inner();
             let mut lines = components.lines();
@@ -328,6 +343,7 @@ impl IntoResponse for PatchElements {
             mode,
             selector,
             view_transition,
+            optional,
             components,
         }: Self = self;
 
@@ -360,6 +376,9 @@ impl IntoResponse for PatchElements {
                 );
             }
         }
+        if optional {
+            r = r.header("datastar-optional", "true");
+        }
         let body = components
             .map(|c| c.rendered().into_inner())
             .map(sanitize_axum_sse_data)
@@ -389,6 +408,43 @@ mod tests {
             "event: datastar-patch-elements
 data: mode remove
 data: selector #foo\n\n"
+        );
+    }
+
+    #[tokio::test]
+    async fn optional_patch_streams_its_flag_before_its_elements() {
+        let patch = PatchElements::new()
+            .selector("#badge")
+            .optional()
+            .element("3");
+
+        let body = read_sse_body(patch).await;
+        assert_eq!(
+            body,
+            "event: datastar-patch-elements
+data: selector #badge
+data: optional true
+data: elements 3\n\n"
+        );
+    }
+
+    #[test]
+    fn optional_patch_response_sets_its_header() {
+        let response = PatchElements::new().optional().into_response();
+
+        assert_eq!(
+            response
+                .headers()
+                .get("datastar-optional")
+                .and_then(|value| value.to_str().ok()),
+            Some("true")
+        );
+        assert!(
+            PatchElements::new()
+                .into_response()
+                .headers()
+                .get("datastar-optional")
+                .is_none()
         );
     }
 

@@ -10,6 +10,9 @@ import {
 import type { WatcherArgsValue, WatcherContext } from "@engine/types";
 import { isHTMLOrSVG } from "@utils/dom";
 import { supportsViewTransitions } from "@utils/view-transitions";
+// Cheers: reports a patch that finds no element, unless the server marked it optional, and an
+// element without an id in a patch without a selector.
+import { diagnose } from "cheers/diagnose";
 
 const isValidType = <T extends readonly string[]>(
   arr: T,
@@ -35,6 +38,7 @@ type PatchElementsArgs = {
   selector: string;
   mode: PatchElementsMode;
   namespace: Namespace;
+  optional: boolean;
   elements: WatcherArgsValue;
 };
 
@@ -45,6 +49,8 @@ watcher({
     const mode = typeof args.mode === "string" ? args.mode : "outer";
     const namespace =
       typeof args.namespace === "string" ? args.namespace : "html";
+    const optional =
+      typeof args.optional === "string" && args.optional.trim() === "true";
     const useViewTransition =
       typeof args.useViewTransition === "string" &&
       args.useViewTransition.trim() === "true";
@@ -70,6 +76,7 @@ watcher({
       selector,
       mode,
       namespace,
+      optional,
       elements,
     };
 
@@ -96,7 +103,7 @@ watcher({
 
 const onPatchElements = (
   { error }: WatcherContext,
-  { selector, mode, namespace, elements }: PatchElementsArgs,
+  { selector, mode, namespace, optional, elements }: PatchElementsArgs,
 ) => {
   let newContent = document.createDocumentFragment();
   let consume = typeof elements !== "string" && !!elements;
@@ -163,9 +170,16 @@ const onPatchElements = (
       } else {
         target = document.getElementById(child.id)!;
         if (!target) {
-          console.warn(error("PatchElementsNoTargetsFound"), {
-            element: { id: child.id },
-          });
+          if (!child.id || !optional) {
+            console.warn(error("PatchElementsNoTargetsFound"), {
+              element: { id: child.id },
+            });
+            diagnose(
+              child.id
+                ? { kind: "patch_target_missing", target: { id: child.id } }
+                : { kind: "patch_element_without_id", element: child },
+            );
+          }
           continue;
         }
       }
@@ -176,7 +190,10 @@ const onPatchElements = (
   } else {
     const targets = document.querySelectorAll(selector);
     if (!targets.length) {
-      console.warn(error("PatchElementsNoTargetsFound"), { selector });
+      if (!optional) {
+        console.warn(error("PatchElementsNoTargetsFound"), { selector });
+        diagnose({ kind: "patch_target_missing", target: { selector } });
+      }
       return;
     }
 

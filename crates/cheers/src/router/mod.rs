@@ -6,6 +6,8 @@ pub(crate) use assets::{css_bundle_url, js_bundle_url, js_url};
 mod compression;
 mod datastar_redirect;
 pub use datastar_redirect::datastar_redirect;
+#[cfg(any(debug_assertions, feature = "test"))]
+pub(crate) mod diagnostics;
 #[cfg(debug_assertions)]
 mod hot_reload;
 mod redirect_trailing_slash;
@@ -69,6 +71,9 @@ pub(crate) fn live_reload_enabled() -> bool {
 ///   redirects from layers added to the returned router.
 /// - A path with a trailing slash redirects to the path without it.
 /// - Responses are compressed when the client accepts it.
+/// - In debug builds, the runtime posts the problems it finds in a page, such as a patch that
+///   matched no element or an uncaught error, to `/cheers/diagnostics`, and the server logs each
+///   with `tracing::warn!`. A `cheers::test::App` test fails on them.
 pub fn new<S: Clone + Send + Sync + 'static>(
     actions_and_pages: Router<S>,
     config: Config,
@@ -80,6 +85,8 @@ pub fn new<S: Clone + Send + Sync + 'static>(
     let router = Router::new()
         .nest("/cheers", router)
         .merge(actions_and_pages);
+    #[cfg(debug_assertions)]
+    let router = router.merge(diagnostics::router());
 
     #[cfg(feature = "test")]
     let router = match config.track.as_ref().map(TrackConfig::endpoint) {

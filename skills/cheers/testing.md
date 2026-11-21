@@ -117,6 +117,28 @@ let props = app
     .await?;
 ```
 
+## Diagnostics
+
+In debug builds the runtime reports problems it finds in a page to the server, which logs them
+with `tracing::warn!`: a patch whose targets are not on the page (unless marked
+`PatchElements::optional`), a patch element with neither an id nor a selector to target, a form an action submits outside its `!on:submit`, a missing async
+stream target, and uncaught errors and promise rejections, including Datastar expression errors.
+`App::run` fails a test whose pages reported one, so fix the page rather than the test. A test that
+expects a diagnostic takes it with `app.take_diagnostics()`, which first has the current page run
+its pending checks and waits for every report the tab sent, including from the pages before it. Match on its `kind`, a `cheers::test::DiagnosticKind`, rather than on
+its message:
+
+```rust
+use cheers::test::DiagnosticKind;
+
+app.goto(app.url("/search")).await?;
+let diagnostics = app.take_diagnostics().await?;
+assert!(matches!(
+    diagnostics[0].kind,
+    DiagnosticKind::FormSubmittedOutsideOnSubmit { .. }
+));
+```
+
 ## Isolated browser component routes
 
 When browser behavior matters but the full page is noise, mount a focused route:

@@ -44,6 +44,7 @@ fn assets_headers(content_type: &'static str) -> HeaderMap {
 }
 
 const DATASTAR_ENTRY_MODULE: &str = "cheers/datastar-entry";
+const DIAGNOSE_MODULE: &str = "cheers/diagnose";
 const FORM_SUBMIT_WARNING_MODULE: &str = "cheers/form-submit-warning";
 const RUNTIME_ENTRY_MODULE: &str = "cheers/runtime-entry";
 const SSR_STREAM_MODULE: &str = "cheers/ssr-stream";
@@ -56,7 +57,12 @@ fn include_subsecond_stream_runtime() -> bool {
 }
 
 fn runtime_entry(track: bool) -> String {
-    let mut entry = String::from("import './datastar-entry';\nimport './ssr-stream';\n");
+    let mut entry = String::new();
+    // First, so it hears what the modules after it report while they load.
+    if cfg!(debug_assertions) {
+        entry.push_str("import './diagnose';\n");
+    }
+    entry.push_str("import './datastar-entry';\nimport './ssr-stream';\n");
     if cfg!(debug_assertions) {
         entry.push_str("import './form-submit-warning';\n");
     }
@@ -75,6 +81,14 @@ fn datastar_modules(track: Option<&TrackConfig>) -> Result<Vec<bundle::VirtualMo
         bundle::VirtualModule::new(RUNTIME_ENTRY_MODULE, runtime_entry(track.is_some())),
         bundle::VirtualModule::new(DATASTAR_ENTRY_MODULE, include_str!("datastar-entry.ts")),
         bundle::VirtualModule::new(SSR_STREAM_MODULE, include_str!("ssr-stream.ts")),
+        bundle::VirtualModule::new(
+            DIAGNOSE_MODULE,
+            if cfg!(debug_assertions) {
+                include_str!("diagnose.ts")
+            } else {
+                "export const diagnose = () => {};"
+            },
+        ),
     ];
 
     if cfg!(debug_assertions) {
@@ -879,6 +893,10 @@ mod tests {
             include_subsecond_stream_runtime()
         );
         assert_eq!(
+            runtime_entry.content.starts_with("import './diagnose';"),
+            cfg!(debug_assertions)
+        );
+        assert_eq!(
             runtime_entry.content.contains("./form-submit-warning"),
             cfg!(debug_assertions)
         );
@@ -936,6 +954,13 @@ mod tests {
         .expect("vendored datastar runtime should bundle");
 
         assert!(!bundle.is_empty());
+        for diagnostic_code in ["/cheers/diagnostics", "patch_target_missing"] {
+            assert_eq!(
+                bundle.contains(diagnostic_code),
+                cfg!(debug_assertions),
+                "{diagnostic_code}"
+            );
+        }
     }
 
     #[cfg(debug_assertions)]

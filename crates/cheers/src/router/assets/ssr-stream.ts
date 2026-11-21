@@ -1,3 +1,5 @@
+import { diagnose } from "./diagnose";
+
 export function attrSelector(name: string, value: string): string {
   return (
     "[" +
@@ -17,6 +19,7 @@ function ssrStream(key: string): void {
 
   if (!(template instanceof HTMLTemplateElement) || !target) {
     console.warn("Cheers async stream target missing", key);
+    diagnose({ kind: "async_stream_target_missing", key });
     return;
   }
 

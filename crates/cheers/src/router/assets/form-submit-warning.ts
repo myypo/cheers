@@ -1,3 +1,5 @@
+import { beforeSettle, diagnose } from "./diagnose";
+
 // Datastar prevents a form's native submission only from `data-on:submit` on the form, or while a
 // `contentType: 'form'` action serializing it runs. A form whose action sits on a
 // `type="button"` button therefore reloads the page when Enter is pressed in it.
@@ -114,6 +116,7 @@ const warn = () => {
         "submit natively.",
       form,
     );
+    diagnose({ kind: "form_submitted_outside_on_submit", form });
   }
 };
 
@@ -129,6 +132,7 @@ const schedule = () => {
 };
 
 schedule();
+beforeSettle(warn);
 new MutationObserver((records) => {
   if (
     records.some((record) =>
