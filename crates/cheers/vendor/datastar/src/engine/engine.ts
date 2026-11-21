@@ -151,7 +151,12 @@ const applyEls = (els: Iterable<HTMLOrSVG>, onlyNew?: boolean): void => {
   }
 };
 
+// Cheers: applies each element at most once per batch, as it stands when the observer runs. An
+// element can appear in several records, as a descendant of an added node and again on its own,
+// such as a patched script the patch watcher swaps for a copy that runs, and applying it again
+// would rerun its data-init.
 const observe = (mutations: MutationRecord[]) => {
+  const applied = new Set<HTMLOrSVG>();
   for (const {
     target,
     type,
@@ -162,21 +167,26 @@ const observe = (mutations: MutationRecord[]) => {
     if (type === "childList") {
       for (const node of removedNodes) {
         if (isHTMLOrSVG(node)) {
-          cleanupEls([node]);
-          cleanupEls(node.querySelectorAll<HTMLOrSVG>("*"));
+          const els = [node, ...node.querySelectorAll<HTMLOrSVG>("*")];
+          cleanupEls(els);
+          for (const el of els) applied.delete(el);
         }
       }
 
       for (const node of addedNodes) {
-        if (isHTMLOrSVG(node)) {
-          applyEls([node]);
-          applyEls(node.querySelectorAll<HTMLOrSVG>("*"));
+        if (isHTMLOrSVG(node) && node.isConnected) {
+          const els = [node, ...node.querySelectorAll<HTMLOrSVG>("*")].filter(
+            (el) => !applied.has(el),
+          );
+          applyEls(els);
+          for (const el of els) applied.add(el);
         }
       }
     } else if (
       type === "attributes" &&
       attributeName!.startsWith("data-") &&
       isHTMLOrSVG(target) &&
+      !applied.has(target) &&
       !shouldIgnore(target)
     ) {
       // skip over 'data-'

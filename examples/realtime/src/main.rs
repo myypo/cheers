@@ -510,6 +510,70 @@ mod tests {
     }
 
     #[action(POST)]
+    async fn insert_init_script() -> PatchElements {
+        PatchElements::new().element(html! {
+            div id="init-script-slot" {
+                script !init({ "(window.inits ??= []).push('direct')" }) {}
+                div {
+                    script !init({ "(window.inits ??= []).push('nested')" }) {}
+                }
+            }
+        })
+    }
+
+    #[tokio::test]
+    async fn a_patched_script_runs_its_init_once() {
+        let ctx = Ctx {
+            stocks: Box::leak(Box::new(Mutex::new(BTreeMap::new()))),
+            stocks_tx: tokio::sync::broadcast::channel(1).0,
+        };
+
+        let app = cheers::router::new(
+            Router::new()
+                .route(
+                    "/",
+                    get(|| async {
+                        html! {
+                            Base {
+                                div id="init-script-slot" {}
+                                button type="button" !on:click(InsertInitScriptAction) { "Insert" }
+                            }
+                        }
+                    }),
+                )
+                .action::<InsertInitScriptAction>(),
+            cheers::router::Config::default(),
+        )
+        .expect("create app")
+        .with_state(ctx);
+
+        cheers::test::App::new(app)
+            .await
+            .unwrap()
+            .run(|app| async move {
+                app.goto(app.url("/")).await?;
+                app.query(By::XPath("//button[text()='Insert']"))
+                    .and_clickable()
+                    .first()
+                    .await?
+                    .click()
+                    .await?;
+                app.query(By::Css("#init-script-slot script"))
+                    .first()
+                    .await?;
+                let mut inits = app
+                    .execute("return window.inits ?? [];", vec![])
+                    .await?
+                    .convert::<Vec<String>>()?;
+                inits.sort();
+                assert_eq!(inits, ["direct", "nested"]);
+                Ok(())
+            })
+            .await
+            .expect("run a patched script's init once");
+    }
+
+    #[action(POST)]
     async fn sign_in() -> axum::response::Redirect {
         axum::response::Redirect::to("/hall")
     }
