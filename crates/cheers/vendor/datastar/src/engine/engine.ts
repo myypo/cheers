@@ -168,7 +168,9 @@ const observe = (mutations: MutationRecord[]) => {
       }
 
       for (const node of addedNodes) {
-        if (isHTMLOrSVG(node)) {
+        // Cheers: skips a node removed again before the observer ran, such as a patched script
+        // the patch watcher swapped for a copy that runs, so its attributes apply only once.
+        if (isHTMLOrSVG(node) && node.isConnected) {
           applyEls([node]);
           applyEls(node.querySelectorAll<HTMLOrSVG>("*"));
         }

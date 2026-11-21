@@ -443,7 +443,9 @@ mod tests {
 
     #[action(POST)]
     async fn mark_script_ran() -> ExecuteScript {
-        ExecuteScript::new(js_script! { "window.scriptRan = true" })
+        ExecuteScript::new(js_script! {
+            "window.scriptRan = true"
+        })
     }
 
     #[tokio::test]
@@ -507,6 +509,68 @@ mod tests {
         })
         .await
         .expect("clear the indicator after a script response");
+    }
+
+    #[action(POST)]
+    async fn insert_init_script() -> PatchElements {
+        PatchElements::new().element(html! {
+            div id="init-script-slot" {
+                script !init({ "window.inits = (window.inits ?? 0) + 1" }) {}
+            }
+        })
+    }
+
+    #[tokio::test]
+    async fn a_patched_script_runs_its_init_once() {
+        let ctx = Ctx {
+            stocks: Box::leak(Box::new(Mutex::new(BTreeMap::new()))),
+            stocks_tx: tokio::sync::broadcast::channel(1).0,
+        };
+
+        let app = cheers::router::new(
+            Router::new()
+                .route(
+                    "/",
+                    get(|| async {
+                        html! {
+                            Base {
+                                div id="init-script-slot" {}
+                                button type="button" !on:click(InsertInitScriptAction) { "Insert" }
+                            }
+                        }
+                    }),
+                )
+                .action::<InsertInitScriptAction>(),
+            cheers::router::Config::default(),
+        )
+        .expect("create app")
+        .with_state(ctx);
+
+        cheers::test::App::new(app)
+            .await
+            .unwrap()
+            .run(|app| async move {
+                app.goto(app.url("/")).await?;
+                app.query(By::XPath("//button[text()='Insert']"))
+                    .and_clickable()
+                    .first()
+                    .await?
+                    .click()
+                    .await?;
+                app.query(By::Css("#init-script-slot > script"))
+                    .first()
+                    .await?;
+                // Gives a second init time to run.
+                tokio::time::sleep(Duration::from_millis(200)).await;
+                let inits = app
+                    .execute("return window.inits ?? 0;", vec![])
+                    .await?
+                    .convert::<u32>()?;
+                assert_eq!(inits, 1);
+                Ok(())
+            })
+            .await
+            .expect("run a patched script's init once");
     }
 
     #[action(POST)]
@@ -1017,7 +1081,9 @@ window.setTimeout = (callback, delay, ...args) =>
                 id: 3,
                 text: "patched",
             })
-            .element(html! { p { "stray" } })
+            .element(html! {
+                p { "stray" }
+            })
     }
 
     #[action(POST)]
